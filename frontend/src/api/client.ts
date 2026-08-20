@@ -17,7 +17,7 @@ export function setCachedCsrfToken(token: string) {
 }
 
 export function getCachedCsrfToken(): string | null {
-  return cachedCsrfToken || getCookie('csrftoken');
+  return getCookie('csrftoken') || cachedCsrfToken;
 }
 
 export interface ApiErrorDetail {
@@ -54,6 +54,7 @@ export interface OrganisationResponse {
   code: string;
   membership_type: 'owner' | 'administrator' | 'member';
   outlets: OutletResponse[];
+  onboarding_status: 'not_started' | 'in_progress' | 'completed';
 }
 
 export interface UserResponse {
@@ -202,4 +203,151 @@ export async function confirmPasswordReset(payload: PasswordResetConfirmData): P
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+export interface FinancialYearResponse {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  status: 'open' | 'closed';
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OrganisationProfile {
+  id: string;
+  name: string;
+  code: string;
+  status: string;
+  default_currency: string;
+  timezone: string;
+  legal_name: string | null;
+  trade_name: string | null;
+  phone_number: string | null;
+  email: string | null;
+  gstin: string | null;
+  pan: string | null;
+  address_line_1: string | null;
+  address_line_2: string | null;
+  city: string | null;
+  district: string | null;
+  state: string | null;
+  postal_code: string | null;
+  onboarding_status: 'not_started' | 'in_progress' | 'completed';
+  onboarding_completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OutletDetail {
+  id: string;
+  name: string;
+  code: string;
+  status: string;
+  address_line_1: string | null;
+  address_line_2: string | null;
+  city: string | null;
+  district: string | null;
+  state: string | null;
+  postal_code: string | null;
+  phone_number: string | null;
+  outlet_type: 'fuel_station' | 'fuel_and_ev' | 'ev_station' | 'other';
+  operating_brand_code: string | null;
+  operating_brand_name: string | null;
+  dealer_code: string | null;
+  email: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OnboardingCompletePayload {
+  org_data: Partial<OrganisationProfile>;
+  outlet_data: Partial<OutletDetail>;
+  fy_data: Partial<FinancialYearResponse>;
+}
+
+export interface OnboardingCompleteResponse {
+  organisation: OrganisationProfile;
+  outlet: OutletDetail;
+  financial_year: FinancialYearResponse;
+}
+
+export interface OnboardingStatusResponse {
+  organisation_id: string;
+  onboarding_status: 'not_started' | 'in_progress' | 'completed';
+  onboarding_completed_at: string | null;
+}
+
+/**
+ * Fetch all organisations for authenticated user.
+ */
+export async function fetchOrganisations(): Promise<OrganisationProfile[]> {
+  return apiRequest<OrganisationProfile[]>('/organisations/');
+}
+
+/**
+ * Fetch a single organization.
+ */
+export async function fetchOrganisation(orgId: string): Promise<OrganisationProfile> {
+  return apiRequest<OrganisationProfile>(`/organisations/${orgId}/`);
+}
+
+/**
+ * Update an organization.
+ */
+export async function updateOrganisation(orgId: string, payload: Partial<OrganisationProfile>): Promise<OrganisationProfile> {
+  return apiRequest<OrganisationProfile>(`/organisations/${orgId}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * List outlets in organisation.
+ */
+export async function fetchOutlets(orgId: string): Promise<OutletDetail[]> {
+  return apiRequest<OutletDetail[]>(`/organisations/${orgId}/outlets/`);
+}
+
+/**
+ * Create a new outlet.
+ */
+export async function createOutlet(orgId: string, payload: Partial<OutletDetail>): Promise<OutletDetail> {
+  return apiRequest<OutletDetail>(`/organisations/${orgId}/outlets/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Fetch a single outlet.
+ */
+export async function fetchOutlet(orgId: string, outletId: string): Promise<OutletDetail> {
+  return apiRequest<OutletDetail>(`/organisations/${orgId}/outlets/${outletId}/`);
+}
+
+/**
+ * Get onboarding status.
+ */
+export async function fetchOnboardingStatus(orgId: string): Promise<OnboardingStatusResponse> {
+  return apiRequest<OnboardingStatusResponse>(`/organisations/${orgId}/onboarding/status/`);
+}
+
+/**
+ * Complete onboarding.
+ */
+export async function completeOnboarding(orgId: string, payload: OnboardingCompletePayload): Promise<OnboardingCompleteResponse> {
+  return apiRequest<OnboardingCompleteResponse>(`/organisations/${orgId}/onboarding/complete/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Fetch financial years.
+ */
+export async function fetchFinancialYears(orgId: string): Promise<FinancialYearResponse[]> {
+  return apiRequest<FinancialYearResponse[]>(`/organisations/${orgId}/financial-years/`);
 }

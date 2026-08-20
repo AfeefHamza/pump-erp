@@ -10,13 +10,16 @@ Provides shared utilities, base models, health check endpoints, layout shells, a
 - **Frontend**: Global layout shell (`AppShell`), selectors, navigation (`Sidebar`, `TopBar`), reusable stats cards, data table, status badges.
 
 ### 2. Organizations (`apps/organizations`, `features/administration/`)
-Prepares the multi-tenant architecture boundaries.
+Prepares the multi-tenant architecture boundaries and onboarding setup.
 - **Backend**:
-  - Models: `Organisation`, `Outlet`, `OrganisationMembership`, `OutletAccess`
-  - Services: `create_organisation_with_owner()`, `create_outlet()`, `add_organisation_member()`, `grant_outlet_access()`, `revoke_outlet_access()`
+  - Models: `Organisation` (extended with profile fields & onboarding status), `Outlet` (extended with brand and outlet type), `OrganisationMembership`, `OutletAccess`, and `FinancialYear` (scoped to organisation with non-overlapping and single-default validations).
+  - Services: `create_organisation_with_owner()`, `create_outlet()`, `add_organisation_member()`, `grant_outlet_access()`, `revoke_outlet_access()`, and `complete_onboarding()` (atomic setup transaction).
   - Selectors: `organisations_for_user()`, `outlets_for_user_in_organisation()`, `active_owners_of_organisation()`
   - Admin: Full integration with Django Admin for all models.
-- **Frontend**: Navigation organization and outlet selectors with Redux store connections.
+  - API: Tenant-safe REST endpoints under `/api/v1/organisations/` for profiles, outlets, financial years, and onboarding.
+- **Frontend**: 
+  - Dynamic navigation organization and outlet selectors with Redux store connections.
+  - Wizard-guided onboarding page at `/app/onboarding` for setting up first organisation profile, outlet, and financial year.
 
 ### 3. Users & Authentication (`apps/users/`, `features/auth/`)
 Implements secure user authentication, signup, and session management.

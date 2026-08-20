@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { Provider } from 'react-redux';
-import { configureStore, type UnknownAction } from '@reduxjs/toolkit';
+import { configureStore } from '@reduxjs/toolkit';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import authReducer from '../authSlice';
 import { ProtectedRoute } from '../components/ProtectedRoute';
@@ -38,17 +38,16 @@ const LocationTracker: React.FC = () => {
 };
 
 const dummyUiReducer = (
-  state = { selectedOrganizationId: '', selectedOutletId: '', sidebarExpanded: true },
-  _action: UnknownAction
+  state = { selectedOrganizationId: '', selectedOutletId: '', sidebarExpanded: true }
 ) => state;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const createTestStore = (preloadedState?: any) => {
   return configureStore({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     reducer: {
       auth: authReducer,
       ui: dummyUiReducer,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any,
     preloadedState,
   });
@@ -195,7 +194,7 @@ describe('Authentication Flow & Security Tests', () => {
           display_name: 'Owner',
           phone_number: '',
           organisations: [
-            { id: 'org-1', name: 'Org 1', code: 'ORG1', membership_type: 'owner', outlets: [] }
+            { id: 'org-1', name: 'Org 1', code: 'ORG1', membership_type: 'owner', onboarding_status: 'completed', outlets: [{ id: 'out-1', name: 'Outlet 1', code: 'OUT1' }] }
           ]
         },
         authenticationStatus: 'authenticated',
@@ -319,5 +318,83 @@ describe('Authentication Flow & Security Tests', () => {
       // Cleanup DOM for next iteration
       cleanup();
     });
+  });
+
+  it('8. Redirects owner with incomplete onboarding to /app/onboarding', () => {
+    const store = createTestStore({
+      auth: {
+        currentUser: {
+          id: 'test-uuid',
+          email: 'owner@example.com',
+          display_name: 'Owner',
+          phone_number: '',
+          organisations: [
+            { id: 'org-1', name: 'Org 1', code: 'ORG1', membership_type: 'owner', onboarding_status: 'not_started', outlets: [] }
+          ]
+        },
+        authenticationStatus: 'authenticated',
+        authenticationError: null,
+      }
+    });
+
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={['/app/dashboard']}>
+          <Routes>
+            <Route 
+              path="/app/dashboard" 
+              element={
+                <ProtectedRoute>
+                  <div>Dashboard Content</div>
+                </ProtectedRoute>
+              } 
+            />
+            <Route path="/app/onboarding" element={<div>Onboarding Form Content</div>} />
+          </Routes>
+        </MemoryRouter>
+      </Provider>
+    );
+
+    expect(screen.queryByText('Dashboard Content')).not.toBeInTheDocument();
+    expect(screen.getByText('Onboarding Form Content')).toBeInTheDocument();
+  });
+
+  it('9. Completed owners are not forced back to /app/onboarding', () => {
+    const store = createTestStore({
+      auth: {
+        currentUser: {
+          id: 'test-uuid',
+          email: 'owner@example.com',
+          display_name: 'Owner',
+          phone_number: '',
+          organisations: [
+            { id: 'org-1', name: 'Org 1', code: 'ORG1', membership_type: 'owner', onboarding_status: 'completed', outlets: [{ id: 'out-1', name: 'Outlet 1', code: 'OUT1' }] }
+          ]
+        },
+        authenticationStatus: 'authenticated',
+        authenticationError: null,
+      }
+    });
+
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={['/app/onboarding']}>
+          <Routes>
+            <Route 
+              path="/app/onboarding" 
+              element={
+                <ProtectedRoute>
+                  <div>Onboarding Form Content</div>
+                </ProtectedRoute>
+              } 
+            />
+            <Route path="/app/dashboard" element={<div>Dashboard Content</div>} />
+          </Routes>
+        </MemoryRouter>
+      </Provider>
+    );
+
+    expect(screen.queryByText('Onboarding Form Content')).not.toBeInTheDocument();
+    expect(screen.getByText('Dashboard Content')).toBeInTheDocument();
   });
 });

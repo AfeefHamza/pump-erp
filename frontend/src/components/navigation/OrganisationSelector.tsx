@@ -9,9 +9,18 @@ export const OrganisationSelector: React.FC = () => {
 
   const organisations = React.useMemo(() => currentUser?.organisations || [], [currentUser?.organisations]);
 
-  // Proactively select the first organisation if none is selected
+  // Validate the selected organisation ID against the latest server response
   React.useEffect(() => {
-    if (organisations.length > 0 && !selectedOrgId) {
+    if (organisations.length === 0) {
+      if (selectedOrgId) {
+        dispatch(setOrganization(''));
+        dispatch(setOutlet(''));
+      }
+      return;
+    }
+
+    const orgExists = organisations.some(org => org.id === selectedOrgId);
+    if (!selectedOrgId || !orgExists) {
       const defaultOrg = organisations[0];
       dispatch(setOrganization(defaultOrg.id));
       if (defaultOrg.outlets && defaultOrg.outlets.length > 0) {

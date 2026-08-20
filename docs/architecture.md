@@ -129,3 +129,12 @@ Upon application startup, the frontend:
 2. Calls `/api/v1/auth/me/` to load the authenticated user's profile, including their list of accessible organisations and respective outlets.
 3. Restores the UI. The sidebar organization and outlet selectors are populated dynamically using this response instead of hardcoded demo lists.
 
+### Onboarding Transaction
+Initial onboarding is executed as a single atomic database transaction (`transaction.atomic` in the `complete_onboarding` service function):
+1. **Membership Verification**: Verifies that the acting user has an active `owner` or `administrator` membership for the organisation.
+2. **Organisation Update**: Saves the business profile fields and marks `onboarding_status = 'completed'` with a timestamp.
+3. **First Outlet Setup**: Creates the first outlet or updates it if one was already registered.
+4. **Financial Year Initialization**: Creates the default open `FinancialYear` ensuring dates are valid and non-overlapping.
+5. **Rollback Safety**: Any validation error or database failure causes the entire sequence of changes to roll back immediately, preventing partial setup states.
+
+

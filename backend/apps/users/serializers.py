@@ -21,7 +21,7 @@ class OrganisationDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Organisation
-        fields = ['id', 'name', 'code', 'membership_type', 'outlets']
+        fields = ['id', 'name', 'code', 'membership_type', 'outlets', 'onboarding_status']
 
     def get_membership_type(self, obj):
         user = self.context.get('request').user

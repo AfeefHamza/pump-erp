@@ -7,6 +7,7 @@ import { LoginPage } from '@/features/auth/pages/LoginPage';
 import { SignupPage } from '@/features/auth/pages/SignupPage';
 import { ForgotPasswordPage } from '@/features/auth/pages/ForgotPasswordPage';
 import { ResetPasswordPage } from '@/features/auth/pages/ResetPasswordPage';
+import { OnboardingPage } from '@/features/auth/pages/OnboardingPage';
 
 export const router = createBrowserRouter([
   // Guest Routes (Guarded: redirect to app if already authenticated)
@@ -39,6 +40,16 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute requireAuth={false}>
         <ResetPasswordPage />
+      </ProtectedRoute>
+    ),
+  },
+
+  // Protected Onboarding Route
+  {
+    path: '/app/onboarding',
+    element: (
+      <ProtectedRoute requireAuth={true}>
+        <OnboardingPage />
       </ProtectedRoute>
     ),
   },

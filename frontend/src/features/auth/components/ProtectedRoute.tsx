@@ -9,7 +9,8 @@ interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requireAuth = true }) => {
-  const { authenticationStatus } = useAppSelector((state) => state.auth);
+  const { currentUser, authenticationStatus } = useAppSelector((state) => state.auth);
+  const selectedOrgId = useAppSelector((state) => state.ui.selectedOrganizationId);
   const location = useLocation();
 
   if (authenticationStatus === 'unknown' || authenticationStatus === 'loading') {
@@ -21,11 +22,40 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (!requireAuth && authenticationStatus === 'authenticated') {
-    // If they are authenticated but on a login/signup page, redirect to dashboard or safe destination
-    const fromPath = (location.state as { from?: { pathname?: string } | null } | null)?.from?.pathname;
-    const safeRedirect = fromPath && fromPath.startsWith('/') && !fromPath.startsWith('//') ? fromPath : '/app/dashboard';
-    return <Navigate to={safeRedirect} replace />;
+  const currentOrg = currentUser?.organisations.find((o) => o.id === selectedOrgId) || currentUser?.organisations[0];
+  const isOnboardingPath = location.pathname === '/app/onboarding';
+
+  if (authenticationStatus === 'authenticated') {
+    if (currentOrg) {
+      const isOwnerOrAdmin = currentOrg.membership_type === 'owner' || currentOrg.membership_type === 'administrator';
+      const onboardingIncomplete = currentOrg.onboarding_status !== 'completed' || !currentOrg.outlets || currentOrg.outlets.length === 0;
+
+      if (requireAuth) {
+        if (onboardingIncomplete && isOwnerOrAdmin) {
+          if (!isOnboardingPath) {
+            return <Navigate to="/app/onboarding" replace />;
+          }
+        } else {
+          if (isOnboardingPath) {
+            return <Navigate to="/app/dashboard" replace />;
+          }
+        }
+      } else {
+        if (onboardingIncomplete && isOwnerOrAdmin) {
+          return <Navigate to="/app/onboarding" replace />;
+        } else {
+          const fromPath = (location.state as { from?: { pathname?: string } | null } | null)?.from?.pathname;
+          const safeRedirect = fromPath && fromPath.startsWith('/') && !fromPath.startsWith('//') ? fromPath : '/app/dashboard';
+          return <Navigate to={safeRedirect} replace />;
+        }
+      }
+    } else {
+      if (!requireAuth) {
+        const fromPath = (location.state as { from?: { pathname?: string } | null } | null)?.from?.pathname;
+        const safeRedirect = fromPath && fromPath.startsWith('/') && !fromPath.startsWith('//') ? fromPath : '/app/dashboard';
+        return <Navigate to={safeRedirect} replace />;
+      }
+    }
   }
 
   return <>{children}</>;

@@ -86,6 +86,21 @@ export const logout = createAsyncThunk(
   }
 );
 
+export const refreshUser = createAsyncThunk(
+  'auth/refreshUser',
+  async (_, { rejectWithValue }) => {
+    try {
+      const user = await fetchCurrentUser();
+      return user;
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        return rejectWithValue('unauthenticated');
+      }
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to refresh user context');
+    }
+  }
+);
+
 const authSlice = createSlice({
   name: 'auth',
   initialState,
@@ -110,6 +125,21 @@ const authSlice = createSlice({
         state.authenticationStatus = 'unauthenticated';
         if (action.payload !== 'unauthenticated') {
           state.authenticationError = action.payload as string;
+        }
+      })
+      // Refresh User
+      .addCase(refreshUser.pending, (state) => {
+        state.authenticationError = null;
+      })
+      .addCase(refreshUser.fulfilled, (state, action: PayloadAction<UserResponse>) => {
+        state.currentUser = action.payload;
+        state.authenticationStatus = 'authenticated';
+        state.authenticationError = null;
+      })
+      .addCase(refreshUser.rejected, (state, action) => {
+        if (action.payload === 'unauthenticated') {
+          state.currentUser = null;
+          state.authenticationStatus = 'unauthenticated';
         }
       })
       // Login

@@ -3,13 +3,17 @@ from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
-from .models import Organisation, Outlet, OrganisationMembership, OutletAccess
+from datetime import date
+from django.urls import reverse
+from rest_framework.test import APITestCase
+from .models import Organisation, Outlet, OrganisationMembership, OutletAccess, FinancialYear
 from .services import (
     create_organisation_with_owner,
     create_outlet,
     add_organisation_member,
     grant_outlet_access,
     revoke_outlet_access,
+    complete_onboarding,
 )
 from .selectors import (
     organisations_for_user,
@@ -174,3 +178,209 @@ class OrganisationSelectorTests(TestCase):
         owners = active_owners_of_organisation(self.org1)
         self.assertEqual(len(owners), 1)
         self.assertIn(self.owner, owners)
+
+
+class OnboardingAndFinancialYearTests(APITestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(email="owner@example.com", password="password")
+        self.admin = User.objects.create_user(email="admin@example.com", password="password")
+        self.member = User.objects.create_user(email="member@example.com", password="password")
+        self.stranger = User.objects.create_user(email="stranger@example.com", password="password")
+
+        # Create organisation
+        self.org = create_organisation_with_owner(
+            name="Alpha Fuel",
+            code="AFUEL",
+            owner_user=self.owner,
+            legal_name="Alpha Fuel Private Limited"
+        )
+        
+        # Add admin
+        add_organisation_member(
+            self.org, self.admin, OrganisationMembership.TYPE_ADMINISTRATOR, OrganisationMembership.STATUS_ACTIVE
+        )
+        
+        # Add member
+        add_organisation_member(
+            self.org, self.member, OrganisationMembership.TYPE_MEMBER, OrganisationMembership.STATUS_ACTIVE
+        )
+
+        # Create another org for cross-tenant testing
+        self.other_org = create_organisation_with_owner(
+            name="Beta Fuel",
+            code="BFUEL",
+            owner_user=self.stranger
+        )
+
+    def test_successful_atomic_onboarding_service(self):
+        org_data = {
+            "name": "Alpha Fuel Updated",
+            "legal_name": "Alpha Fuel Private Limited",
+            "trade_name": "Alpha Stations",
+            "phone_number": "1234567890",
+            "email": "info@alpha.com",
+            "gstin": "29AAAAA1111A1Z1",
+            "pan": "ABCDE1234F",
+            "address_line_1": "123 Main St",
+            "address_line_2": "Sector 4",
+            "city": "Bengaluru",
+            "district": "Bengaluru",
+            "state": "Karnataka",
+            "postal_code": "560001"
+        }
+        outlet_data = {
+            "name": "Alpha Outlet 1",
+            "code": "OUT-AL1",
+            "outlet_type": "fuel_station",
+            "operating_brand_code": "IOCL",
+            "operating_brand_name": "IOCL",
+            "dealer_code": "DLR-100",
+            "email": "outlet1@alpha.com",
+            "address_line_1": "123 Main St",
+            "city": "Bengaluru",
+            "state": "Karnataka",
+            "postal_code": "560001",
+            "phone_number": "1234567890"
+        }
+        fy_data = {
+            "name": "FY 2026-27",
+            "start_date": "2026-04-01",
+            "end_date": "2027-03-31"
+        }
+
+        org, outlet, fy = complete_onboarding(
+            user=self.owner,
+            organisation_id=str(self.org.id),
+            org_data=org_data,
+            outlet_data=outlet_data,
+            fy_data=fy_data
+        )
+
+        self.assertEqual(org.onboarding_status, 'completed')
+        self.assertIsNotNone(org.onboarding_completed_at)
+        self.assertEqual(org.trade_name, "Alpha Stations")
+        self.assertEqual(org.gstin, "29AAAAA1111A1Z1")
+
+        self.assertEqual(outlet.name, "Alpha Outlet 1")
+        self.assertEqual(outlet.operating_brand_code, "IOCL")
+
+        self.assertEqual(fy.name, "FY 2026-27")
+        self.assertEqual(fy.start_date, date(2026, 4, 1))
+        self.assertEqual(fy.end_date, date(2027, 3, 31))
+        self.assertTrue(fy.is_default)
+        self.assertEqual(fy.status, 'open')
+
+    def test_onboarding_atomic_rollback_on_failure(self):
+        org_data = {"name": "Alpha Fail"}
+        outlet_data = {"name": "Fail Outlet", "code": "FOUT"}
+        fy_data = {
+            "name": "FY 2026-27",
+            "start_date": "2026-04-01",
+            "end_date": "2025-03-31" # invalid!
+        }
+
+        initial_status = self.org.onboarding_status
+        initial_outlet_count = Outlet.objects.filter(organisation=self.org).count()
+        initial_fy_count = FinancialYear.objects.filter(organisation=self.org).count()
+
+        with self.assertRaises(ValidationError):
+            complete_onboarding(
+                user=self.owner,
+                organisation_id=str(self.org.id),
+                org_data=org_data,
+                outlet_data=outlet_data,
+                fy_data=fy_data
+            )
+
+        self.org.refresh_from_db()
+        self.assertEqual(self.org.onboarding_status, initial_status)
+        self.assertEqual(Outlet.objects.filter(organisation=self.org).count(), initial_outlet_count)
+        self.assertEqual(FinancialYear.objects.filter(organisation=self.org).count(), initial_fy_count)
+
+    def test_duplicate_onboarding_submission_safety(self):
+        org_data = {"name": "Alpha Double"}
+        outlet_data = {"name": "Double Outlet", "code": "DOUT"}
+        fy_data = {
+            "name": "FY 2026-27",
+            "start_date": "2026-04-01",
+            "end_date": "2027-03-31"
+        }
+
+        complete_onboarding(
+            user=self.owner,
+            organisation_id=str(self.org.id),
+            org_data=org_data,
+            outlet_data=outlet_data,
+            fy_data=fy_data
+        )
+
+        complete_onboarding(
+            user=self.owner,
+            organisation_id=str(self.org.id),
+            org_data=org_data,
+            outlet_data=outlet_data,
+            fy_data=fy_data
+        )
+
+        self.assertEqual(Outlet.objects.filter(organisation=self.org).count(), 1)
+        self.assertEqual(FinancialYear.objects.filter(organisation=self.org).count(), 1)
+
+    def test_non_overlapping_financial_year_enforcement(self):
+        fy1 = FinancialYear.objects.create(
+            organisation=self.org,
+            name="FY1",
+            start_date="2026-04-01",
+            end_date="2027-03-31",
+            is_default=True
+        )
+
+        fy2 = FinancialYear(
+            organisation=self.org,
+            name="FY2",
+            start_date="2026-10-01",
+            end_date="2027-09-30"
+        )
+        with self.assertRaises(ValidationError):
+            fy2.full_clean()
+
+    def test_only_one_default_financial_year(self):
+        FinancialYear.objects.create(
+            organisation=self.org,
+            name="FY1",
+            start_date="2025-04-01",
+            end_date="2026-03-31",
+            is_default=True
+        )
+
+        fy2 = FinancialYear(
+            organisation=self.org,
+            name="FY2",
+            start_date="2026-04-01",
+            end_date="2027-03-31",
+            is_default=True
+        )
+        with self.assertRaises(ValidationError):
+            fy2.full_clean()
+
+    def test_unauthorised_and_cross_tenant_access_rejection(self):
+        url = reverse('onboarding_complete', kwargs={'org_id': self.org.id})
+        payload = {
+            "org_data": {"name": "Hack Org"},
+            "outlet_data": {"name": "Hack Outlet", "code": "HOUT"},
+            "fy_data": {"name": "FY 2026", "start_date": "2026-01-01", "end_date": "2026-12-31"}
+        }
+
+        response = self.client.post(url, payload, format='json')
+        self.assertEqual(response.status_code, 403)
+
+        self.client.force_authenticate(user=self.member)
+        response = self.client.post(url, payload, format='json')
+        self.assertEqual(response.status_code, 403)
+
+        self.client.force_authenticate(user=self.stranger)
+        response = self.client.post(url, payload, format='json')
+        self.assertEqual(response.status_code, 404)
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(url, payload, format='json')
+        self.assertEqual(response.status_code, 200)

@@ -11,9 +11,17 @@ export const OutletSelector: React.FC = () => {
   const currentOrg = currentUser?.organisations.find(org => org.id === selectedOrgId);
   const outlets = React.useMemo(() => currentOrg?.outlets || [], [currentOrg?.outlets]);
 
-  // Proactively select the first outlet if none is selected
+  // Validate the selected outlet ID against the latest server response
   React.useEffect(() => {
-    if (outlets.length > 0 && !selectedOutletId) {
+    if (outlets.length === 0) {
+      if (selectedOutletId) {
+        dispatch(setOutlet(''));
+      }
+      return;
+    }
+
+    const outletExists = outlets.some(outlet => outlet.id === selectedOutletId);
+    if (!selectedOutletId || !outletExists) {
       dispatch(setOutlet(outlets[0].id));
     }
   }, [outlets, selectedOutletId, dispatch]);
