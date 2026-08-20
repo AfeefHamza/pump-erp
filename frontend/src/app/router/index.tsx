@@ -1,15 +1,59 @@
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppShell } from '@/app/layouts/AppShell';
 import { Dashboard } from '@/features/dashboard/Dashboard';
 import { ComingSoonPage } from '@/components/feedback/ComingSoonPage';
+import { ProtectedRoute } from '@/features/auth/components/ProtectedRoute';
+import { LoginPage } from '@/features/auth/pages/LoginPage';
+import { SignupPage } from '@/features/auth/pages/SignupPage';
+import { ForgotPasswordPage } from '@/features/auth/pages/ForgotPasswordPage';
+import { ResetPasswordPage } from '@/features/auth/pages/ResetPasswordPage';
 
 export const router = createBrowserRouter([
+  // Guest Routes (Guarded: redirect to app if already authenticated)
   {
-    path: '/',
-    element: <AppShell />,
+    path: '/login',
+    element: (
+      <ProtectedRoute requireAuth={false}>
+        <LoginPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/signup',
+    element: (
+      <ProtectedRoute requireAuth={false}>
+        <SignupPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/forgot-password',
+    element: (
+      <ProtectedRoute requireAuth={false}>
+        <ForgotPasswordPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/reset-password',
+    element: (
+      <ProtectedRoute requireAuth={false}>
+        <ResetPasswordPage />
+      </ProtectedRoute>
+    ),
+  },
+
+  // Protected App Routes
+  {
+    path: '/app',
+    element: (
+      <ProtectedRoute requireAuth={true}>
+        <AppShell />
+      </ProtectedRoute>
+    ),
     children: [
       {
-        index: true,
+        path: 'dashboard',
         element: <Dashboard />,
       },
       // Operations
@@ -148,5 +192,15 @@ export const router = createBrowserRouter([
         element: <ComingSoonPage title="Help & Support" />,
       },
     ],
+  },
+
+  // Default Redirect
+  {
+    path: '/',
+    element: <Navigate to="/app/dashboard" replace />,
+  },
+  {
+    path: '*',
+    element: <Navigate to="/app/dashboard" replace />,
   },
 ]);

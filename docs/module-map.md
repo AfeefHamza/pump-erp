@@ -18,11 +18,19 @@ Prepares the multi-tenant architecture boundaries.
   - Admin: Full integration with Django Admin for all models.
 - **Frontend**: Navigation organization and outlet selectors with Redux store connections.
 
-### 3. Users (`apps/users/`)
-Prepares the user authentication structure.
+### 3. Users & Authentication (`apps/users/`, `features/auth/`)
+Implements secure user authentication, signup, and session management.
 - **Backend**:
   - Custom `User` model inheriting from `AbstractUser` with UUID primary key, unique normalized email, custom `UserManager`, `display_name`, and optional `phone_number`.
-  - Admin: Configured Django Admin using a custom `UserAdmin` subclass.
+  - Database-level case-insensitive unique constraint on email.
+  - Custom `CaseInsensitiveModelBackend` for email login.
+  - DRF API endpoints under `/api/v1/auth/` for `signup/`, `login/`, `logout/`, `me/`, `csrf/`, and `password-reset/`.
+  - Secure session-based HttpOnly cookie authentication and CSRF token verification.
+- **Frontend**:
+  - Redux `auth` slice with thunks for initial session retrieval, login, signup, and logout.
+  - Route protection wrapper (`ProtectedRoute`) for guarding guest and protected path namespaces.
+  - Fully responsive, glassmorphism-styled pages for `/login`, `/signup`, `/forgot-password`, and `/reset-password`.
+  - Dynamic user profile and context bindings for `OrganisationSelector`, `OutletSelector`, and `TopBar`.
 
 ---
 

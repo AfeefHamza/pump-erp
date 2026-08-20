@@ -44,6 +44,9 @@ from apps.core.models import BaseModel
 - **Selectors (`selectors.py`)**:
   - Implement read queries, reporting logic, and complex filters inside selector files.
   - Selectors must enforce multi-tenant safety boundaries. They should accept the current user context and implicitly filter querysets by the user's active membership or granted outlet accesses.
+- **Email Normalization & Case Insensitivity**:
+  - Email addresses must be normalized to lowercase at the application and database level to prevent case-insensitive duplicate accounts.
+  - Queries for email authentication must perform case-insensitive checks (`email__iexact`).
 
 ---
 
@@ -51,7 +54,8 @@ from apps.core.models import BaseModel
 
 ### Strict Mode
 - Maintain strict type-checking (`strict: true` in `tsconfig.json`).
-- Avoid using `any`. If a type cannot be inferred, write a proper interface or use a union type.
+- Avoid using `any` in application code. If a type cannot be inferred, write a proper interface, record type, or use `unknown` with type checks.
+- In catch blocks, type error variables as `unknown` and check their class instance (e.g., `err instanceof ApiError` or `err instanceof Error`) before accessing properties to comply with `@typescript-eslint` rules.
 
 ### File Naming
 - Use PascalCase for component files (e.g. `StatCard.tsx`, `Sidebar.tsx`).

@@ -81,4 +81,51 @@ Backend business logic must remain decoupled from views and serializers:
 
 ### 11. Postponements
 - **Reports**: Postponed for the core ERP development phase. Currently represented by placeholder pages.
-- **Authentication/JWT**: Postponed. Current endpoints are open (public) for foundation testing.
+
+---
+
+## Session-Based Authentication
+
+### Why Session Authentication was Selected
+Rather than using JWT tokens, which are prone to XSS-based theft if stored in JavaScript-accessible storage (like `localStorage` or `sessionStorage`), the platform uses traditional **Django Session Authentication** with secure **HttpOnly cookies**.
+- **No JS Exposure**: The session cookie (`sessionid`) is marked `HttpOnly`, preventing client-side scripts from reading or stealing session identifiers.
+- **Backend Authority**: The server is the absolute authority for validating sessions, managing token lifespan, and enforcing authorization boundaries.
+- **Session Rotation**: The session key is automatically rotated upon successful login using Django's built-in session renewal, mitigating session fixation attacks.
+
+### CSRF Protection Flow
+To prevent Cross-Site Request Forgery (CSRF) attacks:
+1. The frontend client calls the CSRF initialization endpoint: `GET /api/v1/auth/csrf/`.
+2. The backend responds by setting the `csrftoken` cookie (HttpOnly=False, allowing JavaScript to read it) and returning the token in the JSON body: `{"csrfToken": "..."}`.
+3. The frontend fetch client caches this token in memory.
+4. For all unsafe HTTP methods (`POST`, `PUT`, `PATCH`, `DELETE`), the frontend client automatically appends the token in the `X-CSRFToken` header of the request.
+5. In development, SameSite is set to `Lax` to allow local development over HTTP.
+
+### Production Cookie Requirements
+When deploying to production, the following settings must be set to `True` to ensure HTTPS-only communication:
+- `SESSION_COOKIE_SECURE = True`
+- `CSRF_COOKIE_SECURE = True`
+- `SESSION_COOKIE_SAMESITE = 'Lax'`
+- `CSRF_COOKIE_SAMESITE = 'Lax'`
+- `SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')`
+
+### Signup Transaction
+Signup is implemented as a single, atomic database transaction (`transaction.atomic` in the `SignupSerializer.create` method):
+1. **User Creation**: The user is created using `User.objects.create_user`. The email is normalized to lowercase to prevent duplicates.
+2. **Organisation Creation**: The organisation is created with the normalized organisation code (stripped and uppercased).
+3. **Owner Membership**: An active `OrganisationMembership` is created linking the User and Organisation as an `owner`.
+4. **Session Log In**: If any step fails (e.g. duplicate email or organisation code), the entire transaction is rolled back and no records are saved. On success, the user is authenticated into the session.
+
+### Local Password Reset Testing
+The password reset flow uses Django's built-in token mechanisms.
+1. The client requests a reset link by calling `POST /api/v1/auth/password-reset/request/`.
+2. The backend generates a temporary secure token and encodes the user ID.
+3. The link is built as `{settings.PASSWORD_RESET_URL}?uid={uid}&token={token}`.
+4. During local development, the email is printed to the Django development console because `EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'`.
+5. The developer copies the link from the console, opens it in the browser, and submits the new password to `POST /api/v1/auth/password-reset/confirm/`.
+
+### Organisation Context Loading
+Upon application startup, the frontend:
+1. Calls `/api/v1/auth/csrf/` to initialize CSRF token cache.
+2. Calls `/api/v1/auth/me/` to load the authenticated user's profile, including their list of accessible organisations and respective outlets.
+3. Restores the UI. The sidebar organization and outlet selectors are populated dynamically using this response instead of hardcoded demo lists.
+

@@ -153,9 +153,10 @@ npm run build --prefix frontend
 ## Testing & Verification Commands
 
 ### Run Backend Tests
-Backend unit tests fall back to a local SQLite database automatically to enable database-independent execution (no active local PostgreSQL required for testing):
+Backend unit tests fall back to a local SQLite database automatically to enable database-independent execution (no active local PostgreSQL required for testing). Run the full suite using:
 ```powershell
-python backend/manage.py test backend/apps/core
+# Navigate to backend/ directory and run:
+python manage.py test
 ```
 
 ### Run Frontend Linting & Type Checks

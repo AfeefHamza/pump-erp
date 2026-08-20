@@ -4,12 +4,32 @@ import { MapPin } from 'lucide-react';
 
 export const OutletSelector: React.FC = () => {
   const dispatch = useAppDispatch();
+  const selectedOrgId = useAppSelector((state) => state.ui.selectedOrganizationId);
   const selectedOutletId = useAppSelector((state) => state.ui.selectedOutletId);
+  const { currentUser } = useAppSelector((state) => state.auth);
 
-  const outlets = [
-    { id: 'outlet-central', name: 'Central Outlet' },
-    { id: 'outlet-highway', name: 'Highway Outlet' },
-  ];
+  const currentOrg = currentUser?.organisations.find(org => org.id === selectedOrgId);
+  const outlets = React.useMemo(() => currentOrg?.outlets || [], [currentOrg?.outlets]);
+
+  // Proactively select the first outlet if none is selected
+  React.useEffect(() => {
+    if (outlets.length > 0 && !selectedOutletId) {
+      dispatch(setOutlet(outlets[0].id));
+    }
+  }, [outlets, selectedOutletId, dispatch]);
+
+  if (outlets.length === 0) {
+    return (
+      <div className="outlet-selector-wrapper" style={{ opacity: 0.6 }}>
+        <div className="outlet-selector-icon-box">
+          <MapPin size={16} />
+        </div>
+        <select className="outlet-selector-dropdown" disabled>
+          <option value="">No accessible outlets</option>
+        </select>
+      </div>
+    );
+  }
 
   return (
     <div className="outlet-selector-wrapper">

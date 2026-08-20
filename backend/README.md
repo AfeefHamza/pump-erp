@@ -49,6 +49,13 @@ This is the Python Django backend for the Pump ERP SaaS system.
    ```
 
 6. Run Backend Tests:
+   To run the full suite (including new authentication, atomic signup, case-insensitive uniqueness, and token confirmation tests):
    ```bash
    python manage.py test
    ```
+
+## Local Password Reset testing
+The project is configured to use the Django **console email backend** for local development. 
+When you trigger a password reset request via the `POST /api/v1/auth/password-reset/request/` endpoint, the reset email is printed directly into your running `runserver` terminal. 
+Copy the generated URL (e.g., `http://localhost:5173/reset-password?uid={uid}&token={token}`) and paste it into your browser to verify the password reset confirmation form interface.
+
