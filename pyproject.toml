@@ -1,0 +1,16 @@
+[project]
+name = "pump-erp"
+version = "1.0.0"
+description = "Multi-tenant Fuel Station ERP SaaS"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "django>=5.2,<5.3",
+    "djangorestframework>=3.15,<3.16",
+    "django-cors-headers>=4.4,<4.5",
+    "django-environ>=0.11,<0.12",
+    "psycopg[binary]>=3.2,<3.3"
+]
+
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"

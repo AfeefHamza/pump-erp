@@ -1,0 +1,152 @@
+import { createBrowserRouter } from 'react-router-dom';
+import { AppShell } from '@/app/layouts/AppShell';
+import { Dashboard } from '@/features/dashboard/Dashboard';
+import { ComingSoonPage } from '@/components/feedback/ComingSoonPage';
+
+export const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <AppShell />,
+    children: [
+      {
+        index: true,
+        element: <Dashboard />,
+      },
+      // Operations
+      {
+        path: 'operations/shifts',
+        element: <ComingSoonPage title="Shifts" />,
+      },
+      {
+        path: 'operations/meter-readings',
+        element: <ComingSoonPage title="Meter Readings" />,
+      },
+      {
+        path: 'operations/dip-readings',
+        element: <ComingSoonPage title="Dip Readings" />,
+      },
+      {
+        path: 'operations/day-close',
+        element: <ComingSoonPage title="Day Close" />,
+      },
+      // Sales
+      {
+        path: 'sales/credit-slips',
+        element: <ComingSoonPage title="Credit Slips" />,
+      },
+      {
+        path: 'sales/cash-sales',
+        element: <ComingSoonPage title="Cash Sales" />,
+      },
+      {
+        path: 'sales/invoices',
+        element: <ComingSoonPage title="Invoices" />,
+      },
+      {
+        path: 'sales/receipts',
+        element: <ComingSoonPage title="Receipts" />,
+      },
+      {
+        path: 'sales/customers',
+        element: <ComingSoonPage title="Customers" />,
+      },
+      // Purchases
+      {
+        path: 'purchases/tanker-receipts',
+        element: <ComingSoonPage title="Tanker Receipts" />,
+      },
+      {
+        path: 'purchases/purchase-bills',
+        element: <ComingSoonPage title="Purchase Bills" />,
+      },
+      {
+        path: 'purchases/suppliers',
+        element: <ComingSoonPage title="Suppliers" />,
+      },
+      // Inventory
+      {
+        path: 'inventory/fuel-stock',
+        element: <ComingSoonPage title="Fuel Stock" />,
+      },
+      {
+        path: 'inventory/tanks',
+        element: <ComingSoonPage title="Tanks" />,
+      },
+      {
+        path: 'inventory/dispensers-nozzles',
+        element: <ComingSoonPage title="Dispensers & Nozzles" />,
+      },
+      {
+        path: 'inventory/lubricants',
+        element: <ComingSoonPage title="Lubricants" />,
+      },
+      {
+        path: 'inventory/stock-transfers',
+        element: <ComingSoonPage title="Stock Transfers" />,
+      },
+      {
+        path: 'inventory/stock-adjustments',
+        element: <ComingSoonPage title="Stock Adjustments" />,
+      },
+      // Finance
+      {
+        path: 'finance/cash-banking',
+        element: <ComingSoonPage title="Cash & Banking" />,
+      },
+      {
+        path: 'finance/settlements',
+        element: <ComingSoonPage title="Settlements" />,
+      },
+      {
+        path: 'finance/expenses',
+        element: <ComingSoonPage title="Expenses" />,
+      },
+      {
+        path: 'finance/vouchers',
+        element: <ComingSoonPage title="Vouchers" />,
+      },
+      {
+        path: 'finance/chart-of-accounts',
+        element: <ComingSoonPage title="Chart of Accounts" />,
+      },
+      // Employees
+      {
+        path: 'employees/list',
+        element: <ComingSoonPage title="Employees" />,
+      },
+      {
+        path: 'employees/shift-assignments',
+        element: <ComingSoonPage title="Shift Assignments" />,
+      },
+      {
+        path: 'employees/cash-collections',
+        element: <ComingSoonPage title="Cash Collections" />,
+      },
+      {
+        path: 'employees/accounts',
+        element: <ComingSoonPage title="Employee Accounts" />,
+      },
+      // Standalone
+      {
+        path: 'reports',
+        element: <ComingSoonPage title="Reports — Coming Later" />,
+      },
+      {
+        path: 'crm',
+        element: <ComingSoonPage title="CRM" />,
+      },
+      {
+        path: 'administration',
+        element: <ComingSoonPage title="Administration" />,
+      },
+      {
+        path: 'settings',
+        element: <ComingSoonPage title="Settings" />,
+      },
+      {
+        path: 'help-support',
+        element: <ComingSoonPage title="Help & Support" />,
+      },
+    ],
+  },
+]);
