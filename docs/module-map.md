@@ -11,12 +11,18 @@ Provides shared utilities, base models, health check endpoints, layout shells, a
 
 ### 2. Organizations (`apps/organizations`, `features/administration/`)
 Prepares the multi-tenant architecture boundaries.
-- **Backend**: Empty app folder ready for multi-tenant models (Organization, Outlet).
+- **Backend**:
+  - Models: `Organisation`, `Outlet`, `OrganisationMembership`, `OutletAccess`
+  - Services: `create_organisation_with_owner()`, `create_outlet()`, `add_organisation_member()`, `grant_outlet_access()`, `revoke_outlet_access()`
+  - Selectors: `organisations_for_user()`, `outlets_for_user_in_organisation()`, `active_owners_of_organisation()`
+  - Admin: Full integration with Django Admin for all models.
 - **Frontend**: Navigation organization and outlet selectors with Redux store connections.
 
 ### 3. Users (`apps/users/`)
 Prepares the user authentication structure.
-- **Backend**: Empty app folder ready for User, Role, and custom Permission models.
+- **Backend**:
+  - Custom `User` model inheriting from `AbstractUser` with UUID primary key, unique normalized email, custom `UserManager`, `display_name`, and optional `phone_number`.
+  - Admin: Configured Django Admin using a custom `UserAdmin` subclass.
 
 ---
 

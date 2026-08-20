@@ -31,10 +31,19 @@ from apps.core.models import BaseModel
 ```
 
 ### Models & Services
-- Avoid placing heavy business logic inside Django views or serializers.
-- Define DB constraints and data integrity constraints inside models.
-- Implement mutations and complex state changes inside service files (`services.py`).
-- Implement complex queries inside selector files (`selectors.py`).
+- **Business Logic Boundaries**:
+  - Avoid placing business logic, validation, or write workflows inside Django views or serializers.
+  - Views and serializers should only handle HTTP validation, request parsing, and routing.
+- **Custom User Model Reference**:
+  - Always reference the User model using `settings.AUTH_USER_MODEL` in ForeignKey or ManyToMany relationships.
+  - In Python code, resolve the active model dynamically using `django.contrib.auth.get_user_model()`. Never import the custom `User` class directly from `apps.users.models`.
+- **Services (`services.py`)**:
+  - All write operations (mutations, creation, updates) must be implemented inside explicit service functions.
+  - Services that mutate related states (e.g. creating an organisation with its owner membership) must use `transaction.atomic` to ensure database consistency.
+  - Do not use Django signals for core business workflows; invoke services explicitly.
+- **Selectors (`selectors.py`)**:
+  - Implement read queries, reporting logic, and complex filters inside selector files.
+  - Selectors must enforce multi-tenant safety boundaries. They should accept the current user context and implicitly filter querysets by the user's active membership or granted outlet accesses.
 
 ---
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { PageHeader } from '@/components/navigation/PageHeader';
 import { StatCard } from '@/components/data-display/StatCard';
+import { checkHealth } from '@/api/client';
 import { DataTable, type ColumnDef } from '@/components/data-display/DataTable';
 import { StatusBadge, type StatusType } from '@/components/data-display/StatusBadge';
 import { 
@@ -39,6 +40,43 @@ interface Tank {
 }
 
 export const Dashboard: React.FC = () => {
+  // Backend connection status state
+  const [dbStatus, setDbStatus] = React.useState<'db-connected' | 'api-only' | 'unavailable' | 'loading'>('loading');
+
+  React.useEffect(() => {
+    let active = true;
+
+    const fetchStatus = async () => {
+      try {
+        const data = await checkHealth();
+        if (!active) return;
+        if (data.database === 'connected') {
+          setDbStatus('db-connected');
+        } else {
+          setDbStatus('api-only');
+        }
+      } catch {
+        if (!active) return;
+        setDbStatus('unavailable');
+      }
+    };
+
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 10000); // Check status every 10 seconds
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const statusConfig = {
+    loading: { label: 'Checking status...', color: '#94a3b8', bg: 'var(--bg-card)', dot: '#94a3b8' },
+    'db-connected': { label: 'Database connected', color: 'var(--color-success-text)', bg: 'var(--color-success-bg)', dot: '#10b981' },
+    'api-only': { label: 'API connected', color: 'var(--color-warning-text)', bg: 'var(--color-warning-bg)', dot: '#f59e0b' },
+    unavailable: { label: 'Service unavailable', color: 'var(--color-danger-text)', bg: 'var(--color-danger-bg)', dot: '#ef4444' },
+  }[dbStatus];
+
   // Format to Indian Currency
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -95,7 +133,39 @@ export const Dashboard: React.FC = () => {
       <PageHeader 
         title="Dashboard" 
         subtitle="Fuel station daily operations overview"
-        actions={<span className="demo-data-label">Demonstration Mode</span>}
+        actions={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+            <div 
+              className="dev-status-indicator" 
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '4px 10px',
+                borderRadius: '50px',
+                backgroundColor: statusConfig.bg,
+                color: statusConfig.color,
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                border: '1px solid currentColor',
+                opacity: 0.9,
+              }}
+            >
+              <span style={{ fontSize: '0.7rem', opacity: 0.8 }}>Dev Status:</span>
+              <span 
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: statusConfig.dot,
+                  display: 'inline-block'
+                }} 
+              />
+              <span>{statusConfig.label}</span>
+            </div>
+            <span className="demo-data-label">Demonstration Mode</span>
+          </div>
+        }
       />
 
       {/* Quick Actions Grid */}
@@ -170,7 +240,7 @@ export const Dashboard: React.FC = () => {
         />
         <StatCard 
           title="Open Shifts" 
-          value="3 / 4 Outlets" 
+          value="2 / 2 Outlets" 
           icon={Clock} 
           description="currently active"
         />
