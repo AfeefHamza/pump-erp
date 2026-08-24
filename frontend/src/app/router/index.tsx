@@ -12,6 +12,11 @@ import { UserManagement } from '@/features/administration/pages/UserManagement';
 import { RolesManagement } from '@/features/administration/pages/RolesManagement';
 import { PublicActivation } from '@/features/auth/pages/PublicActivation';
 import { OutletsManagement } from '@/features/settings/pages/OutletsManagement';
+import { FuelProducts } from '@/features/settings/pages/FuelProducts';
+import { ProductPrices } from '@/features/settings/pages/ProductPrices';
+import { ForecourtSetup } from '@/features/settings/pages/ForecourtSetup';
+import { TanksManagement } from '@/features/inventory/pages/TanksManagement';
+import { DispensersNozzlesManagement } from '@/features/inventory/pages/DispensersNozzlesManagement';
 
 
 export const router = createBrowserRouter([
@@ -136,11 +141,23 @@ export const router = createBrowserRouter([
       },
       {
         path: 'inventory/tanks',
-        element: <ComingSoonPage title="Tanks" />,
+        element: <TanksManagement />,
+      },
+      {
+        path: 'inventory/tanks/:tankId',
+        element: <TanksManagement />,
       },
       {
         path: 'inventory/dispensers-nozzles',
-        element: <ComingSoonPage title="Dispensers & Nozzles" />,
+        element: <DispensersNozzlesManagement />,
+      },
+      {
+        path: 'inventory/dispensers/:dispenserId',
+        element: <DispensersNozzlesManagement />,
+      },
+      {
+        path: 'inventory/nozzles/:nozzleId',
+        element: <DispensersNozzlesManagement />,
       },
       {
         path: 'inventory/lubricants',
@@ -233,6 +250,22 @@ export const router = createBrowserRouter([
       {
         path: 'settings/outlets/:outletId',
         element: <OutletsManagement />,
+      },
+      {
+        path: 'settings/products',
+        element: <FuelProducts />,
+      },
+      {
+        path: 'settings/products/:productId',
+        element: <FuelProducts />,
+      },
+      {
+        path: 'settings/product-prices',
+        element: <ProductPrices />,
+      },
+      {
+        path: 'settings/forecourt',
+        element: <ForecourtSetup />,
       },
       {
         path: 'help-support',

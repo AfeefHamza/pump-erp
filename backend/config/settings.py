@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'apps.core.apps.CoreConfig',
     'apps.organizations.apps.OrganizationsConfig',
     'apps.users.apps.UsersConfig',
+    'apps.forecourt.apps.ForecourtConfig',
 ]
 
 MIDDLEWARE = [

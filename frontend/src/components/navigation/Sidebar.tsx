@@ -25,6 +25,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
   const hasRoleView = usePermission('role.view');
   const hasSettingsView = usePermission('settings.view');
   const hasOutletView = usePermission('outlet.view');
+  const hasProductView = usePermission('fuel_product.view');
+  const hasPriceView = usePermission('product_price.view');
+  const hasTankView = usePermission('tank.view');
+  const hasDispenserView = usePermission('dispenser.view');
+  const hasNozzleView = usePermission('nozzle.view');
+  const hasForecourtView = hasTankView || hasDispenserView || hasNozzleView;
   const hasAdminAccess = hasUserView || hasRoleView;
 
   // Manage accordion section state
@@ -146,17 +152,52 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
                   {ItemIcon && <ItemIcon className="nav-item-icon" size={18} />}
                   {sidebarExpanded && <span>{item.name}</span>}
                 </div>
-                {item.path === '/app/settings' && sidebarExpanded && hasOutletView && (
-                  <div className="nav-section-items" style={{ paddingLeft: '2.5rem', marginTop: '0.25rem' }}>
-                    <div
-                      className={`nav-item ${location.pathname.startsWith('/app/settings/outlets') ? 'active' : ''}`}
-                      onClick={() => handleNavigate('/app/settings/outlets')}
-                      title="Outlets"
-                      style={{ fontSize: '0.9rem', height: '32px' }}
-                    >
-                      <Store size={14} className="nav-item-icon" />
-                      <span>Outlets</span>
-                    </div>
+                {item.path === '/app/settings' && sidebarExpanded && (
+                  <div className="nav-section-items" style={{ paddingLeft: '2.5rem', marginTop: '0.25rem', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    {hasOutletView && (
+                      <div
+                        className={`nav-item ${location.pathname.startsWith('/app/settings/outlets') ? 'active' : ''}`}
+                        onClick={() => handleNavigate('/app/settings/outlets')}
+                        title="Outlets"
+                        style={{ fontSize: '0.9rem', height: '32px' }}
+                      >
+                        <Store size={14} className="nav-item-icon" />
+                        <span>Outlets</span>
+                      </div>
+                    )}
+                    {hasProductView && (
+                      <div
+                        className={`nav-item ${location.pathname.startsWith('/app/settings/products') ? 'active' : ''}`}
+                        onClick={() => handleNavigate('/app/settings/products')}
+                        title="Products & Pricing"
+                        style={{ fontSize: '0.9rem', height: '32px' }}
+                      >
+                        <Fuel size={14} className="nav-item-icon" />
+                        <span>Products & Pricing</span>
+                      </div>
+                    )}
+                    {hasPriceView && (
+                      <div
+                        className={`nav-item ${location.pathname.startsWith('/app/settings/product-prices') ? 'active' : ''}`}
+                        onClick={() => handleNavigate('/app/settings/product-prices')}
+                        title="Product Prices"
+                        style={{ fontSize: '0.9rem', height: '32px' }}
+                      >
+                        <Fuel size={14} className="nav-item-icon" style={{ opacity: 0.7 }} />
+                        <span>Product Prices</span>
+                      </div>
+                    )}
+                    {hasForecourtView && (
+                      <div
+                        className={`nav-item ${location.pathname.startsWith('/app/settings/forecourt') ? 'active' : ''}`}
+                        onClick={() => handleNavigate('/app/settings/forecourt')}
+                        title="Forecourt Setup"
+                        style={{ fontSize: '0.9rem', height: '32px' }}
+                      >
+                        <Fuel size={14} className="nav-item-icon" />
+                        <span>Forecourt Setup</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </React.Fragment>

@@ -201,7 +201,12 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'financial_year.view', 'financial_year.update',
                 'user.view', 'user.add', 'user.update', 'user.suspend',
                 'role.view', 'role.create', 'role.update', 'role.delete',
-                'settings.view', 'settings.update'
+                'settings.view', 'settings.update',
+                'fuel_product.view', 'fuel_product.create', 'fuel_product.update', 'fuel_product.deactivate',
+                'product_price.view', 'product_price.update',
+                'tank.view', 'tank.create', 'tank.update', 'tank.deactivate',
+                'dispenser.view', 'dispenser.create', 'dispenser.update', 'dispenser.deactivate',
+                'nozzle.view', 'nozzle.create', 'nozzle.update', 'nozzle.deactivate',
             ]
         },
         {
@@ -213,7 +218,12 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'financial_year.view',
                 'user.view',
                 'role.view',
-                'settings.view'
+                'settings.view',
+                'fuel_product.view', 'fuel_product.create', 'fuel_product.update',
+                'product_price.view', 'product_price.update',
+                'tank.view', 'tank.create', 'tank.update',
+                'dispenser.view', 'dispenser.create', 'dispenser.update',
+                'nozzle.view', 'nozzle.create', 'nozzle.update',
             ]
         },
         {
@@ -223,7 +233,12 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'organisation.view',
                 'outlet.view',
                 'financial_year.view',
-                'settings.view'
+                'settings.view',
+                'fuel_product.view',
+                'product_price.view', 'product_price.update',
+                'tank.view',
+                'dispenser.view',
+                'nozzle.view',
             ]
         },
         {
@@ -231,7 +246,12 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
             'description': 'Operational view access.',
             'permissions': [
                 'organisation.view',
-                'outlet.view'
+                'outlet.view',
+                'fuel_product.view',
+                'product_price.view',
+                'tank.view',
+                'dispenser.view',
+                'nozzle.view',
             ]
         },
         {
@@ -240,7 +260,12 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
             'permissions': [
                 'organisation.view',
                 'outlet.view',
-                'financial_year.view'
+                'financial_year.view',
+                'fuel_product.view',
+                'product_price.view',
+                'tank.view',
+                'dispenser.view',
+                'nozzle.view',
             ]
         }
     ]

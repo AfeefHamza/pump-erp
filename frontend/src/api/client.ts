@@ -592,3 +592,320 @@ export async function submitPublicActivation(payload: { token: string; password?
   });
 }
 
+// ==========================================
+// FORECOURT SETUP MODULE TYPES & ENDPOINTS
+// ==========================================
+
+export interface FuelProduct {
+  id: string;
+  organisation: string;
+  code: string;
+  name: string;
+  short_name: string | null;
+  category: 'petrol' | 'diesel' | 'premium_petrol' | 'premium_diesel' | 'cng' | 'adblue' | 'other';
+  custom_category_name: string | null;
+  unit: 'litre' | 'kilogram';
+  display_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductPrice {
+  id: string;
+  organisation: string;
+  outlet: string;
+  product: string;
+  product_name: string;
+  product_code: string;
+  selling_price: string;
+  effective_from: string;
+  effective_to: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+}
+
+export interface CurrentPriceItem {
+  product_id: string;
+  product_name: string;
+  product_code: string;
+  selling_price: string | null;
+  effective_from: string | null;
+  previous_price: string | null;
+  price_id: string | null;
+}
+
+export interface Tank {
+  id: string;
+  organisation: string;
+  outlet: string;
+  product: string;
+  product_name: string;
+  product_code: string;
+  product_unit: string;
+  code: string;
+  name: string;
+  capacity: string;
+  safe_fill_capacity: string | null;
+  dead_stock_level: string | null;
+  low_stock_threshold: string | null;
+  manufacturer: string | null;
+  serial_number: string | null;
+  commissioned_on: string | null;
+  status: 'active' | 'inactive' | 'maintenance';
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Dispenser {
+  id: string;
+  organisation: string;
+  outlet: string;
+  code: string;
+  name: string;
+  manufacturer: string | null;
+  model_number: string | null;
+  serial_number: string | null;
+  commissioned_on: string | null;
+  status: 'active' | 'inactive' | 'maintenance';
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Nozzle {
+  id: string;
+  organisation: string;
+  outlet: string;
+  dispenser: string;
+  dispenser_name: string;
+  dispenser_code: string;
+  tank: string;
+  tank_name: string;
+  tank_code: string;
+  product_id: string;
+  product_name: string;
+  product_category: string;
+  code: string;
+  name: string;
+  nozzle_number: number | null;
+  status: 'active' | 'inactive' | 'maintenance';
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ForecourtTankItem {
+  id: string;
+  code: string;
+  name: string;
+  capacity: string;
+  safe_fill_capacity: string | null;
+  status: string;
+  product: {
+    id: string;
+    code: string;
+    name: string;
+    category: string;
+    unit: string;
+  };
+}
+
+export interface ForecourtNozzleItem {
+  id: string;
+  code: string;
+  name: string;
+  nozzle_number: number | null;
+  status: string;
+  notes: string | null;
+  tank: {
+    id: string;
+    code: string;
+    name: string;
+    product: {
+      id: string;
+      code: string;
+      name: string;
+      category: string;
+    };
+  };
+}
+
+export interface ForecourtDispenserItem {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+  manufacturer: string | null;
+  model_number: string | null;
+  serial_number: string | null;
+  nozzles: ForecourtNozzleItem[];
+}
+
+export interface ForecourtStructureResponse {
+  outlet_id: string;
+  outlet_name: string;
+  tanks: ForecourtTankItem[];
+  dispensers: ForecourtDispenserItem[];
+}
+
+/**
+ * Fuel Products APIs
+ */
+export async function fetchFuelProducts(orgId: string, params?: { search?: string; status?: string }): Promise<FuelProduct[]> {
+  let query = '';
+  if (params) {
+    const qParts: string[] = [];
+    if (params.search) qParts.push(`search=${encodeURIComponent(params.search)}`);
+    if (params.status) qParts.push(`status=${params.status}`);
+    if (qParts.length > 0) query = `?${qParts.join('&')}`;
+  }
+  return apiRequest<FuelProduct[]>(`/organisations/${orgId}/fuel-products/${query}`);
+}
+
+export async function fetchFuelProduct(orgId: string, productId: string): Promise<FuelProduct> {
+  return apiRequest<FuelProduct>(`/organisations/${orgId}/fuel-products/${productId}/`);
+}
+
+export async function createFuelProduct(orgId: string, payload: Partial<FuelProduct>): Promise<FuelProduct> {
+  return apiRequest<FuelProduct>(`/organisations/${orgId}/fuel-products/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateFuelProduct(orgId: string, productId: string, payload: Partial<FuelProduct>): Promise<FuelProduct> {
+  return apiRequest<FuelProduct>(`/organisations/${orgId}/fuel-products/${productId}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Product Prices APIs
+ */
+export async function fetchCurrentProductPrices(orgId: string, outletId: string): Promise<CurrentPriceItem[]> {
+  return apiRequest<CurrentPriceItem[]>(`/organisations/${orgId}/outlets/${outletId}/product-prices/`);
+}
+
+export async function setProductPrices(
+  orgId: string,
+  outletId: string,
+  payload: { effective_from?: string | null; prices: { product_id: string; selling_price: number | string }[] }
+): Promise<ProductPrice[]> {
+  return apiRequest<ProductPrice[]>(`/organisations/${orgId}/outlets/${outletId}/product-prices/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchProductPriceHistory(orgId: string, outletId: string, productId: string): Promise<ProductPrice[]> {
+  return apiRequest<ProductPrice[]>(`/organisations/${orgId}/outlets/${outletId}/product-prices/${productId}/history/`);
+}
+
+/**
+ * Tanks APIs
+ */
+export async function fetchTanks(orgId: string, outletId: string, params?: { search?: string; status?: string }): Promise<Tank[]> {
+  let query = '';
+  if (params) {
+    const qParts: string[] = [];
+    if (params.search) qParts.push(`search=${encodeURIComponent(params.search)}`);
+    if (params.status) qParts.push(`status=${params.status}`);
+    if (qParts.length > 0) query = `?${qParts.join('&')}`;
+  }
+  return apiRequest<Tank[]>(`/organisations/${orgId}/outlets/${outletId}/tanks/${query}`);
+}
+
+export async function fetchTank(orgId: string, outletId: string, tankId: string): Promise<Tank> {
+  return apiRequest<Tank>(`/organisations/${orgId}/outlets/${outletId}/tanks/${tankId}/`);
+}
+
+export async function createTank(orgId: string, outletId: string, payload: Partial<Tank>): Promise<Tank> {
+  return apiRequest<Tank>(`/organisations/${orgId}/outlets/${outletId}/tanks/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateTank(orgId: string, outletId: string, tankId: string, payload: Partial<Tank>): Promise<Tank> {
+  return apiRequest<Tank>(`/organisations/${orgId}/outlets/${outletId}/tanks/${tankId}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Dispensers APIs
+ */
+export async function fetchDispensers(orgId: string, outletId: string, params?: { search?: string; status?: string }): Promise<Dispenser[]> {
+  let query = '';
+  if (params) {
+    const qParts: string[] = [];
+    if (params.search) qParts.push(`search=${encodeURIComponent(params.search)}`);
+    if (params.status) qParts.push(`status=${params.status}`);
+    if (qParts.length > 0) query = `?${qParts.join('&')}`;
+  }
+  return apiRequest<Dispenser[]>(`/organisations/${orgId}/outlets/${outletId}/dispensers/${query}`);
+}
+
+export async function fetchDispenser(orgId: string, outletId: string, dispenserId: string): Promise<Dispenser> {
+  return apiRequest<Dispenser>(`/organisations/${orgId}/outlets/${outletId}/dispensers/${dispenserId}/`);
+}
+
+export async function createDispenser(orgId: string, outletId: string, payload: Partial<Dispenser>): Promise<Dispenser> {
+  return apiRequest<Dispenser>(`/organisations/${orgId}/outlets/${outletId}/dispensers/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateDispenser(orgId: string, outletId: string, dispenserId: string, payload: Partial<Dispenser>): Promise<Dispenser> {
+  return apiRequest<Dispenser>(`/organisations/${orgId}/outlets/${outletId}/dispensers/${dispenserId}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Nozzles APIs
+ */
+export async function fetchNozzles(orgId: string, outletId: string, params?: { search?: string; status?: string }): Promise<Nozzle[]> {
+  let query = '';
+  if (params) {
+    const qParts: string[] = [];
+    if (params.search) qParts.push(`search=${encodeURIComponent(params.search)}`);
+    if (params.status) qParts.push(`status=${params.status}`);
+    if (qParts.length > 0) query = `?${qParts.join('&')}`;
+  }
+  return apiRequest<Nozzle[]>(`/organisations/${orgId}/outlets/${outletId}/nozzles/${query}`);
+}
+
+export async function fetchNozzle(orgId: string, outletId: string, nozzleId: string): Promise<Nozzle> {
+  return apiRequest<Nozzle>(`/organisations/${orgId}/outlets/${outletId}/nozzles/${nozzleId}/`);
+}
+
+export async function createNozzle(orgId: string, outletId: string, payload: Partial<Nozzle>): Promise<Nozzle> {
+  return apiRequest<Nozzle>(`/organisations/${orgId}/outlets/${outletId}/nozzles/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateNozzle(orgId: string, outletId: string, nozzleId: string, payload: Partial<Nozzle>): Promise<Nozzle> {
+  return apiRequest<Nozzle>(`/organisations/${orgId}/outlets/${outletId}/nozzles/${nozzleId}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Forecourt complete structure
+ */
+export async function fetchForecourtStructure(orgId: string, outletId: string): Promise<ForecourtStructureResponse> {
+  return apiRequest<ForecourtStructureResponse>(`/organisations/${orgId}/outlets/${outletId}/forecourt/`);
+}
+
+
