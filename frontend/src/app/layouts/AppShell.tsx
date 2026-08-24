@@ -1,10 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from '@/components/navigation/Sidebar';
 import { TopBar } from '@/components/navigation/TopBar';
+import { useAppDispatch, useAppSelector } from '@/app/store';
+import { loadPermissions, clearPermissions } from '@/features/auth/permissionsSlice';
 
 export const AppShell: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const dispatch = useAppDispatch();
+  const selectedOrgId = useAppSelector((state) => state.ui.selectedOrganizationId);
+
+  useEffect(() => {
+    if (selectedOrgId) {
+      dispatch(clearPermissions());
+      dispatch(loadPermissions(selectedOrgId));
+    } else {
+      dispatch(clearPermissions());
+    }
+  }, [selectedOrgId, dispatch]);
 
   return (
     <div className="app-shell">
@@ -29,3 +42,4 @@ export const AppShell: React.FC = () => {
     </div>
   );
 };
+

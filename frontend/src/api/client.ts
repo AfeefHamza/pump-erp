@@ -322,6 +322,20 @@ export async function createOutlet(orgId: string, payload: Partial<OutletDetail>
 }
 
 /**
+ * Update an outlet.
+ */
+export async function updateOutlet(
+  orgId: string,
+  outletId: string,
+  payload: Partial<OutletDetail>
+): Promise<OutletDetail> {
+  return apiRequest<OutletDetail>(`/organisations/${orgId}/outlets/${outletId}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
  * Fetch a single outlet.
  */
 export async function fetchOutlet(orgId: string, outletId: string): Promise<OutletDetail> {
@@ -351,3 +365,230 @@ export async function completeOnboarding(orgId: string, payload: OnboardingCompl
 export async function fetchFinancialYears(orgId: string): Promise<FinancialYearResponse[]> {
   return apiRequest<FinancialYearResponse[]>(`/organisations/${orgId}/financial-years/`);
 }
+
+export interface PermissionResponse {
+  id: string;
+  code: string;
+  name: string;
+  module: string;
+  description: string | null;
+  is_active: boolean;
+}
+
+export interface RoleResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  is_system: boolean;
+  is_active: boolean;
+  permissions: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserMiniResponse {
+  id: string;
+  email: string;
+  display_name: string;
+  phone_number: string | null;
+}
+
+export interface MembershipResponse {
+  id: string;
+  user: UserMiniResponse;
+  membership_type: 'owner' | 'administrator' | 'member';
+  status: 'invited' | 'active' | 'suspended';
+  joined_at: string | null;
+  roles: RoleResponse[];
+  outlets: OutletDetail[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ActivationResponse {
+  id: string;
+  email: string;
+  display_name: string;
+  phone_number: string | null;
+  membership_type: 'administrator' | 'member';
+  status: 'pending' | 'activated' | 'revoked' | 'expired';
+  expires_at: string;
+  activated_at: string | null;
+  created_at: string;
+  roles: RoleResponse[];
+  outlets: OutletDetail[];
+  invited_by: UserMiniResponse;
+}
+
+export interface PublicActivationResponse {
+  organisation_name: string;
+  email: string;
+  display_name: string;
+  phone_number: string | null;
+  membership_type: 'administrator' | 'member';
+  status: string;
+}
+
+/**
+ * Fetch PermissionDefinitions grouped by module.
+ */
+export async function fetchPermissions(orgId: string): Promise<Record<string, PermissionResponse[]>> {
+  return apiRequest<Record<string, PermissionResponse[]>>(`/organisations/${orgId}/permissions/`);
+}
+
+/**
+ * Fetch the authenticated user's effective permissions for selected organisation.
+ */
+export async function fetchEffectivePermissions(orgId: string): Promise<{ permissions: string[] }> {
+  return apiRequest<{ permissions: string[] }>(`/organisations/${orgId}/effective-permissions/`);
+}
+
+/**
+ * Fetch all roles.
+ */
+export async function fetchRoles(orgId: string): Promise<RoleResponse[]> {
+  return apiRequest<RoleResponse[]>(`/organisations/${orgId}/roles/`);
+}
+
+/**
+ * Create a custom role.
+ */
+export async function createRole(orgId: string, payload: Partial<RoleResponse>): Promise<RoleResponse> {
+  return apiRequest<RoleResponse>(`/organisations/${orgId}/roles/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Update a custom role.
+ */
+export async function updateRole(orgId: string, roleId: string, payload: Partial<RoleResponse>): Promise<RoleResponse> {
+  return apiRequest<RoleResponse>(`/organisations/${orgId}/roles/${roleId}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Delete a custom role.
+ */
+export async function deleteRole(orgId: string, roleId: string): Promise<void> {
+  return apiRequest<void>(`/organisations/${orgId}/roles/${roleId}/`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Fetch memberships.
+ */
+export async function fetchMemberships(orgId: string, params?: { status?: string }): Promise<MembershipResponse[]> {
+  const query = params?.status ? `?status=${params.status}` : '';
+  return apiRequest<MembershipResponse[]>(`/organisations/${orgId}/memberships/${query}`);
+}
+
+/**
+ * Fetch a single membership.
+ */
+export async function fetchMembership(orgId: string, membershipId: string): Promise<MembershipResponse> {
+  return apiRequest<MembershipResponse>(`/organisations/${orgId}/memberships/${membershipId}/`);
+}
+
+/**
+ * Update membership access.
+ */
+export async function updateMembershipAccess(
+  orgId: string,
+  membershipId: string,
+  payload: { roles: string[]; outlets: string[] }
+): Promise<MembershipResponse> {
+  return apiRequest<MembershipResponse>(`/organisations/${orgId}/memberships/${membershipId}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Suspend a membership.
+ */
+export async function suspendMembership(orgId: string, membershipId: string): Promise<MembershipResponse> {
+  return apiRequest<MembershipResponse>(`/organisations/${orgId}/memberships/${membershipId}/suspend-reactivate/`, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'suspend' }),
+  });
+}
+
+/**
+ * Reactivate a membership.
+ */
+export async function reactivateMembership(orgId: string, membershipId: string): Promise<MembershipResponse> {
+  return apiRequest<MembershipResponse>(`/organisations/${orgId}/memberships/${membershipId}/suspend-reactivate/`, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'reactivate' }),
+  });
+}
+
+/**
+ * Fetch activations.
+ */
+export async function fetchActivations(orgId: string): Promise<ActivationResponse[]> {
+  return apiRequest<ActivationResponse[]>(`/organisations/${orgId}/activations/`);
+}
+
+/**
+ * Add a new user.
+ */
+export async function addUser(
+  orgId: string,
+  payload: {
+    email: string;
+    display_name: string;
+    phone_number?: string;
+    membership_type: 'administrator' | 'member';
+    roles: string[];
+    outlets: string[];
+  }
+): Promise<ActivationResponse> {
+  return apiRequest<ActivationResponse>(`/organisations/${orgId}/activations/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Resend or replace activation.
+ */
+export async function resendActivation(orgId: string, activationId: string): Promise<ActivationResponse> {
+  return apiRequest<ActivationResponse>(`/organisations/${orgId}/activations/${activationId}/action/`, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'resend' }),
+  });
+}
+
+/**
+ * Revoke activation.
+ */
+export async function revokeActivation(orgId: string, activationId: string): Promise<ActivationResponse> {
+  return apiRequest<ActivationResponse>(`/organisations/${orgId}/activations/${activationId}/action/`, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'revoke' }),
+  });
+}
+
+/**
+ * Inspect public activation token.
+ */
+export async function inspectPublicActivation(token: string): Promise<PublicActivationResponse> {
+  return apiRequest<PublicActivationResponse>(`/organisations/activations/public/inspect/?token=${token}`);
+}
+
+/**
+ * Submit public activation.
+ */
+export async function submitPublicActivation(payload: { token: string; password?: string }): Promise<UserResponse> {
+  return apiRequest<UserResponse>(`/organisations/activations/public/submit/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+

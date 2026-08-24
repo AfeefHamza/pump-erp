@@ -384,3 +384,271 @@ class OnboardingAndFinancialYearTests(APITestCase):
         self.client.force_authenticate(user=self.admin)
         response = self.client.post(url, payload, format='json')
         self.assertEqual(response.status_code, 200)
+
+
+import hashlib
+from django.utils import timezone
+from .models import (
+    PermissionDefinition, Role, RolePermission, MembershipRole,
+    OrganisationUserActivation, ActivationRole, ActivationOutletAccess
+)
+from .permissions import has_permission, require_permission, permissions_for_membership
+from .services import (
+    add_user, activate_user, resend_or_replace_activation,
+    revoke_activation, update_membership_access, suspend_membership,
+    reactivate_membership
+)
+
+class PermissionsAndActivationsTests(APITestCase):
+    def setUp(self):
+        self.owner_user = User.objects.create_user(email="owner1@example.com", password="password")
+        self.org1 = create_organisation_with_owner(name="Org 1", code="ORG1", owner_user=self.owner_user)
+        
+        self.org2 = create_organisation_with_owner(
+            name="Org 2",
+            code="ORG2",
+            owner_user=User.objects.create_user(email="owner2@example.com", password="password")
+        )
+
+        self.admin_user = User.objects.create_user(email="admin1@example.com", password="password")
+        self.admin_membership = add_organisation_member(
+            self.org1, self.admin_user, OrganisationMembership.TYPE_ADMINISTRATOR, OrganisationMembership.STATUS_ACTIVE
+        )
+        
+        self.member_user = User.objects.create_user(email="member1@example.com", password="password")
+        self.member_membership = add_organisation_member(
+            self.org1, self.member_user, OrganisationMembership.TYPE_MEMBER, OrganisationMembership.STATUS_ACTIVE
+        )
+
+        self.outlet1 = create_outlet(self.org1, name="Outlet 1", code="OUT1")
+        self.outlet2 = create_outlet(self.org2, name="Outlet 2", code="OUT2")
+
+        # Map admin to Administrator system role
+        self.admin_role = Role.objects.get(organisation=self.org1, name="Administrator")
+        MembershipRole.objects.create(membership=self.admin_membership, role=self.admin_role)
+
+        # Map member to Manager system role
+        self.manager_role = Role.objects.get(organisation=self.org1, name="Manager")
+        MembershipRole.objects.create(membership=self.member_membership, role=self.manager_role)
+
+    def test_cross_organisation_role_or_outlet_assignment_rejection(self):
+        role_org2 = Role.objects.create(organisation=self.org2, name="Role Org 2")
+        with self.assertRaises(ValidationError):
+            add_user(
+                organisation=self.org1,
+                email="newbie@example.com",
+                display_name="Newbie",
+                phone_number=None,
+                membership_type="member",
+                role_ids=[role_org2.id],
+                outlet_ids=[],
+                invited_by=self.owner_user
+            )
+
+        with self.assertRaises(ValidationError):
+            add_user(
+                organisation=self.org1,
+                email="newbie@example.com",
+                display_name="Newbie",
+                phone_number=None,
+                membership_type="member",
+                role_ids=[],
+                outlet_ids=[self.outlet2.id],
+                invited_by=self.owner_user
+            )
+
+    def test_backend_permission_enforcement(self):
+        self.assertTrue(has_permission(self.member_user, self.org1, "user.view"))
+        self.assertFalse(has_permission(self.member_user, self.org1, "user.add"))
+        self.assertTrue(has_permission(self.admin_user, self.org1, "user.add"))
+        self.assertTrue(has_permission(self.owner_user, self.org1, "settings.update"))
+
+    def test_last_owner_protection(self):
+        owner_membership = OrganisationMembership.objects.get(organisation=self.org1, user=self.owner_user)
+        with self.assertRaises(ValidationError):
+            suspend_membership(owner_membership, actor=self.owner_user)
+
+        other_owner = User.objects.create_user(email="owner_other@example.com", password="password")
+        other_membership = add_organisation_member(
+            self.org1, other_owner, OrganisationMembership.TYPE_OWNER, OrganisationMembership.STATUS_ACTIVE
+        )
+
+        suspend_membership(owner_membership, actor=other_owner)
+        self.assertEqual(owner_membership.status, OrganisationMembership.STATUS_SUSPENDED)
+
+    def test_administrator_cannot_modify_owner(self):
+        owner_membership = OrganisationMembership.objects.get(organisation=self.org1, user=self.owner_user)
+        
+        with self.assertRaises(ValidationError):
+            suspend_membership(owner_membership, actor=self.admin_user)
+
+        with self.assertRaises(ValidationError):
+            update_membership_access(owner_membership, role_ids=[], outlet_ids=[], actor=self.admin_user)
+
+    def test_activation_token_hash_expiry_and_single_use(self):
+        act, token = add_user(
+            organisation=self.org1,
+            email="act_test@example.com",
+            display_name="Act Test",
+            phone_number=None,
+            membership_type="member",
+            role_ids=[],
+            outlet_ids=[],
+            invited_by=self.owner_user
+        )
+
+        self.assertNotEqual(act.token_hash, token)
+        self.assertEqual(act.token_hash, hashlib.sha256(token.encode('utf-8')).hexdigest())
+        self.assertTrue((act.expires_at - timezone.now()).days >= 6)
+
+        user, membership = activate_user(token=token, password="NewSecurePassword123!")
+        self.assertEqual(membership.status, OrganisationMembership.STATUS_ACTIVE)
+
+        with self.assertRaises(ValidationError):
+            activate_user(token=token, password="NewSecurePassword123!")
+
+    def test_new_user_activation(self):
+        act, token = add_user(
+            organisation=self.org1,
+            email="new_activation@example.com",
+            display_name="New Activator",
+            phone_number=None,
+            membership_type="member",
+            role_ids=[self.manager_role.id],
+            outlet_ids=[self.outlet1.id],
+            invited_by=self.owner_user
+        )
+
+        user, membership = activate_user(token=token, password="PasswordExtraSafe123!")
+        self.assertEqual(user.email, "new_activation@example.com")
+        self.assertEqual(membership.membership_type, "member")
+        self.assertTrue(membership.membership_roles.filter(role=self.manager_role).exists())
+        self.assertTrue(membership.outlet_accesses.filter(outlet=self.outlet1).exists())
+
+    def test_existing_user_activation(self):
+        existing_user = User.objects.create_user(email="existing_user@example.com", password="password")
+
+        act, token = add_user(
+            organisation=self.org1,
+            email="existing_user@example.com",
+            display_name="Existing User",
+            phone_number=None,
+            membership_type="administrator",
+            role_ids=[self.admin_role.id],
+            outlet_ids=[],
+            invited_by=self.owner_user
+        )
+
+        with self.assertRaises(ValidationError):
+            activate_user(token=token)
+
+        wrong_user = User.objects.create_user(email="wrong@example.com", password="password")
+        with self.assertRaises(ValidationError):
+            activate_user(token=token, logged_in_user=wrong_user)
+
+        user, membership = activate_user(token=token, logged_in_user=existing_user)
+        self.assertEqual(user, existing_user)
+        self.assertEqual(membership.membership_type, "administrator")
+        self.assertTrue(membership.membership_roles.filter(role=self.admin_role).exists())
+
+    def test_suspended_membership_loses_access(self):
+        self.assertTrue(has_permission(self.member_user, self.org1, "user.view"))
+
+        suspend_membership(self.member_membership, actor=self.owner_user)
+        
+        self.assertFalse(has_permission(self.member_user, self.org1, "user.view"))
+        self.assertEqual(len(permissions_for_membership(self.member_membership)), 0)
+
+    def test_outlet_list_permissions(self):
+        # Admin has outlet.view and should see outlets
+        self.client.force_authenticate(user=self.admin_user)
+        url = reverse('outlet_list_create', kwargs={'org_id': self.org1.id})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+
+        # Non-member should get 403 (due to granular permission check executing first)
+        unrelated_user = User.objects.create_user(email="unrelated@example.com", password="password")
+        self.client.force_authenticate(user=unrelated_user)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_outlet_create_permissions_and_uniqueness(self):
+        # Admin has outlet.create
+        self.client.force_authenticate(user=self.admin_user)
+        url = reverse('outlet_list_create', kwargs={'org_id': self.org1.id})
+        payload = {
+            "name": "New Outlet Admin",
+            "code": "OUT-NEW-ADM",
+            "outlet_type": "fuel_station"
+        }
+        response = self.client.post(url, payload, format='json')
+        self.assertEqual(response.status_code, 201)
+
+        # Unique constraint check: creating with duplicate code should return 400
+        response = self.client.post(url, payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("code", response.data)
+
+        # Member (Manager role has outlet.create, check seed data: Manager has organisation.view, outlet.view, outlet.create, outlet.update)
+        # So member_user can also create
+        self.client.force_authenticate(user=self.member_user)
+        payload = {
+            "name": "New Outlet Member",
+            "code": "OUT-NEW-MEM",
+            "outlet_type": "fuel_station"
+        }
+        response = self.client.post(url, payload, format='json')
+        self.assertEqual(response.status_code, 201)
+
+    def test_outlet_update_permissions(self):
+        url = reverse('outlet_detail', kwargs={'org_id': self.org1.id, 'outlet_id': self.outlet1.id})
+        
+        # Member (has outlet.update, must be granted outlet access first)
+        grant_outlet_access(self.member_membership, self.outlet1)
+        self.client.force_authenticate(user=self.member_user)
+        payload = {
+            "name": "Updated Outlet Name",
+            "address_line_1": "Updated Address"
+        }
+        response = self.client.patch(url, payload, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['name'], "Updated Outlet Name")
+
+        # Code uniqueness on update: update to duplicate code
+        other_outlet = create_outlet(self.org1, name="Other Outlet", code="OUT-OTHER")
+        payload = {
+            "code": "OUT-OTHER"
+        }
+        response = self.client.patch(url, payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("code", response.data)
+
+    def test_outlet_deactivate_permissions_and_last_active_protection(self):
+        url = reverse('outlet_detail', kwargs={'org_id': self.org1.id, 'outlet_id': self.outlet1.id})
+        
+        # Admin has outlet.deactivate.
+        self.client.force_authenticate(user=self.admin_user)
+        # Attempting to deactivate when it's the only active outlet in organization should fail
+        payload = {
+            "status": "inactive"
+        }
+        response = self.client.patch(url, payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("detail", response.data)
+        self.assertEqual(response.data['detail'], "Cannot deactivate the only active outlet in the organisation.")
+
+        # Let's create a second active outlet so we can deactivate the first one
+        other_outlet = create_outlet(self.org1, name="Outlet 2 Active", code="OUT2-ACT")
+        response = self.client.patch(url, payload, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['status'], "inactive")
+
+        # Now try to reactivate
+        payload = {
+            "status": "active"
+        }
+        response = self.client.patch(url, payload, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['status'], "active")
+
+

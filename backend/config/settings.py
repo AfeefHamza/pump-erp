@@ -144,6 +144,8 @@ CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=False)
 EMAIL_BACKEND = env('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@pump-erp.com')
 PASSWORD_RESET_URL = env('PASSWORD_RESET_URL', default='http://localhost:5173/reset-password')
+FRONTEND_ACTIVATION_URL = env('FRONTEND_ACTIVATION_URL', default='http://localhost:5173/activate-account')
+
 
 # Django REST Framework Settings
 REST_FRAMEWORK = {

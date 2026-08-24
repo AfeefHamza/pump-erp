@@ -1,6 +1,7 @@
 import { configureStore, createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import { useDispatch, useSelector, type TypedUseSelectorHook } from 'react-redux';
 import authReducer from '@/features/auth/authSlice';
+import permissionsReducer from '@/features/auth/permissionsSlice';
 
 // Define the global UI context state shape
 export interface UIState {
@@ -44,8 +45,10 @@ export const store = configureStore({
   reducer: {
     ui: uiReducer,
     auth: authReducer,
+    permissions: permissionsReducer,
   },
 });
+
 
 // Infer root state and dispatch types
 export type RootState = ReturnType<typeof store.getState>;

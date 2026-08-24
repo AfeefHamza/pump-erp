@@ -4,7 +4,9 @@ import { useAppDispatch, useAppSelector, toggleSidebar } from '@/app/store';
 import { OrganisationSelector } from './OrganisationSelector';
 import { OutletSelector } from './OutletSelector';
 import { navigationMenu, standaloneItems, dashboardItem } from '@/lib/navigationConfig';
-import { ChevronLeft, ChevronRight, ChevronDown, Fuel } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Fuel, Store } from 'lucide-react';
+import { usePermission } from '@/features/auth/hooks/usePermission';
+
 
 interface SidebarProps {
   mobileOpen: boolean;
@@ -18,8 +20,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
   const navigate = useNavigate();
   const DashboardIcon = dashboardItem.icon;
 
+  // Permissions for standalone items
+  const hasUserView = usePermission('user.view');
+  const hasRoleView = usePermission('role.view');
+  const hasSettingsView = usePermission('settings.view');
+  const hasOutletView = usePermission('outlet.view');
+  const hasAdminAccess = hasUserView || hasRoleView;
+
   // Manage accordion section state
   const [expandedSection, setExpandedSection] = useState<string | null>('OPERATIONS');
+
 
   const handleToggleSection = (sectionTitle: string) => {
     setExpandedSection(prev => prev === sectionTitle ? null : sectionTitle);
@@ -115,18 +125,41 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
           <div style={{ height: '1px', backgroundColor: 'var(--border-sidebar)', margin: 'var(--space-sm) 0' }} />
           
           {standaloneItems.map((item) => {
-            const isActive = location.pathname === item.path;
+            // Check permissions for Administration and Settings
+            if (item.path === '/app/administration') {
+              if (!hasAdminAccess) return null;
+            }
+            if (item.path === '/app/settings') {
+              if (!hasSettingsView && !hasOutletView) return null;
+            }
+
+            const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
             const ItemIcon = item.icon;
+
             return (
-              <div
-                key={item.path}
-                className={`nav-item ${isActive ? 'active' : ''}`}
-                onClick={() => handleNavigate(item.path)}
-                title={item.name}
-              >
-                {ItemIcon && <ItemIcon className="nav-item-icon" size={18} />}
-                {sidebarExpanded && <span>{item.name}</span>}
-              </div>
+              <React.Fragment key={item.path}>
+                <div
+                  className={`nav-item ${isActive ? 'active' : ''}`}
+                  onClick={() => handleNavigate(item.path)}
+                  title={item.name}
+                >
+                  {ItemIcon && <ItemIcon className="nav-item-icon" size={18} />}
+                  {sidebarExpanded && <span>{item.name}</span>}
+                </div>
+                {item.path === '/app/settings' && sidebarExpanded && hasOutletView && (
+                  <div className="nav-section-items" style={{ paddingLeft: '2.5rem', marginTop: '0.25rem' }}>
+                    <div
+                      className={`nav-item ${location.pathname.startsWith('/app/settings/outlets') ? 'active' : ''}`}
+                      onClick={() => handleNavigate('/app/settings/outlets')}
+                      title="Outlets"
+                      style={{ fontSize: '0.9rem', height: '32px' }}
+                    >
+                      <Store size={14} className="nav-item-icon" />
+                      <span>Outlets</span>
+                    </div>
+                  </div>
+                )}
+              </React.Fragment>
             );
           })}
         </nav>
@@ -134,3 +167,4 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
     </>
   );
 };
+

@@ -3,6 +3,8 @@ import uuid
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.db.models.functions import Lower
+
 
 class Organisation(models.Model):
     STATUS_TRIAL = 'trial'
@@ -329,3 +331,220 @@ class FinancialYear(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.start_date} to {self.end_date})"
+
+
+class PermissionDefinition(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(max_length=100, unique=True, db_index=True)
+    name = models.CharField(max_length=255)
+    module = models.CharField(max_length=100)
+    description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.module} - {self.name} ({self.code})"
+
+
+class Role(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(
+        Organisation,
+        on_delete=models.CASCADE,
+        related_name='roles'
+    )
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    is_system = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    permissions = models.ManyToManyField(
+        PermissionDefinition,
+        through='RolePermission',
+        related_name='roles'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                Lower('name'),
+                'organisation',
+                name='unique_organisation_role_name_case_insensitive'
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.organisation.name})"
+
+
+class RolePermission(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    role = models.ForeignKey(Role, on_delete=models.CASCADE, related_name='role_permissions')
+    permission = models.ForeignKey(PermissionDefinition, on_delete=models.CASCADE, related_name='role_permissions')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['role', 'permission'],
+                name='unique_role_permission'
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        if hasattr(self, 'permission') and not self.permission.is_active:
+            raise ValidationError("A role cannot contain an inactive permission.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class MembershipRole(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    membership = models.ForeignKey(
+        OrganisationMembership,
+        on_delete=models.CASCADE,
+        related_name='membership_roles'
+    )
+    role = models.ForeignKey(
+        Role,
+        on_delete=models.CASCADE,
+        related_name='membership_roles'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['membership', 'role'],
+                name='unique_membership_role'
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        if hasattr(self, 'membership') and hasattr(self, 'role'):
+            if self.membership.organisation_id != self.role.organisation_id:
+                raise ValidationError("Role and membership must belong to the same organisation.")
+            if not self.role.is_active:
+                raise ValidationError("Inactive roles cannot be assigned.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class OrganisationUserActivation(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_ACTIVATED = 'activated'
+    STATUS_REVOKED = 'revoked'
+    STATUS_EXPIRED = 'expired'
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_ACTIVATED, 'Activated'),
+        (STATUS_REVOKED, 'Revoked'),
+        (STATUS_EXPIRED, 'Expired'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(
+        Organisation,
+        on_delete=models.CASCADE,
+        related_name='user_activations'
+    )
+    email = models.EmailField()
+    display_name = models.CharField(max_length=255)
+    phone_number = models.CharField(max_length=20, blank=True, null=True)
+    membership_type = models.CharField(
+        max_length=20,
+        choices=[
+            ('administrator', 'Administrator'),
+            ('member', 'Member'),
+        ]
+    )
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='sent_activations'
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING
+    )
+    token_hash = models.CharField(max_length=64, db_index=True)
+    expires_at = models.DateTimeField()
+    activated_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    roles = models.ManyToManyField(Role, through='ActivationRole', related_name='activations')
+    outlets = models.ManyToManyField(Outlet, through='ActivationOutletAccess', related_name='activations')
+
+    def clean(self):
+        super().clean()
+        if self.email:
+            self.email = self.email.strip().lower()
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
+
+class ActivationRole(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    activation = models.ForeignKey(OrganisationUserActivation, on_delete=models.CASCADE, related_name='activation_roles')
+    role = models.ForeignKey(Role, on_delete=models.CASCADE, related_name='activation_roles')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['activation', 'role'],
+                name='unique_activation_role'
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        if hasattr(self, 'activation') and hasattr(self, 'role'):
+            if self.activation.organisation_id != self.role.organisation_id:
+                raise ValidationError("Role and activation must belong to the same organisation.")
+            if not self.role.is_active:
+                raise ValidationError("Inactive roles cannot be assigned.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class ActivationOutletAccess(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    activation = models.ForeignKey(OrganisationUserActivation, on_delete=models.CASCADE, related_name='activation_outlet_accesses')
+    outlet = models.ForeignKey(Outlet, on_delete=models.CASCADE, related_name='activation_outlet_accesses')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['activation', 'outlet'],
+                name='unique_activation_outlet_access'
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        if hasattr(self, 'activation') and hasattr(self, 'outlet'):
+            if self.activation.organisation_id != self.outlet.organisation_id:
+                raise ValidationError("Outlet and activation must belong to the same organisation.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+

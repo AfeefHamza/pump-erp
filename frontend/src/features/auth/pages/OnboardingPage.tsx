@@ -109,7 +109,7 @@ const OnboardingInner: React.FC<OnboardingInnerProps> = ({ currentOrg }) => {
         const apiErrors: Record<string, string> = {};
         const errorList: string[] = [];
         
-        const parseErrors = (obj: any, prefix = '') => {
+        const parseErrors = (obj: unknown, prefix = '') => {
           if (obj && typeof obj === 'object') {
             if (Array.isArray(obj)) {
               if (obj.length > 0) {

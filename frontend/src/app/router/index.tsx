@@ -8,6 +8,11 @@ import { SignupPage } from '@/features/auth/pages/SignupPage';
 import { ForgotPasswordPage } from '@/features/auth/pages/ForgotPasswordPage';
 import { ResetPasswordPage } from '@/features/auth/pages/ResetPasswordPage';
 import { OnboardingPage } from '@/features/auth/pages/OnboardingPage';
+import { UserManagement } from '@/features/administration/pages/UserManagement';
+import { RolesManagement } from '@/features/administration/pages/RolesManagement';
+import { PublicActivation } from '@/features/auth/pages/PublicActivation';
+import { OutletsManagement } from '@/features/settings/pages/OutletsManagement';
+
 
 export const router = createBrowserRouter([
   // Guest Routes (Guarded: redirect to app if already authenticated)
@@ -43,6 +48,12 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
   },
+  {
+    path: '/activate-account',
+    element: <PublicActivation />,
+  },
+
+
 
   // Protected Onboarding Route
   {
@@ -192,11 +203,36 @@ export const router = createBrowserRouter([
       },
       {
         path: 'administration',
-        element: <ComingSoonPage title="Administration" />,
+        element: <Navigate to="/app/administration/users" replace />,
       },
       {
+        path: 'administration/users',
+        element: <UserManagement />,
+      },
+      {
+        path: 'administration/users/:membershipId',
+        element: <UserManagement />,
+      },
+      {
+        path: 'administration/roles',
+        element: <RolesManagement />,
+      },
+      {
+        path: 'administration/roles/:roleId',
+        element: <RolesManagement />,
+      },
+
+      {
         path: 'settings',
-        element: <ComingSoonPage title="Settings" />,
+        element: <Navigate to="/app/settings/outlets" replace />,
+      },
+      {
+        path: 'settings/outlets',
+        element: <OutletsManagement />,
+      },
+      {
+        path: 'settings/outlets/:outletId',
+        element: <OutletsManagement />,
       },
       {
         path: 'help-support',
