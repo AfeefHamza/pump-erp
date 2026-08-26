@@ -4,7 +4,7 @@ import { useAppDispatch, useAppSelector, toggleSidebar } from '@/app/store';
 import { OrganisationSelector } from './OrganisationSelector';
 import { OutletSelector } from './OutletSelector';
 import { navigationMenu, standaloneItems, dashboardItem } from '@/lib/navigationConfig';
-import { ChevronLeft, ChevronRight, ChevronDown, Fuel, Store } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Fuel, Store, Clock, Database, Sliders, ClipboardCheck } from 'lucide-react';
 import { usePermission } from '@/features/auth/hooks/usePermission';
 
 
@@ -32,6 +32,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
   const hasNozzleView = usePermission('nozzle.view');
   const hasForecourtView = hasTankView || hasDispenserView || hasNozzleView;
   const hasAdminAccess = hasUserView || hasRoleView;
+  const hasShiftDefView = usePermission('shift_definition.view');
+  const hasOpeningBalanceView = usePermission('opening_balance.view');
+  const hasDipCalibrationView = usePermission('dip_calibration.view');
+
 
   // Manage accordion section state
   const [expandedSection, setExpandedSection] = useState<string | null>('OPERATIONS');
@@ -198,6 +202,49 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
                         <span>Forecourt Setup</span>
                       </div>
                     )}
+                    {hasShiftDefView && (
+                      <div
+                        className={`nav-item ${location.pathname.startsWith('/app/settings/shifts') ? 'active' : ''}`}
+                        onClick={() => handleNavigate('/app/settings/shifts')}
+                        title="Shift Definitions"
+                        style={{ fontSize: '0.9rem', height: '32px' }}
+                      >
+                        <Clock size={14} className="nav-item-icon" />
+                        <span>Shift Definitions</span>
+                      </div>
+                    )}
+                    {hasOpeningBalanceView && (
+                      <div
+                        className={`nav-item ${location.pathname.startsWith('/app/settings/opening-balances') ? 'active' : ''}`}
+                        onClick={() => handleNavigate('/app/settings/opening-balances')}
+                        title="Opening Balances"
+                        style={{ fontSize: '0.9rem', height: '32px' }}
+                      >
+                        <Sliders size={14} className="nav-item-icon" />
+                        <span>Opening Balances</span>
+                      </div>
+                    )}
+                    {hasDipCalibrationView && (
+                      <div
+                        className={`nav-item ${location.pathname.startsWith('/app/settings/dip-calibrations') ? 'active' : ''}`}
+                        onClick={() => handleNavigate('/app/settings/dip-calibrations')}
+                        title="Dip Calibrations"
+                        style={{ fontSize: '0.9rem', height: '32px' }}
+                      >
+                        <Database size={14} className="nav-item-icon" />
+                        <span>Dip Calibrations</span>
+                      </div>
+                    )}
+                    <div
+                      className={`nav-item ${location.pathname.startsWith('/app/settings/outlet-readiness') ? 'active' : ''}`}
+                      onClick={() => handleNavigate('/app/settings/outlet-readiness')}
+                      title="Outlet Readiness"
+                      style={{ fontSize: '0.9rem', height: '32px' }}
+                    >
+                      <ClipboardCheck size={14} className="nav-item-icon" />
+                      <span>Outlet Readiness</span>
+                    </div>
+
                   </div>
                 )}
               </React.Fragment>

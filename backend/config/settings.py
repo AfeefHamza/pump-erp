@@ -44,6 +44,9 @@ INSTALLED_APPS = [
     'apps.organizations.apps.OrganizationsConfig',
     'apps.users.apps.UsersConfig',
     'apps.forecourt.apps.ForecourtConfig',
+    'apps.employees.apps.EmployeesConfig',
+    'apps.shifts.apps.ShiftsConfig',
+    'apps.operations.apps.OperationsConfig',
 ]
 
 MIDDLEWARE = [
@@ -157,4 +160,8 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
     ],
 }
+
+# Media Storage Settings
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 

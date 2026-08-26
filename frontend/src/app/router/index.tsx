@@ -17,6 +17,13 @@ import { ProductPrices } from '@/features/settings/pages/ProductPrices';
 import { ForecourtSetup } from '@/features/settings/pages/ForecourtSetup';
 import { TanksManagement } from '@/features/inventory/pages/TanksManagement';
 import { DispensersNozzlesManagement } from '@/features/inventory/pages/DispensersNozzlesManagement';
+import { EmployeesManagement } from '@/features/employees/pages/EmployeesManagement';
+import { DesignationsManagement } from '@/features/employees/pages/DesignationsManagement';
+import { ShiftAssignments } from '@/features/employees/pages/ShiftAssignments';
+import { ShiftDefinitions } from '@/features/settings/pages/ShiftDefinitions';
+import { OpeningBalances } from '@/features/settings/pages/OpeningBalances';
+import { OutletReadiness } from '@/features/settings/pages/OutletReadiness';
+import { DipCalibrations } from '@/features/settings/pages/DipCalibrations';
 
 
 export const router = createBrowserRouter([
@@ -194,12 +201,28 @@ export const router = createBrowserRouter([
       },
       // Employees
       {
+        path: 'employees',
+        element: <EmployeesManagement />,
+      },
+      {
+        path: 'employees/:employeeId',
+        element: <EmployeesManagement />,
+      },
+      {
+        path: 'employees/designations',
+        element: <DesignationsManagement />,
+      },
+      {
         path: 'employees/list',
-        element: <ComingSoonPage title="Employees" />,
+        element: <Navigate to="/app/employees" replace />,
       },
       {
         path: 'employees/shift-assignments',
-        element: <ComingSoonPage title="Shift Assignments" />,
+        element: <Navigate to="/app/operations/shift-assignments" replace />,
+      },
+      {
+        path: 'operations/shift-assignments',
+        element: <ShiftAssignments />,
       },
       {
         path: 'employees/cash-collections',
@@ -209,6 +232,7 @@ export const router = createBrowserRouter([
         path: 'employees/accounts',
         element: <ComingSoonPage title="Employee Accounts" />,
       },
+
       // Standalone
       {
         path: 'reports',
@@ -267,6 +291,31 @@ export const router = createBrowserRouter([
         path: 'settings/forecourt',
         element: <ForecourtSetup />,
       },
+      {
+        path: 'settings/shifts',
+        element: <ShiftDefinitions />,
+      },
+      {
+        path: 'settings/opening-balances',
+        element: <OpeningBalances />,
+      },
+      {
+        path: 'settings/outlet-readiness',
+        element: <OutletReadiness />,
+      },
+      {
+        path: 'settings/dip-calibrations',
+        element: <DipCalibrations />,
+      },
+      {
+        path: 'settings/dip-calibrations/:chartId',
+        element: <DipCalibrations />,
+      },
+      {
+        path: 'inventory/tanks/:tankId/calibration',
+        element: <DipCalibrations />,
+      },
+
       {
         path: 'help-support',
         element: <ComingSoonPage title="Help & Support" />,

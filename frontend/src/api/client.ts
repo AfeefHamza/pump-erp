@@ -655,6 +655,7 @@ export interface Tank {
   commissioned_on: string | null;
   status: 'active' | 'inactive' | 'maintenance';
   notes: string | null;
+  acknowledged_manual_dip?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -906,6 +907,436 @@ export async function updateNozzle(orgId: string, outletId: string, nozzleId: st
  */
 export async function fetchForecourtStructure(orgId: string, outletId: string): Promise<ForecourtStructureResponse> {
   return apiRequest<ForecourtStructureResponse>(`/organisations/${orgId}/outlets/${outletId}/forecourt/`);
+}
+
+/**
+ * Milestone 8 Types
+ */
+export interface EmployeeDesignation {
+  id: string;
+  organisation: string;
+  code: string;
+  name: string;
+  description: string | null;
+  requires_nozzle_assignment: boolean;
+  is_system: boolean;
+  is_active: boolean;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmployeeOutletAssignment {
+  id: string;
+  employee: string;
+  outlet_id: string;
+  outlet_details?: any;
+  is_primary: boolean;
+  effective_from: string | null;
+  effective_to: string | null;
+  created_at: string;
+}
+
+export interface Employee {
+  id: string;
+  organisation: string;
+  employee_code: string;
+  display_name: string;
+  phone_number: string | null;
+  alternate_phone_number: string | null;
+  address: string | null;
+  date_of_birth: string | null;
+  joined_on: string | null;
+  left_on: string | null;
+  designation_id: string;
+  designation_details: EmployeeDesignation;
+  status: 'active' | 'inactive';
+  notes: string | null;
+  outlet_assignments?: EmployeeOutletAssignment[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShiftDefinition {
+  id: string;
+  organisation: string;
+  outlet: string;
+  code: string;
+  name: string;
+  starts_at: string;
+  ends_at: string;
+  crosses_midnight: boolean;
+  display_order: number;
+  is_active: boolean;
+  notes: string | null;
+  duration_display?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShiftNozzleAssignment {
+  id: string;
+  nozzle_id: string;
+  nozzle_details?: any;
+  created_at: string;
+}
+
+export interface ShiftStaffAssignment {
+  id: string;
+  roster: string;
+  employee_id: string;
+  employee_details: Employee;
+  duty_designation_id: string;
+  duty_designation_details: EmployeeDesignation;
+  is_primary_cashier: boolean;
+  nozzle_assignments: ShiftNozzleAssignment[];
+  notes: string | null;
+  created_at: string;
+}
+
+export interface ShiftRoster {
+  id: string;
+  organisation: string;
+  outlet: string;
+  shift_definition_id: string;
+  shift_definition_details: ShiftDefinition;
+  business_date: string;
+  is_locked: boolean;
+  notes: string | null;
+  staff_assignments: ShiftStaffAssignment[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RosterWorkspaceResponse {
+  exists: boolean;
+  roster?: ShiftRoster;
+  available_staff?: Employee[];
+  nozzles: Array<{
+    id: string;
+    code: string;
+    name: string;
+    dispenser_id: string;
+    dispenser_name: string;
+    product_name: string;
+    tank_code: string;
+    assigned_to_staff_id: string | null;
+    is_assigned: boolean;
+  }>;
+}
+
+export interface DipCalibrationPoint {
+  id: string;
+  chart: string;
+  height_mm: string;
+  volume_litres: string;
+  sequence: number;
+}
+
+export interface DipCalibrationChart {
+  id: string;
+  organisation: string;
+  name: string;
+  description: string | null;
+  nominal_capacity: string;
+  tank_diameter: string | null;
+  tank_length: string | null;
+  manufacturer_or_source: string | null;
+  source_filename: string | null;
+  source_file: string | null;
+  source_checksum: string | null;
+  original_height_unit: 'millimetre' | 'centimetre' | 'inch';
+  normalized_height_unit: string;
+  volume_unit: string;
+  lookup_mode: 'exact_only' | 'linear_interpolation';
+  status: 'draft' | 'active' | 'archived';
+  points?: DipCalibrationPoint[];
+  point_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TankCalibrationAssignment {
+  id: string;
+  organisation: string;
+  outlet: string;
+  tank_id: string;
+  tank_details?: any;
+  chart_id: string;
+  chart_details?: DipCalibrationChart;
+  effective_from: string;
+  effective_to: string | null;
+  assigned_by?: string;
+  created_at: string;
+}
+
+export interface NozzleOpeningBalance {
+  id: string;
+  batch: string;
+  nozzle_id: string;
+  nozzle_details?: any;
+  totalizer_reading: string;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface TankOpeningBalance {
+  id: string;
+  batch: string;
+  tank_id: string;
+  tank_details?: any;
+  book_quantity: string;
+  physical_quantity: string;
+  raw_dip_value: string | null;
+  raw_dip_unit: string | null;
+  calibration_assignment?: string;
+  density: string | null;
+  conversion_method: 'calibration_exact' | 'calibration_interpolated' | 'manual_quantity';
+  manual_quantity_reason: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface OpeningBalanceBatch {
+  id: string;
+  organisation: string;
+  outlet: string;
+  effective_at: string;
+  status: 'preparing' | 'confirmed';
+  notes: string | null;
+  nozzle_balances: NozzleOpeningBalance[];
+  tank_balances: TankOpeningBalance[];
+  created_by?: string;
+  confirmed_by?: string;
+  created_at: string;
+  confirmed_at?: string;
+}
+
+export interface OpeningBalanceBatchResponse {
+  exists: boolean;
+  batch?: OpeningBalanceBatch;
+}
+
+export interface OutletReadinessCheck {
+  ready: boolean;
+  checks: Array<{
+    id: string;
+    name: string;
+    passed: boolean;
+    details: string;
+  }>;
+  missing_requirements: string[];
+  warnings: string[];
+  resolution_links: Record<string, string>;
+}
+
+/**
+ * Employees APIs
+ */
+export async function fetchEmployees(orgId: string, params?: { search?: string; status?: string; designation?: string; outlet?: string }): Promise<Employee[]> {
+  let query = '';
+  if (params) {
+    const qParts: string[] = [];
+    if (params.search) qParts.push(`search=${encodeURIComponent(params.search)}`);
+    if (params.status) qParts.push(`status=${params.status}`);
+    if (params.designation) qParts.push(`designation=${params.designation}`);
+    if (params.outlet) qParts.push(`outlet=${params.outlet}`);
+    if (qParts.length > 0) query = `?${qParts.join('&')}`;
+  }
+  return apiRequest<Employee[]>(`/organisations/${orgId}/employees/${query}`);
+}
+
+export async function fetchEmployee(orgId: string, employeeId: string): Promise<Employee> {
+  return apiRequest<Employee>(`/organisations/${orgId}/employees/${employeeId}/`);
+}
+
+export async function createEmployee(orgId: string, payload: any): Promise<Employee> {
+  return apiRequest<Employee>(`/organisations/${orgId}/employees/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateEmployee(orgId: string, employeeId: string, payload: any): Promise<Employee> {
+  return apiRequest<Employee>(`/organisations/${orgId}/employees/${employeeId}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Designations APIs
+ */
+export async function fetchDesignations(orgId: string, params?: { search?: string }): Promise<EmployeeDesignation[]> {
+  let query = '';
+  if (params && params.search) {
+    query = `?search=${encodeURIComponent(params.search)}`;
+  }
+  return apiRequest<EmployeeDesignation[]>(`/organisations/${orgId}/designations/${query}`);
+}
+
+export async function fetchDesignation(orgId: string, designationId: string): Promise<EmployeeDesignation> {
+  return apiRequest<EmployeeDesignation>(`/organisations/${orgId}/designations/${designationId}/`);
+}
+
+export async function createDesignation(orgId: string, payload: any): Promise<EmployeeDesignation> {
+  return apiRequest<EmployeeDesignation>(`/organisations/${orgId}/designations/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateDesignation(orgId: string, designationId: string, payload: any): Promise<EmployeeDesignation> {
+  return apiRequest<EmployeeDesignation>(`/organisations/${orgId}/designations/${designationId}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteDesignation(orgId: string, designationId: string): Promise<void> {
+  return apiRequest<void>(`/organisations/${orgId}/designations/${designationId}/`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Shift Setup APIs
+ */
+export interface FetchShiftsResponse {
+  shifts: ShiftDefinition[];
+  warnings: any[];
+}
+
+export async function fetchShiftDefinitions(orgId: string, outletId: string, params?: { status?: string }): Promise<FetchShiftsResponse> {
+  let query = '';
+  if (params && params.status) {
+    query = `?status=${params.status}`;
+  }
+  return apiRequest<FetchShiftsResponse>(`/organisations/${orgId}/outlets/${outletId}/shifts/${query}`);
+}
+
+export async function fetchShiftDefinition(orgId: string, outletId: string, shiftId: string): Promise<ShiftDefinition> {
+  return apiRequest<ShiftDefinition>(`/organisations/${orgId}/outlets/${outletId}/shifts/${shiftId}/`);
+}
+
+export async function createShiftDefinition(orgId: string, outletId: string, payload: any): Promise<FetchShiftsResponse> {
+  return apiRequest<FetchShiftsResponse>(`/organisations/${orgId}/outlets/${outletId}/shifts/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateShiftDefinition(orgId: string, outletId: string, shiftId: string, payload: any): Promise<FetchShiftsResponse> {
+  return apiRequest<FetchShiftsResponse>(`/organisations/${orgId}/outlets/${outletId}/shifts/${shiftId}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Shift Assignments & Rosters APIs
+ */
+export async function fetchRosterWorkspace(orgId: string, outletId: string, date: string, shiftDefId: string): Promise<RosterWorkspaceResponse> {
+  return apiRequest<RosterWorkspaceResponse>(`/organisations/${orgId}/outlets/${outletId}/rosters/?business_date=${date}&shift_definition_id=${shiftDefId}`);
+}
+
+export async function saveRosterWorkspace(orgId: string, outletId: string, payload: any): Promise<RosterWorkspaceResponse> {
+  return apiRequest<RosterWorkspaceResponse>(`/organisations/${orgId}/outlets/${outletId}/rosters/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Opening Balances APIs
+ */
+export async function fetchOpeningBalanceBatch(orgId: string, outletId: string): Promise<OpeningBalanceBatchResponse> {
+  return apiRequest<OpeningBalanceBatchResponse>(`/organisations/${orgId}/outlets/${outletId}/opening-balances/batches/`);
+}
+
+export async function createOpeningBalanceBatch(orgId: string, outletId: string, payload: any): Promise<OpeningBalanceBatch> {
+  return apiRequest<OpeningBalanceBatch>(`/organisations/${orgId}/outlets/${outletId}/opening-balances/batches/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function saveOpeningBalanceEntries(orgId: string, outletId: string, payload: any): Promise<OpeningBalanceBatch> {
+  return apiRequest<OpeningBalanceBatch>(`/organisations/${orgId}/outlets/${outletId}/opening-balances/entries/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchOpeningBalancePreview(orgId: string, outletId: string, batchId: string): Promise<any> {
+  return apiRequest<any>(`/organisations/${orgId}/outlets/${outletId}/opening-balances/batches/${batchId}/preview/`);
+}
+
+export async function confirmOpeningBalanceBatch(orgId: string, outletId: string, batchId: string): Promise<OpeningBalanceBatch> {
+  return apiRequest<OpeningBalanceBatch>(`/organisations/${orgId}/outlets/${outletId}/opening-balances/batches/${batchId}/confirm/`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+/**
+ * Dip Calibrations APIs
+ */
+export async function uploadCalibrationPreview(orgId: string, file: File): Promise<any> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiRequest<any>(`/organisations/${orgId}/calibrations/preview/`, {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function importCalibrationChart(orgId: string, payload: FormData): Promise<DipCalibrationChart> {
+  return apiRequest<DipCalibrationChart>(`/organisations/${orgId}/calibrations/import/`, {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function fetchCalibrationCharts(orgId: string, params?: { status?: string }): Promise<DipCalibrationChart[]> {
+  let query = '';
+  if (params && params.status) {
+    query = `?status=${params.status}`;
+  }
+  return apiRequest<DipCalibrationChart[]>(`/organisations/${orgId}/calibrations/charts/${query}`);
+}
+
+export async function fetchCalibrationChart(orgId: string, chartId: string): Promise<DipCalibrationChart> {
+  return apiRequest<DipCalibrationChart>(`/organisations/${orgId}/calibrations/charts/${chartId}/`);
+}
+
+export async function activateCalibrationChart(orgId: string, chartId: string): Promise<DipCalibrationChart> {
+  return apiRequest<DipCalibrationChart>(`/organisations/${orgId}/calibrations/charts/${chartId}/`, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'activate' }),
+  });
+}
+
+export async function assignCalibrationChartToTank(orgId: string, outletId: string, payload: any): Promise<TankCalibrationAssignment> {
+  return apiRequest<TankCalibrationAssignment>(`/organisations/${orgId}/outlets/${outletId}/tanks/calibrations/assign/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchTankCalibrationHistory(orgId: string, outletId: string, tankId: string): Promise<TankCalibrationAssignment[]> {
+  return apiRequest<TankCalibrationAssignment[]>(`/organisations/${orgId}/outlets/${outletId}/tanks/${tankId}/calibrations/history/`);
+}
+
+export async function previewDipConversion(orgId: string, outletId: string, params: { tank_id: string; height: number; unit: string }): Promise<any> {
+  return apiRequest<any>(`/organisations/${orgId}/outlets/${outletId}/tanks/convert-dip/?tank_id=${params.tank_id}&height=${params.height}&unit=${params.unit}`);
+}
+
+/**
+ * Outlet Readiness APIs
+ */
+export async function fetchOutletReadiness(orgId: string, outletId: string): Promise<OutletReadinessCheck> {
+  return apiRequest<OutletReadinessCheck>(`/organisations/${orgId}/outlets/${outletId}/readiness/`);
 }
 
 

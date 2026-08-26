@@ -294,6 +294,7 @@ class TankListCreateView(APIView):
             if Tank.objects.filter(outlet=outlet, code__iexact=code).exists():
                 return Response({'code': ["A tank with this code already exists at this outlet."]}, status=status.HTTP_400_BAD_REQUEST)
 
+            serializer.validated_data.pop('product', None)
             try:
                 tank = create_tank(
                     organisation=membership.organisation,
@@ -530,6 +531,8 @@ class NozzleListCreateView(APIView):
             if Nozzle.objects.filter(outlet=outlet, code__iexact=code).exists():
                 return Response({'code': ["A nozzle with this code already exists at this outlet."]}, status=status.HTTP_400_BAD_REQUEST)
 
+            serializer.validated_data.pop('dispenser', None)
+            serializer.validated_data.pop('tank', None)
             try:
                 nozzle = create_nozzle(
                     organisation=membership.organisation,

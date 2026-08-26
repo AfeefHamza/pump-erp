@@ -194,6 +194,7 @@ class Tank(models.Model):
         default=STATUS_ACTIVE
     )
     notes = models.TextField(blank=True, null=True)
+    acknowledged_manual_dip = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
