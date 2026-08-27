@@ -213,7 +213,11 @@ export const ShiftDefinitions: React.FC = () => {
   if (!selectedOrgId || !selectedOutletId) {
     return (
       <div className="management-page">
-        <PageHeader title="Shift Definitions" subtitle="Define and configure operational shifts" />
+        <PageHeader 
+          title="Shift Definitions" 
+          subtitle="Define and configure operational shifts" 
+          backLink={{ to: '/app/settings', label: 'Back to Settings' }}
+        />
         <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
           <AlertCircle size={40} className="text-muted" style={{ margin: '0 auto 1rem' }} />
           <p className="text-muted">Please select an organisation and an outlet in the sidebar to configure shifts.</p>
@@ -236,6 +240,7 @@ export const ShiftDefinitions: React.FC = () => {
       <PageHeader 
         title="Shift Definitions" 
         subtitle="Manage daily shifts, overnight settings and timings for this outlet"
+        backLink={{ to: '/app/settings', label: 'Back to Settings' }}
         actions={
           <PermissionGuard permission="shift_definition.create">
             <button className="btn btn-primary" onClick={openAddDrawer} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

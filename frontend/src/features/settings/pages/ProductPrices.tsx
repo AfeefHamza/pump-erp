@@ -10,6 +10,7 @@ import {
   ApiError
 } from '@/api/client';
 import { RefreshCw, History, DollarSign, Calendar, TrendingUp, TrendingDown, ClipboardCopy, X } from 'lucide-react';
+import { PageHeader } from '@/components/navigation/PageHeader';
 
 export const ProductPrices: React.FC = () => {
   const selectedOrgId = useAppSelector((state) => state.ui.selectedOrganizationId);
@@ -242,17 +243,13 @@ export const ProductPrices: React.FC = () => {
 
   return (
     <div className="management-page" style={{ minHeight: 'calc(100vh - var(--topbar-height) - var(--space-xl))' }}>
-      <div className="management-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <div>
-          <h1 className="h2" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <DollarSign style={{ color: 'var(--color-accent)' }} size={28} />
-            <span>Product Pricing</span>
-          </h1>
-          <p className="text-muted">Set and monitor fuel product selling rates and pricing history logs</p>
-        </div>
-        {canUpdate && (
-          <button
-            className="btn btn-primary"
+      <PageHeader
+        title="Product Pricing"
+        subtitle="Set and monitor fuel product selling rates and pricing history logs"
+        backLink={{ to: '/app/settings', label: 'Back to Settings' }}
+        actions={canUpdate && (
+          <button 
+            className="btn btn-primary" 
             style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
             onClick={handleOpenBulk}
           >
@@ -260,7 +257,7 @@ export const ProductPrices: React.FC = () => {
             <span>Set New Prices</span>
           </button>
         )}
-      </div>
+      />
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '3rem' }}>

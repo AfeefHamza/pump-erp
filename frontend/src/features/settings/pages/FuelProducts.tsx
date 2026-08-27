@@ -10,6 +10,7 @@ import {
   ApiError
 } from '@/api/client';
 import { Search, Plus, Ban, CheckCircle, RefreshCw, X, Edit2, Fuel } from 'lucide-react';
+import { PageHeader } from '@/components/navigation/PageHeader';
 
 export const FuelProducts: React.FC = () => {
   const { productId } = useParams();
@@ -262,17 +263,13 @@ export const FuelProducts: React.FC = () => {
 
   return (
     <div className="management-page" style={{ position: 'relative', minHeight: 'calc(100vh - var(--topbar-height) - var(--space-xl))' }}>
-      <div className="management-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <div>
-          <h1 className="h2" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Fuel style={{ color: 'var(--color-accent)' }} size={28} />
-            <span>Fuel Products</span>
-          </h1>
-          <p className="text-muted">Configure active fuel types and operational products in the organisation</p>
-        </div>
-        {canCreate && (
-          <button
-            className="btn btn-primary"
+      <PageHeader
+        title="Fuel Products"
+        subtitle="Configure active fuel types and operational products in the organisation"
+        backLink={{ to: '/app/settings', label: 'Back to Settings' }}
+        actions={canCreate && (
+          <button 
+            className="btn btn-primary" 
             style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
             onClick={openAddDrawer}
           >
@@ -280,7 +277,7 @@ export const FuelProducts: React.FC = () => {
             <span>Add Product</span>
           </button>
         )}
-      </div>
+      />
 
       {/* Filters Bar */}
       <div className="filters-bar" style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>

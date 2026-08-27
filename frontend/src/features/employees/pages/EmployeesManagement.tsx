@@ -266,7 +266,11 @@ export const EmployeesManagement: React.FC = () => {
   if (!selectedOrgId) {
     return (
       <div className="management-page">
-        <PageHeader title="Employees" subtitle="Manage operational workers" />
+        <PageHeader 
+          title="Employees" 
+          subtitle="Manage operational workers" 
+          backLink={{ to: '/app/settings', label: 'Back to Settings' }}
+        />
         <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
           <AlertCircle size={40} className="text-muted" style={{ margin: '0 auto 1rem' }} />
           <p className="text-muted">Please select an organisation to view the Employee Master list.</p>
@@ -289,9 +293,10 @@ export const EmployeesManagement: React.FC = () => {
       <PageHeader 
         title="Employee Master" 
         subtitle="Manage and configure operational pump attendants, cashiers and supervisors"
+        backLink={{ to: '/app/settings', label: 'Back to Settings' }}
         actions={
           <div style={{ display: 'flex', gap: '0.75rem' }}>
-            <button className="btn btn-secondary" onClick={() => navigate('/app/employees/designations')} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button className="btn btn-secondary" onClick={() => navigate('/app/settings/designations')} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <Briefcase size={18} />
               <span>Designations</span>
             </button>

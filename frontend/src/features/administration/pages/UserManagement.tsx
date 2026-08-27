@@ -19,6 +19,7 @@ import {
   type OutletDetail
 } from '@/api/client';
 import { Search, UserPlus, ShieldAlert, Ban, CheckCircle, RefreshCw, X, Edit2 } from 'lucide-react';
+import { PageHeader } from '@/components/navigation/PageHeader';
 
 export const UserManagement: React.FC = () => {
   const { membershipId } = useParams();
@@ -250,14 +251,24 @@ export const UserManagement: React.FC = () => {
     return matchesSearch && matchesStatus;
   });
 
+  const canView = usePermission('user.view');
+
+  if (!canView) {
+    return (
+      <div className="card" style={{ textAlign: 'center', padding: '4rem', margin: '2rem' }}>
+        <h2 className="h3">Permission Denied</h2>
+        <p className="text-muted">You do not have permission to view user management settings.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="management-page">
-      <div className="management-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <div>
-          <h1 className="h2">User Management</h1>
-          <p className="text-muted">Manage memberships, system permissions, activations and outlet accessibility.</p>
-        </div>
-        {canAdd && (
+      <PageHeader 
+        title="User Management" 
+        subtitle="Manage memberships, system permissions, activations and outlet accessibility."
+        backLink={{ to: '/app/settings', label: 'Back to Settings' }}
+        actions={canAdd && (
           <button 
             className="btn btn-primary" 
             style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
@@ -267,7 +278,7 @@ export const UserManagement: React.FC = () => {
             <span>Add User</span>
           </button>
         )}
-      </div>
+      />
 
       {/* Filters Bar */}
       <div className="filters-bar" style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>

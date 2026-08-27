@@ -5,11 +5,28 @@ import {
   fetchRosterWorkspace,
   saveRosterWorkspace,
   fetchShiftDefinitions,
+  fetchDesignations,
   type ShiftDefinition,
-  type RosterWorkspaceResponse
+  type RosterWorkspaceResponse,
+  type EmployeeDesignation
 } from '@/api/client';
 import { PageHeader } from '@/components/navigation/PageHeader';
-import { Calendar, UserPlus, Trash2, AlertTriangle, AlertCircle, RefreshCw, Layers, ShieldCheck } from 'lucide-react';
+import {
+  Calendar,
+  UserPlus,
+  Trash2,
+  AlertTriangle,
+  AlertCircle,
+  RefreshCw,
+  Layers,
+  ShieldCheck,
+  Edit2,
+  Plus,
+  X,
+  Check,
+  Save,
+  RotateCcw
+} from 'lucide-react';
 
 export const ShiftAssignments: React.FC = () => {
   const selectedOrgId = useAppSelector((state) => state.ui.selectedOrganizationId);
@@ -21,8 +38,10 @@ export const ShiftAssignments: React.FC = () => {
   const [businessDate, setBusinessDate] = useState(new Date().toISOString().substring(0, 10));
   
   const [workspace, setWorkspace] = useState<RosterWorkspaceResponse | null>(null);
+  const [designations, setDesignations] = useState<EmployeeDesignation[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // Local editing states (in-progress roster modifications)
   const [localAssignments, setLocalAssignments] = useState<Array<{
@@ -37,14 +56,26 @@ export const ShiftAssignments: React.FC = () => {
 
   const [notes, setNotes] = useState('');
 
-  // Selected Employee to add form
-  const [addEmployeeId, setAddEmployeeId] = useState('');
-  const [addDesignationId, setAddDesignationId] = useState('');
-  const [addPrimaryCashier, setAddPrimaryCashier] = useState(false);
+  // Side Drawer States
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null); // null means "Assign Employee", truthy means "Edit"
+  const [drawerEmployeeId, setDrawerEmployeeId] = useState('');
+  const [drawerDesignationId, setDrawerDesignationId] = useState('');
+  const [drawerPrimaryCashier, setDrawerPrimaryCashier] = useState(false);
+  const [drawerNozzleIds, setDrawerNozzleIds] = useState<string[]>([]);
+  const [drawerNotes, setDrawerNotes] = useState('');
 
   // Permissions
   const canView = usePermission('shift_roster.view');
-  const canConfigure = usePermission('shift_roster.create') || usePermission('shift_roster.update');
+  const canCreate = usePermission('shift_roster.create');
+  const canUpdate = usePermission('shift_roster.update');
+
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(null);
+    }, 4000);
+  };
 
   const loadShifts = useCallback(async () => {
     if (!selectedOrgId || !selectedOutletId) return;
@@ -59,9 +90,20 @@ export const ShiftAssignments: React.FC = () => {
     }
   }, [selectedOrgId, selectedOutletId]);
 
+  const loadDesignations = useCallback(async () => {
+    if (!selectedOrgId) return;
+    try {
+      const data = await fetchDesignations(selectedOrgId);
+      setDesignations(data || []);
+    } catch (err) {
+      console.error('Failed to load designations:', err);
+    }
+  }, [selectedOrgId]);
+
   useEffect(() => {
     loadShifts();
-  }, [loadShifts]);
+    loadDesignations();
+  }, [loadShifts, loadDesignations]);
 
   const loadWorkspace = useCallback(async () => {
     if (!selectedOrgId || !selectedOutletId || !selectedShiftId || !businessDate) return;
@@ -86,8 +128,9 @@ export const ShiftAssignments: React.FC = () => {
       } else {
         setLocalAssignments([]);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load roster workspace:', err);
+      showToast(err.message || 'Failed to load roster workspace.', 'error');
     } finally {
       setLoading(false);
     }
@@ -97,76 +140,65 @@ export const ShiftAssignments: React.FC = () => {
     loadWorkspace();
   }, [loadWorkspace]);
 
+  // Helper to compare current local changes with database state
+  const isModified = () => {
+    if (!workspace || !workspace.exists) return false;
+    
+    const savedNotes = workspace.roster?.notes || '';
+    if (notes.trim() !== savedNotes.trim()) return true;
+
+    const savedStaff = workspace.roster?.staff_assignments || [];
+    if (localAssignments.length !== savedStaff.length) return true;
+
+    for (const local of localAssignments) {
+      const saved = savedStaff.find(s => s.employee_id === local.employee_id);
+      if (!saved) return true;
+      if (saved.duty_designation_id !== local.duty_designation_id) return true;
+      if (saved.is_primary_cashier !== local.is_primary_cashier) return true;
+      if ((saved.notes || '') !== (local.notes || '')) return true;
+
+      const savedNozzles = saved.nozzle_assignments.map(na => na.nozzle_id);
+      if (local.nozzle_ids.length !== savedNozzles.length) return true;
+      const allMatch = local.nozzle_ids.every(id => savedNozzles.includes(id));
+      if (!allMatch) return true;
+    }
+
+    return false;
+  };
+
   // Actions
-  const handleAddStaff = () => {
-    if (!workspace || !addEmployeeId || !addDesignationId) return;
+  const handleCreateRoster = async () => {
+    if (!selectedOrgId || !selectedOutletId || !selectedShiftId || !businessDate) return;
+    setActionLoading(true);
 
-    // Verify employee not already added
-    if (localAssignments.some((a) => a.employee_id === addEmployeeId)) {
-      alert('Employee is already assigned to this roster.');
-      return;
-    }
+    const payload = {
+      business_date: businessDate,
+      shift_definition_id: selectedShiftId,
+      notes: '',
+      assignments: []
+    };
 
-    const availableStaff = workspace.available_staff || [];
-    // If roster exists, we can extract from it or fetch from workspace
-    let employeeObj = availableStaff.find(e => e.id === addEmployeeId);
-    if (!employeeObj && workspace.roster) {
-      // Find inside existing staff assignments
-      const existing = workspace.roster.staff_assignments.find(sa => sa.employee_id === addEmployeeId);
-      employeeObj = existing?.employee_details;
-    }
-
-    if (!employeeObj) return;
-
-    const designationObj = employeeObj.designation_details; // default designation
-
-    setLocalAssignments((prev) => [
-      ...prev,
-      {
-        employee_id: addEmployeeId,
-        display_name: employeeObj!.display_name,
-        duty_designation_id: addDesignationId,
-        duty_designation_name: designationObj.name,
-        is_primary_cashier: addPrimaryCashier,
-        nozzle_ids: [],
-        notes: '',
+    try {
+      const response = await saveRosterWorkspace(selectedOrgId, selectedOutletId, payload);
+      setWorkspace(response);
+      setNotes('');
+      setLocalAssignments([]);
+      showToast('Roster planning initialized successfully!', 'success');
+    } catch (err: any) {
+      console.error(err);
+      let errMsg = 'Failed to create roster.';
+      if (err.data && typeof err.data === 'object') {
+        const data = err.data as Record<string, any>;
+        errMsg = Object.entries(data)
+          .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}`)
+          .join('; ');
+      } else if (err.message) {
+        errMsg = err.message;
       }
-    ]);
-
-    // Reset inputs
-    setAddEmployeeId('');
-    setAddPrimaryCashier(false);
-  };
-
-  const handleRemoveStaff = (employeeId: string) => {
-    setLocalAssignments((prev) => prev.filter((a) => a.employee_id !== employeeId));
-  };
-
-  const handleTogglePrimaryCashier = (employeeId: string) => {
-    setLocalAssignments((prev) =>
-      prev.map((a) => ({
-        ...a,
-        is_primary_cashier: a.employee_id === employeeId ? !a.is_primary_cashier : false
-      }))
-    );
-  };
-
-  const handleNozzleAssignmentChange = (employeeId: string, nozzleId: string, checked: boolean) => {
-    setLocalAssignments((prev) =>
-      prev.map((a) => {
-        if (a.employee_id === employeeId) {
-          const nextNozzles = checked
-            ? [...a.nozzle_ids, nozzleId]
-            : a.nozzle_ids.filter((id) => id !== nozzleId);
-          return { ...a, nozzle_ids: nextNozzles };
-        }
-        // If nozzle assigned to another employee, remove it from them (prevent duplicate assignments)
-        if (checked && a.nozzle_ids.includes(nozzleId)) {
-          return { ...a, nozzle_ids: a.nozzle_ids.filter((id) => id !== nozzleId) };
-        }
-        return a;
-      })
-    );
+      showToast(errMsg, 'error');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleSaveWorkspace = async () => {
@@ -189,15 +221,38 @@ export const ShiftAssignments: React.FC = () => {
     try {
       const response = await saveRosterWorkspace(selectedOrgId, selectedOutletId, payload);
       setWorkspace(response);
-      alert('Roster planning saved successfully!');
+      setNotes(response.roster?.notes || '');
+      
+      const mapped = response.roster?.staff_assignments.map((sa) => ({
+        employee_id: sa.employee_id,
+        display_name: sa.employee_details.display_name,
+        duty_designation_id: sa.duty_designation_id,
+        duty_designation_name: sa.duty_designation_details.name,
+        is_primary_cashier: sa.is_primary_cashier,
+        nozzle_ids: sa.nozzle_assignments.map(na => na.nozzle_id),
+        notes: sa.notes || '',
+      })) || [];
+      setLocalAssignments(mapped);
+      
+      showToast('Shift planning assignments saved successfully!', 'success');
     } catch (err: any) {
-      alert(err.message || 'Failed to save roster workspace configurations.');
+      console.error(err);
+      let errMsg = 'Failed to save roster configurations.';
+      if (err.data && typeof err.data === 'object') {
+        const data = err.data as Record<string, any>;
+        errMsg = Object.entries(data)
+          .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}`)
+          .join('; ');
+      } else if (err.message) {
+        errMsg = err.message;
+      }
+      showToast(errMsg, 'error');
     } finally {
       setActionLoading(false);
     }
   };
 
-  // Group nozzles by dispenser
+  // Group active nozzles by dispenser
   const getDispensersGroup = () => {
     if (!workspace) return {};
     const group: Record<string, { dispenserName: string; nozzles: any[] }> = {};
@@ -212,19 +267,162 @@ export const ShiftAssignments: React.FC = () => {
 
   const dispenserGroups = getDispensersGroup();
 
-  // Find who has this nozzle assigned locally
-  const getLocallyAssignedStaff = (nozzleId: string) => {
-    const assigned = localAssignments.find((a) => a.nozzle_ids.includes(nozzleId));
+  // Find who has this nozzle assigned locally (excluding current employee if specified)
+  const getLocallyAssignedStaffName = (nozzleId: string, excludeEmployeeId?: string) => {
+    const assigned = localAssignments.find(
+      (a) => a.employee_id !== excludeEmployeeId && a.nozzle_ids.includes(nozzleId)
+    );
     return assigned ? assigned.display_name : null;
+  };
+
+  // Drawer Opening
+  const handleOpenAssignDrawer = () => {
+    setEditingEmployeeId(null);
+    setDrawerEmployeeId('');
+    setDrawerDesignationId('');
+    setDrawerPrimaryCashier(false);
+    setDrawerNozzleIds([]);
+    setDrawerNotes('');
+    setDrawerOpen(true);
+  };
+
+  const handleOpenEditDrawer = (employeeId: string) => {
+    const target = localAssignments.find((a) => a.employee_id === employeeId);
+    if (!target) return;
+
+    setEditingEmployeeId(employeeId);
+    setDrawerEmployeeId(target.employee_id);
+    setDrawerDesignationId(target.duty_designation_id);
+    setDrawerPrimaryCashier(target.is_primary_cashier);
+    setDrawerNozzleIds([...target.nozzle_ids]);
+    setDrawerNotes(target.notes);
+    setDrawerOpen(true);
+  };
+
+  const handleRemoveAssignment = (employeeId: string) => {
+    setLocalAssignments((prev) => prev.filter((a) => a.employee_id !== employeeId));
+    showToast('Employee removed locally. Click Save Changes to commit.', 'success');
+  };
+
+  const handleTogglePrimaryCashierInline = (employeeId: string) => {
+    setLocalAssignments((prev) =>
+      prev.map((a) => ({
+        ...a,
+        is_primary_cashier: a.employee_id === employeeId ? !a.is_primary_cashier : false
+      }))
+    );
+  };
+
+  // Drawer Save Actions
+  const handleApplyDrawer = () => {
+    if (!drawerEmployeeId) {
+      alert('Please select an employee.');
+      return;
+    }
+    if (!drawerDesignationId) {
+      alert('Please select a duty designation.');
+      return;
+    }
+
+    const availableStaff = workspace?.available_staff || [];
+    
+    // Check duplicates if not editing
+    if (!editingEmployeeId && localAssignments.some((la) => la.employee_id === drawerEmployeeId)) {
+      alert('Employee is already assigned to this roster.');
+      return;
+    }
+
+    let employeeName = '';
+    if (editingEmployeeId) {
+      const match = localAssignments.find((la) => la.employee_id === drawerEmployeeId);
+      employeeName = match ? match.display_name : '';
+    } else {
+      const match = availableStaff.find((e) => e.id === drawerEmployeeId);
+      employeeName = match ? match.display_name : '';
+    }
+
+    const designationObj = designations.find((d) => d.id === drawerDesignationId);
+    const designationName = designationObj ? designationObj.name : '';
+
+    const newAssignmentObj = {
+      employee_id: drawerEmployeeId,
+      display_name: employeeName,
+      duty_designation_id: drawerDesignationId,
+      duty_designation_name: designationName,
+      is_primary_cashier: drawerPrimaryCashier,
+      nozzle_ids: drawerNozzleIds,
+      notes: drawerNotes
+    };
+
+    let updatedAssignments = [...localAssignments];
+
+    // Enforce single primary cashier locally
+    if (drawerPrimaryCashier) {
+      updatedAssignments = updatedAssignments.map((la) => ({
+        ...la,
+        is_primary_cashier: la.employee_id === drawerEmployeeId ? true : false
+      }));
+    }
+
+    if (editingEmployeeId) {
+      updatedAssignments = updatedAssignments.map((la) =>
+        la.employee_id === drawerEmployeeId ? newAssignmentObj : la
+      );
+    } else {
+      updatedAssignments.push(newAssignmentObj);
+    }
+
+    setLocalAssignments(updatedAssignments);
+    setDrawerOpen(false);
+    showToast(
+      editingEmployeeId ? 'Employee assignment updated locally.' : 'Employee assigned locally. Click Save Changes to commit.',
+      'success'
+    );
+  };
+
+  const handleNozzleCheckboxChange = (nozzleId: string, checked: boolean) => {
+    if (checked) {
+      setDrawerNozzleIds((prev) => [...prev, nozzleId]);
+    } else {
+      setDrawerNozzleIds((prev) => prev.filter((id) => id !== nozzleId));
+    }
+  };
+
+  const renderEmptyState = () => {
+    return (
+      <div className="empty-state-card">
+        <div className="empty-state-icon-wrapper">
+          <Calendar size={32} />
+        </div>
+        <h3 className="h3" style={{ margin: 0 }}>No roster has been planned for this shift.</h3>
+        <p className="text-muted" style={{ margin: '0.5rem 0 1rem', maxWidth: '400px' }}>
+          Choose a business date and shift definition, then click the button below to initialize a roster plan for this outlet.
+        </p>
+        <button
+          className="btn btn-primary"
+          onClick={handleCreateRoster}
+          disabled={actionLoading || !canCreate}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 auto' }}
+        >
+          {actionLoading ? <RefreshCw className="animate-spin" size={16} /> : <Plus size={16} />}
+          <span>Create Roster</span>
+        </button>
+        {!canCreate && (
+          <span className="text-muted" style={{ fontSize: '0.8rem', color: 'var(--color-danger-text)', display: 'block', marginTop: '0.5rem' }}>
+            You do not have permission to create rosters.
+          </span>
+        )}
+      </div>
+    );
   };
 
   if (!selectedOrgId || !selectedOutletId) {
     return (
       <div className="management-page">
         <PageHeader title="Shift Assignments Planning" subtitle="Roster staff and allocate nozzles" />
-        <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
-          <AlertCircle size={40} className="text-muted" style={{ margin: '0 auto 1rem' }} />
-          <p className="text-muted">Please select an organisation and an outlet in the sidebar to configure shift assignments.</p>
+        <div className="card" style={{ padding: '2.5rem', textAlign: 'center', borderRadius: 'var(--radius-lg)' }}>
+          <AlertCircle size={40} className="text-muted" style={{ margin: '0 auto 1rem', color: 'var(--color-accent)' }} />
+          <p className="text-muted" style={{ fontSize: '1rem' }}>Please select an organisation and an outlet in the sidebar to configure shift assignments.</p>
         </div>
       </div>
     );
@@ -232,7 +430,8 @@ export const ShiftAssignments: React.FC = () => {
 
   if (!canView) {
     return (
-      <div className="card" style={{ textAlign: 'center', padding: '4rem', margin: '2rem' }}>
+      <div className="card" style={{ textAlign: 'center', padding: '4rem', margin: '2rem', borderRadius: 'var(--radius-lg)' }}>
+        <AlertCircle size={40} style={{ color: 'var(--color-danger-text)', margin: '0 auto 1rem' }} />
         <h2 className="h3">Permission Denied</h2>
         <p className="text-muted">You do not have permission to view shift rosters.</p>
       </div>
@@ -241,13 +440,318 @@ export const ShiftAssignments: React.FC = () => {
 
   return (
     <div className="management-page" style={{ paddingBottom: '4rem' }}>
+      {/* Premium Styling Block */}
+      <style>{`
+        .planner-container {
+          display: flex;
+          flex-direction: column;
+          gap: 1.5rem;
+        }
+
+        .selector-bar {
+          background-color: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-lg);
+          padding: 1.25rem;
+          display: flex;
+          gap: 1.5rem;
+          align-items: flex-end;
+          flex-wrap: wrap;
+          box-shadow: var(--shadow-sm);
+        }
+
+        .workspace-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-top: 0.5rem;
+        }
+
+        .workspace-title-box {
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+        }
+
+        .workspace-actions {
+          display: flex;
+          gap: 0.75rem;
+          align-items: center;
+        }
+
+        .empty-state-card {
+          background-color: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-lg);
+          padding: 4rem 2rem;
+          text-align: center;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 1rem;
+          box-shadow: var(--shadow-sm);
+          max-width: 600px;
+          margin: 3rem auto;
+        }
+
+        .empty-state-icon-wrapper {
+          width: 64px;
+          height: 64px;
+          border-radius: 50%;
+          background-color: rgba(15, 118, 110, 0.1);
+          color: var(--color-accent);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 0.5rem;
+        }
+
+        .roster-grid {
+          display: grid;
+          grid-template-columns: 1fr 320px;
+          gap: 1.5rem;
+          align-items: start;
+        }
+
+        @media (max-width: 1024px) {
+          .roster-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        .card-premium {
+          background-color: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-lg);
+          padding: 1.5rem;
+          box-shadow: var(--shadow-sm);
+          transition: all 0.2s ease;
+        }
+
+        .card-premium:hover {
+          box-shadow: var(--shadow-md);
+        }
+
+        .badge-premium {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.25rem;
+          padding: 0.25rem 0.6rem;
+          border-radius: 50px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          line-height: 1;
+        }
+
+        .badge-cashier {
+          background-color: var(--color-accent-light);
+          color: var(--color-accent-text);
+          border: 1px solid rgba(15, 118, 110, 0.2);
+        }
+
+        .badge-nozzle {
+          background-color: var(--color-info-bg);
+          color: var(--color-info-text);
+          border: 1px solid rgba(3, 105, 161, 0.2);
+        }
+
+        .badge-unassigned {
+          background-color: var(--color-warning-bg);
+          color: var(--color-warning-text);
+          border: 1px solid rgba(194, 65, 12, 0.2);
+        }
+
+        .badge-assigned {
+          background-color: var(--color-success-bg);
+          color: var(--color-success-text);
+          border: 1px solid rgba(21, 128, 61, 0.2);
+        }
+
+        /* Right-side Drawer classes */
+        .drawer-backdrop {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background-color: rgba(15, 23, 42, 0.4);
+          backdrop-filter: blur(4px);
+          z-index: 1000;
+          opacity: 0;
+          visibility: hidden;
+          transition: opacity 0.2s ease, visibility 0.2s ease;
+        }
+
+        .drawer-backdrop.open {
+          opacity: 1;
+          visibility: visible;
+        }
+
+        .drawer-content {
+          position: fixed;
+          top: 0;
+          right: 0;
+          bottom: 0;
+          width: 480px;
+          max-width: 100%;
+          background-color: var(--bg-card);
+          box-shadow: -4px 0 24px rgba(0, 0, 0, 0.1);
+          z-index: 1001;
+          display: flex;
+          flex-direction: column;
+          transform: translateX(100%);
+          transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .drawer-backdrop.open .drawer-content {
+          transform: translateX(0);
+        }
+
+        .drawer-header {
+          padding: 1.25rem 1.5rem;
+          border-bottom: 1px solid var(--border-color);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .drawer-body {
+          padding: 1.5rem;
+          flex: 1;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 1.25rem;
+        }
+
+        .drawer-footer {
+          padding: 1.25rem 1.5rem;
+          border-top: 1px solid var(--border-color);
+          display: flex;
+          justify-content: flex-end;
+          gap: 0.75rem;
+          background-color: var(--bg-main);
+        }
+
+        .form-group {
+          display: flex;
+          flex-direction: column;
+          gap: 0.375rem;
+        }
+
+        .form-label {
+          font-size: 0.875rem;
+          font-weight: 600;
+          color: var(--text-main);
+        }
+
+        .form-control {
+          background-color: var(--bg-main);
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-md);
+          padding: 0.5rem 0.75rem;
+          font-size: 0.875rem;
+          color: var(--text-main);
+          outline: none;
+          transition: border-color 0.15s ease;
+        }
+
+        .form-control:focus {
+          border-color: var(--color-accent);
+        }
+
+        .dispenser-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+          gap: 1rem;
+        }
+
+        .dispenser-card {
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-md);
+          background-color: var(--bg-main);
+          padding: 1rem;
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+        }
+
+        .dispenser-title {
+          font-size: 0.9rem;
+          font-weight: 700;
+          color: var(--color-accent);
+          border-bottom: 1px solid var(--border-color);
+          padding-bottom: 0.375rem;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .nozzle-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          font-size: 0.85rem;
+          padding: 0.25rem 0;
+        }
+
+        .toast-box {
+          position: fixed;
+          bottom: 1.5rem;
+          right: 1.5rem;
+          z-index: 1050;
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+
+        .toast-item {
+          background-color: var(--bg-card);
+          border-left: 4px solid var(--color-accent);
+          box-shadow: var(--shadow-lg);
+          padding: 0.75rem 1.25rem;
+          border-radius: var(--radius-md);
+          font-size: 0.875rem;
+          font-weight: 500;
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          min-width: 250px;
+          animation: slideIn 0.2s ease-out;
+        }
+
+        .toast-item.toast-success {
+          border-left-color: var(--color-success-text);
+          color: var(--color-success-text);
+          background-color: #f0fdf4;
+        }
+
+        .toast-item.toast-error {
+          border-left-color: var(--color-danger-text);
+          color: var(--color-danger-text);
+          background-color: #fef2f2;
+        }
+
+        @keyframes slideIn {
+          from {
+            transform: translateY(1rem);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
+
       <PageHeader 
         title="Shift Assignments Planner" 
         subtitle="Dated roster planning: assign duties and map nozzles to pump attendants"
       />
 
-      {/* Roster date/shift selector bar */}
-      <div className="card" style={{ padding: '1.25rem', marginBottom: '1.5rem', display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+      {/* Selectors Bar */}
+      <div className="selector-bar">
         <div className="form-group" style={{ margin: 0 }}>
           <label className="form-label" style={{ marginBottom: '4px' }}>Business Date</label>
           <input
@@ -268,201 +772,403 @@ export const ShiftAssignments: React.FC = () => {
             onChange={(e) => setSelectedShiftId(e.target.value)}
           >
             {shifts.map((s) => (
-              <option key={s.id} value={s.id}>{s.name} ({s.code} : {s.starts_at.substring(0, 5)}-{s.ends_at.substring(0, 5)})</option>
+              <option key={s.id} value={s.id}>
+                {s.name} ({s.code} : {s.starts_at.substring(0, 5)}-{s.ends_at.substring(0, 5)})
+              </option>
             ))}
           </select>
         </div>
 
-        <button 
-          className="btn btn-primary"
-          onClick={handleSaveWorkspace}
-          disabled={actionLoading || !canConfigure || localAssignments.length === 0}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1.25rem' }}
-        >
-          {actionLoading ? 'Saving...' : 'Save Roster Planning'}
-        </button>
+        {workspace && workspace.exists && (
+          <div className="workspace-actions" style={{ marginLeft: 'auto' }}>
+            {isModified() && (
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  if (confirm('Discard your unsaved roster modifications?')) {
+                    loadWorkspace();
+                  }
+                }}
+                disabled={actionLoading}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <RotateCcw size={16} />
+                <span>Discard Changes</span>
+              </button>
+            )}
+
+            <button
+              className="btn btn-primary"
+              onClick={handleSaveWorkspace}
+              disabled={actionLoading || !canUpdate || !isModified()}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            >
+              {actionLoading ? <RefreshCw className="animate-spin" size={16} /> : <Save size={16} />}
+              <span>Save Changes</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '4rem' }}>
-          <RefreshCw className="animate-spin" size={32} style={{ opacity: 0.5, margin: '0 auto 1rem' }} />
-          <p className="text-muted">Loading planning workspace...</p>
+        <div style={{ textAlign: 'center', padding: '6rem' }}>
+          <RefreshCw className="animate-spin" size={36} style={{ opacity: 0.5, margin: '0 auto 1rem', color: 'var(--color-accent)' }} />
+          <p className="text-muted" style={{ fontSize: '1rem' }}>Loading planning workspace...</p>
         </div>
       ) : workspace ? (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '1.5rem', alignItems: 'start' }}>
-          
-          {/* Main workspace */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            
-            {/* Staff Assigned Table */}
-            <div className="card" style={{ padding: '1.5rem' }}>
-              <h2 className="h4" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Calendar size={18} style={{ color: 'var(--color-accent)' }} />
-                <span>Rostered Staff ({localAssignments.length})</span>
-              </h2>
-
-              {/* Add staff fast entry form */}
-              {canConfigure && (
-                <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', borderBottom: '1px solid var(--border-color)', paddingBottom: '1.5rem' }}>
-                  <select
-                    className="form-control"
-                    style={{ flex: 1, minWidth: '200px' }}
-                    value={addEmployeeId}
-                    onChange={(e) => {
-                      setAddEmployeeId(e.target.value);
-                      // Default designation
-                      const available = workspace.available_staff || [];
-                      const emp = available.find(x => x.id === e.target.value);
-                      if (emp) {
-                        setAddDesignationId(emp.designation_id);
-                      }
-                    }}
-                  >
-                    <option value="">— Select Attendant —</option>
-                    {(workspace.available_staff || []).map((e) => (
-                      <option key={e.id} value={e.id}>{e.display_name} ({e.employee_code} - {e.designation_details.name})</option>
-                    ))}
-                  </select>
-
-                  <select
-                    className="form-control"
-                    style={{ flex: 1, minWidth: '200px' }}
-                    value={addDesignationId}
-                    onChange={(e) => setAddDesignationId(e.target.value)}
-                    disabled={!addEmployeeId}
-                  >
-                    <option value="">— Duty Designation —</option>
-                    {addEmployeeId && (workspace.available_staff || []).find(e => e.id === addEmployeeId)?.designation_details && (
-                      <option value={(workspace.available_staff || []).find(e => e.id === addEmployeeId)!.designation_id}>
-                        {(workspace.available_staff || []).find(e => e.id === addEmployeeId)!.designation_details.name} (Attendant Default)
-                      </option>
-                    )}
-                  </select>
-
-                  <button className="btn btn-secondary" onClick={handleAddStaff} disabled={!addEmployeeId} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <UserPlus size={16} />
-                    <span>Assign</span>
-                  </button>
+        !workspace.exists ? (
+          renderEmptyState()
+        ) : (
+          <div className="planner-container" style={{ marginTop: '1.5rem' }}>
+            <div className="workspace-header">
+              <div className="workspace-title-box">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <h2 className="h3" style={{ margin: 0 }}>Roster Workspace</h2>
+                  {isModified() && (
+                    <span className="badge-premium" style={{ backgroundColor: 'var(--color-warning-bg)', color: 'var(--color-warning-text)' }}>
+                      Unsaved Local Changes
+                    </span>
+                  )}
                 </div>
-              )}
-
-              <div className="data-table-container">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Employee</th>
-                      <th>Duty Role</th>
-                      <th>Nozzles Allocated</th>
-                      <th>Primary Cashier</th>
-                      <th style={{ textAlign: 'right' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {localAssignments.map((a) => (
-                      <tr key={a.employee_id}>
-                        <td><strong>{a.display_name}</strong></td>
-                        <td>{a.duty_designation_name}</td>
-                        <td>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                            {a.nozzle_ids.map((nid) => {
-                              const nz = workspace.nozzles.find(n => n.id === nid);
-                              return (
-                                <span key={nid} className="badge badge-primary" style={{ fontSize: '0.75rem' }}>
-                                  {nz ? nz.code : 'Nozzle'}
-                                </span>
-                              );
-                            })}
-                            {a.nozzle_ids.length === 0 && <span className="text-muted" style={{ fontSize: '0.8rem' }}>None</span>}
-                          </div>
-                        </td>
-                        <td>
-                          <input
-                            type="checkbox"
-                            checked={a.is_primary_cashier}
-                            onChange={() => handleTogglePrimaryCashier(a.employee_id)}
-                            disabled={!canConfigure}
-                          />
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          {canConfigure && (
-                            <button className="btn btn-danger btn-sm" onClick={() => handleRemoveStaff(a.employee_id)}>
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                    {localAssignments.length === 0 && (
-                      <tr>
-                        <td colSpan={5} style={{ textAlign: 'center', padding: '2rem' }}>
-                          <p className="text-muted">No staff assigned to this shift roster yet.</p>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
               </div>
             </div>
 
-            {/* Forecourt group nozzle allocator */}
-            <div className="card" style={{ padding: '1.5rem' }}>
-              <h2 className="h4" style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Layers size={18} style={{ color: 'var(--color-accent)' }} />
-                <span>Forecourt Nozzle Allocator</span>
-              </h2>
-              <p className="text-muted" style={{ fontSize: '0.85rem', marginBottom: '1.5rem' }}>
-                Grouped by multi-product dispenser (MPD). Allocate nozzle to rostered employee by selecting checkbox next to nozzle.
-              </p>
+            <div className="roster-grid">
+              
+              {/* Main Content Areas */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                
+                {/* Rostered Staff Card */}
+                <div className="card-premium">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                    <h3 className="h4" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <Calendar size={18} style={{ color: 'var(--color-accent)' }} />
+                      <span>Rostered Staff ({localAssignments.length})</span>
+                    </h3>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={handleOpenAssignDrawer}
+                      disabled={!canUpdate}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                    >
+                      <Plus size={14} />
+                      <span>Assign Employee</span>
+                    </button>
+                  </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
+                  <div className="data-table-container">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Employee</th>
+                          <th>Duty Designation</th>
+                          <th>Nozzles Assigned</th>
+                          <th>Primary Cashier</th>
+                          <th style={{ textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {localAssignments.map((a) => (
+                          <tr key={a.employee_id}>
+                            <td>
+                              <div>
+                                <strong>{a.display_name}</strong>
+                                <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                                  {(workspace.available_staff || []).find((x) => x.id === a.employee_id)?.employee_code || 'Attendant'}
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              <span style={{ fontWeight: 500 }}>{a.duty_designation_name}</span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                {a.nozzle_ids.map((nid) => {
+                                  const nz = workspace.nozzles.find((n) => n.id === nid);
+                                  return (
+                                    <span key={nid} className="badge-premium badge-nozzle">
+                                      {nz ? nz.code : 'Nozzle'}
+                                    </span>
+                                  );
+                                })}
+                                {a.nozzle_ids.length === 0 && (
+                                  <span className="text-muted" style={{ fontSize: '0.8rem', fontStyle: 'italic' }}>None</span>
+                                )}
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={a.is_primary_cashier}
+                                  onChange={() => handleTogglePrimaryCashierInline(a.employee_id)}
+                                  disabled={!canUpdate}
+                                  style={{ cursor: canUpdate ? 'pointer' : 'not-allowed', width: '16px', height: '16px' }}
+                                />
+                                {a.is_primary_cashier && (
+                                  <span className="badge-premium badge-cashier">
+                                    Primary Cashier
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              <div style={{ display: 'inline-flex', gap: '0.5rem' }}>
+                                <button
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => handleOpenEditDrawer(a.employee_id)}
+                                  disabled={!canUpdate}
+                                  title="Edit Assignment"
+                                  style={{ padding: '4px 8px' }}
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+                                <button
+                                  className="btn btn-danger btn-sm"
+                                  onClick={() => handleRemoveAssignment(a.employee_id)}
+                                  disabled={!canUpdate}
+                                  title="Remove Assignment"
+                                  style={{ padding: '4px 8px' }}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        {localAssignments.length === 0 && (
+                          <tr>
+                            <td colSpan={5} style={{ textAlign: 'center', padding: '3rem' }}>
+                              <AlertCircle size={32} className="text-muted" style={{ margin: '0 auto 0.75rem', opacity: 0.5 }} />
+                              <p className="text-muted" style={{ margin: 0 }}>No staff assigned to this shift roster yet.</p>
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={handleOpenAssignDrawer}
+                                disabled={!canUpdate}
+                                style={{ marginTop: '0.75rem' }}
+                              >
+                                Assign First Employee
+                              </button>
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Forecourt Summary Grouped by Dispenser */}
+                <div className="card-premium">
+                  <h3 className="h4" style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Layers size={18} style={{ color: 'var(--color-accent)' }} />
+                    <span>Forecourt Allocation Summary</span>
+                  </h3>
+                  <p className="text-muted" style={{ fontSize: '0.85rem', marginBottom: '1.25rem' }}>
+                    Visual list of multi-product dispensers (MPDs) and nozzle allocation status.
+                  </p>
+
+                  <div className="dispenser-grid">
+                    {Object.keys(dispenserGroups).map((dId) => {
+                      const disp = dispenserGroups[dId];
+                      return (
+                        <div key={dId} className="dispenser-card">
+                          <div className="dispenser-title">
+                            <span>{disp.dispenserName}</span>
+                            <span className="badge-premium" style={{ backgroundColor: 'rgba(15, 118, 110, 0.08)', color: 'var(--color-accent)' }}>MPD</span>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            {disp.nozzles.map((nz) => {
+                              const localStaffName = getLocallyAssignedStaffName(nz.id);
+                              return (
+                                <div key={nz.id} className="nozzle-row">
+                                  <div>
+                                    <span style={{ fontWeight: 600 }}>{nz.code}</span>
+                                    <span className="text-muted" style={{ fontSize: '0.75rem', marginLeft: '0.5rem' }}>({nz.product_name})</span>
+                                  </div>
+                                  <div>
+                                    {localStaffName ? (
+                                      <span className="badge-premium badge-assigned">
+                                        {localStaffName}
+                                      </span>
+                                    ) : (
+                                      <span className="badge-premium badge-unassigned">
+                                        Unassigned
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Sidebar */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                {/* Roster Metadata */}
+                <div className="card-premium">
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontWeight: 600, marginBottom: '0.75rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+                    <ShieldCheck size={18} style={{ color: 'var(--color-success-text)' }} />
+                    <span>Roster Details</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.85rem' }}>
+                    <div><strong>Outlet ID:</strong> <code style={{ fontSize: '0.75rem' }}>{selectedOutletId}</code></div>
+                    <div><strong>Business Date:</strong> {businessDate}</div>
+                    <div><strong>Status:</strong> {workspace.exists ? 'Roster Planned' : 'Draft'}</div>
+                  </div>
+                </div>
+
+                {/* General Roster Notes */}
+                <div className="card-premium">
+                  <div style={{ fontWeight: 600, marginBottom: '0.75rem', fontSize: '0.9rem' }}>Roster Notes</div>
+                  <textarea
+                    className="form-control"
+                    rows={4}
+                    value={notes}
+                    placeholder="General shift plan details or roster notes..."
+                    onChange={(e) => setNotes(e.target.value)}
+                    disabled={!canUpdate}
+                    style={{ resize: 'none', fontSize: '0.85rem' }}
+                  />
+                </div>
+
+                {/* Warnings Section */}
+                {workspace.nozzles.some((n) => !getLocallyAssignedStaffName(n.id)) && (
+                  <div className="card-premium" style={{ borderLeft: '4px solid var(--color-warning-text)', backgroundColor: '#fffbeb' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontWeight: 600, color: 'var(--color-warning-text)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+                      <AlertTriangle size={18} />
+                      <span>Unallocated Nozzles</span>
+                    </div>
+                    <p className="text-muted" style={{ fontSize: '0.8rem', margin: 0 }}>
+                      Some active forecourt nozzles are not mapped to any attendant. Please check assignments before saving.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </div>
+        )
+      ) : null}
+
+      {/* Side Drawer Component */}
+      <div className={`drawer-backdrop ${drawerOpen ? 'open' : ''}`} onClick={() => setDrawerOpen(false)}>
+        <div className="drawer-content" onClick={(e) => e.stopPropagation()}>
+          <div className="drawer-header">
+            <h3 className="h4" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <UserPlus size={18} style={{ color: 'var(--color-accent)' }} />
+              <span>{editingEmployeeId ? 'Edit Assignment' : 'Assign Employee'}</span>
+            </h3>
+            <button
+              onClick={() => setDrawerOpen(false)}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="drawer-body">
+            <div className="form-group">
+              <label className="form-label">Select Employee</label>
+              <select
+                className="form-control"
+                value={drawerEmployeeId}
+                disabled={!!editingEmployeeId}
+                onChange={(e) => {
+                  const empId = e.target.value;
+                  setDrawerEmployeeId(empId);
+                  const emp = (workspace?.available_staff || []).find((x) => x.id === empId);
+                  if (emp) {
+                    setDrawerDesignationId(emp.designation_id);
+                  }
+                }}
+              >
+                <option value="">— Choose Attendant —</option>
+                {(workspace?.available_staff || [])
+                  .filter((e) => editingEmployeeId ? e.id === editingEmployeeId : !localAssignments.some((la) => la.employee_id === e.id))
+                  .map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.display_name} ({e.employee_code} - {e.designation_details.name})
+                    </option>
+                  ))
+                }
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Duty Designation</label>
+              <select
+                className="form-control"
+                value={drawerDesignationId}
+                onChange={(e) => setDrawerDesignationId(e.target.value)}
+              >
+                <option value="">— Select Roster Designation —</option>
+                {designations.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group" style={{ marginTop: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input
+                  type="checkbox"
+                  id="drawerPrimaryCashier"
+                  checked={drawerPrimaryCashier}
+                  onChange={(e) => setDrawerPrimaryCashier(e.target.checked)}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                />
+                <label htmlFor="drawerPrimaryCashier" className="form-label" style={{ margin: 0, cursor: 'pointer' }}>
+                  Set as Primary Cashier
+                </label>
+              </div>
+              {drawerPrimaryCashier && (
+                <div style={{ fontSize: '0.75rem', color: 'var(--color-warning-text)', marginTop: '0.25rem', fontWeight: 500 }}>
+                  * This will clear the primary cashier status on all other assigned employees.
+                </div>
+              )}
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Nozzle Allocations</label>
+              <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1rem', maxHeight: '250px', overflowY: 'auto', backgroundColor: 'var(--bg-main)' }}>
                 {Object.keys(dispenserGroups).map((dId) => {
                   const disp = dispenserGroups[dId];
                   return (
-                    <div key={dId} className="card" style={{ padding: '1rem', border: '1px solid var(--border-color)', background: 'var(--bg-card)' }}>
-                      <div style={{ fontWeight: 600, borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span>{disp.dispenserName}</span>
-                        <span className="badge badge-secondary" style={{ fontSize: '0.7rem' }}>MPD</span>
+                    <div key={dId} style={{ marginBottom: '1rem' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--color-accent)', marginBottom: '0.375rem' }}>
+                        {disp.dispenserName}
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                         {disp.nozzles.map((nz) => {
-                          const assignedStaff = getLocallyAssignedStaff(nz.id);
+                          const assignedToOtherName = getLocallyAssignedStaffName(nz.id, drawerEmployeeId);
+                          const isAssignedToOther = !!assignedToOtherName;
+                          const isChecked = drawerNozzleIds.includes(nz.id);
+                          
                           return (
-                            <div key={nz.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.25rem 0' }}>
-                              <div>
-                                <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>{nz.name} (<code style={{ color: 'var(--color-accent)' }}>{nz.code}</code>)</div>
-                                <div className="text-muted" style={{ fontSize: '0.75rem' }}>Product: {nz.product_name} | Tank: {nz.tank_code}</div>
-                              </div>
-                              
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                {assignedStaff && (
-                                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-accent)', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {assignedStaff}
-                                  </span>
-                                )}
-                                <select
-                                  className="form-control"
-                                  style={{ width: '120px', fontSize: '0.8rem', height: '28px', padding: '0 4px' }}
-                                  value={localAssignments.find(a => a.nozzle_ids.includes(nz.id))?.employee_id || ''}
-                                  onChange={(e) => {
-                                    const empId = e.target.value;
-                                    if (empId) {
-                                      handleNozzleAssignmentChange(empId, nz.id, true);
-                                    } else {
-                                      // find who has it and unassign
-                                      const current = localAssignments.find(a => a.nozzle_ids.includes(nz.id));
-                                      if (current) {
-                                        handleNozzleAssignmentChange(current.employee_id, nz.id, false);
-                                      }
-                                    }
-                                  }}
-                                  disabled={!canConfigure}
-                                >
-                                  <option value="">— Unassigned —</option>
-                                  {localAssignments.map((a) => (
-                                    <option key={a.employee_id} value={a.employee_id}>{a.display_name}</option>
-                                  ))}
-                                </select>
-                              </div>
+                            <div key={nz.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', width: '100%', margin: 0, cursor: isAssignedToOther ? 'not-allowed' : 'pointer' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  disabled={isAssignedToOther}
+                                  onChange={(e) => handleNozzleCheckboxChange(nz.id, e.target.checked)}
+                                  style={{ width: '14px', height: '14px', cursor: isAssignedToOther ? 'not-allowed' : 'pointer' }}
+                                />
+                                <span style={{ textDecoration: isAssignedToOther ? 'line-through' : 'none', color: isAssignedToOther ? 'var(--text-muted)' : 'inherit' }}>
+                                  {nz.name} ({nz.code} - {nz.product_name})
+                                </span>
+                              </label>
+                              {isAssignedToOther && (
+                                <span className="badge-premium" style={{ fontSize: '0.7rem', backgroundColor: 'var(--border-color)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                  Assigned to {assignedToOtherName}
+                                </span>
+                              )}
                             </div>
                           );
                         })}
@@ -470,42 +1176,44 @@ export const ShiftAssignments: React.FC = () => {
                     </div>
                   );
                 })}
+                {Object.keys(dispenserGroups).length === 0 && (
+                  <span className="text-muted" style={{ fontSize: '0.8rem' }}>No nozzles available for this outlet.</span>
+                )}
               </div>
             </div>
 
-          </div>
-
-          {/* Roster settings summary sidebar */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div className="card" style={{ padding: '1.25rem' }}>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontWeight: 600, marginBottom: '0.75rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-                <ShieldCheck size={18} style={{ color: 'var(--color-success)' }} />
-                <span>Roster Info</span>
-              </div>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.85rem' }}>
-                <div><strong>Outlet:</strong> {workspace.roster?.outlet || selectedOutletId}</div>
-                <div><strong>Date:</strong> {businessDate}</div>
-                <div><strong>Status:</strong> {workspace.exists ? (workspace.roster?.is_locked ? 'Locked' : 'Editable Plan') : 'Unsaved Draft'}</div>
-              </div>
+            <div className="form-group">
+              <label className="form-label">Duty Assignment Notes (Optional)</label>
+              <textarea
+                className="form-control"
+                rows={3}
+                placeholder="Specific notes or remarks for this employee's shift assignment..."
+                value={drawerNotes}
+                onChange={(e) => setDrawerNotes(e.target.value)}
+                style={{ resize: 'none' }}
+              />
             </div>
-
-            {/* Warn unassigned nozzles */}
-            {workspace.nozzles.some(n => !localAssignments.some(a => a.nozzle_ids.includes(n.id))) && (
-              <div className="card" style={{ padding: '1.25rem', borderLeft: '4px solid var(--color-warning)', background: 'rgba(245, 158, 11, 0.05)' }}>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontWeight: 600, color: 'var(--color-warning-text)', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
-                  <AlertTriangle size={18} />
-                  <span>Unallocated Nozzles</span>
-                </div>
-                <p className="text-muted" style={{ fontSize: '0.8rem', margin: 0 }}>
-                  Some active nozzles have not been assigned to any attendant for this shift. Check allocations before saving.
-                </p>
-              </div>
-            )}
           </div>
 
+          <div className="drawer-footer">
+            <button className="btn btn-secondary" onClick={() => setDrawerOpen(false)}>Cancel</button>
+            <button className="btn btn-primary" onClick={handleApplyDrawer}>
+              {editingEmployeeId ? 'Apply Updates' : 'Add Assignment'}
+            </button>
+          </div>
         </div>
-      ) : null}
+      </div>
+
+      {/* Toast Messages */}
+      {toast && (
+        <div className="toast-box">
+          <div className={`toast-item toast-${toast.type}`}>
+            {toast.type === 'success' ? <Check size={16} /> : <AlertTriangle size={16} />}
+            <span>{toast.message}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

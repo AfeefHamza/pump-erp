@@ -24,7 +24,29 @@ import { ShiftDefinitions } from '@/features/settings/pages/ShiftDefinitions';
 import { OpeningBalances } from '@/features/settings/pages/OpeningBalances';
 import { OutletReadiness } from '@/features/settings/pages/OutletReadiness';
 import { DipCalibrations } from '@/features/settings/pages/DipCalibrations';
+import { SettingsHub } from '@/features/settings/pages/SettingsHub';
+import { useParams, useLocation } from 'react-router-dom';
 
+const RedirectWithSearchAndHash: React.FC<{ getDest: (params: Record<string, string | undefined>) => string }> = ({ getDest }) => {
+  const params = useParams();
+  const location = useLocation();
+  const dest = getDest(params);
+  return <Navigate to={`${dest}${location.search}${location.hash}`} replace />;
+};
+
+const RedirectUserWithId: React.FC = () => {
+  const { membershipId } = useParams();
+  const location = useLocation();
+  const dest = membershipId ? `/app/settings/users/${membershipId}` : '/app/settings/users';
+  return <Navigate to={`${dest}${location.search}${location.hash}`} replace />;
+};
+
+const RedirectRoleWithId: React.FC = () => {
+  const { roleId } = useParams();
+  const location = useLocation();
+  const dest = roleId ? `/app/settings/roles/${roleId}` : '/app/settings/roles';
+  return <Navigate to={`${dest}${location.search}${location.hash}`} replace />;
+};
 
 export const router = createBrowserRouter([
   // Guest Routes (Guarded: redirect to app if already authenticated)
@@ -148,23 +170,23 @@ export const router = createBrowserRouter([
       },
       {
         path: 'inventory/tanks',
-        element: <TanksManagement />,
+        element: <RedirectWithSearchAndHash getDest={() => '/app/settings/tanks'} />,
       },
       {
         path: 'inventory/tanks/:tankId',
-        element: <TanksManagement />,
+        element: <RedirectWithSearchAndHash getDest={(p) => `/app/settings/tanks/${p.tankId}`} />,
       },
       {
         path: 'inventory/dispensers-nozzles',
-        element: <DispensersNozzlesManagement />,
+        element: <RedirectWithSearchAndHash getDest={() => '/app/settings/dispensers-nozzles'} />,
       },
       {
         path: 'inventory/dispensers/:dispenserId',
-        element: <DispensersNozzlesManagement />,
+        element: <RedirectWithSearchAndHash getDest={(p) => `/app/settings/dispensers/${p.dispenserId}`} />,
       },
       {
         path: 'inventory/nozzles/:nozzleId',
-        element: <DispensersNozzlesManagement />,
+        element: <RedirectWithSearchAndHash getDest={(p) => `/app/settings/nozzles/${p.nozzleId}`} />,
       },
       {
         path: 'inventory/lubricants',
@@ -199,22 +221,22 @@ export const router = createBrowserRouter([
         path: 'finance/chart-of-accounts',
         element: <ComingSoonPage title="Chart of Accounts" />,
       },
-      // Employees
+      // Employees Redirects for backward compatibility
       {
         path: 'employees',
-        element: <EmployeesManagement />,
+        element: <RedirectWithSearchAndHash getDest={() => '/app/settings/employees'} />,
       },
       {
         path: 'employees/:employeeId',
-        element: <EmployeesManagement />,
+        element: <RedirectWithSearchAndHash getDest={(p) => `/app/settings/employees/${p.employeeId}`} />,
       },
       {
         path: 'employees/designations',
-        element: <DesignationsManagement />,
+        element: <RedirectWithSearchAndHash getDest={() => '/app/settings/designations'} />,
       },
       {
         path: 'employees/list',
-        element: <Navigate to="/app/employees" replace />,
+        element: <RedirectWithSearchAndHash getDest={() => '/app/settings/employees'} />,
       },
       {
         path: 'employees/shift-assignments',
@@ -238,34 +260,32 @@ export const router = createBrowserRouter([
         path: 'reports',
         element: <ComingSoonPage title="Reports — Coming Later" />,
       },
-      {
-        path: 'crm',
-        element: <ComingSoonPage title="CRM" />,
-      },
+      // Redirects for Administration backward compatibility
       {
         path: 'administration',
-        element: <Navigate to="/app/administration/users" replace />,
+        element: <Navigate to="/app/settings/users" replace />,
       },
       {
         path: 'administration/users',
-        element: <UserManagement />,
+        element: <Navigate to="/app/settings/users" replace />,
       },
       {
         path: 'administration/users/:membershipId',
-        element: <UserManagement />,
+        element: <RedirectUserWithId />,
       },
       {
         path: 'administration/roles',
-        element: <RolesManagement />,
+        element: <Navigate to="/app/settings/roles" replace />,
       },
       {
         path: 'administration/roles/:roleId',
-        element: <RolesManagement />,
+        element: <RedirectRoleWithId />,
       },
 
+      // Settings Hub & configuration routes
       {
         path: 'settings',
-        element: <Navigate to="/app/settings/outlets" replace />,
+        element: <SettingsHub />,
       },
       {
         path: 'settings/outlets',
@@ -313,7 +333,61 @@ export const router = createBrowserRouter([
       },
       {
         path: 'inventory/tanks/:tankId/calibration',
+        element: <RedirectWithSearchAndHash getDest={(p) => `/app/settings/tanks/${p.tankId}/calibration`} />,
+      },
+      // Migrated Master Data settings routes
+      {
+        path: 'settings/employees',
+        element: <EmployeesManagement />,
+      },
+      {
+        path: 'settings/employees/:employeeId',
+        element: <EmployeesManagement />,
+      },
+      {
+        path: 'settings/designations',
+        element: <DesignationsManagement />,
+      },
+      {
+        path: 'settings/tanks',
+        element: <TanksManagement />,
+      },
+      {
+        path: 'settings/tanks/:tankId',
+        element: <TanksManagement />,
+      },
+      {
+        path: 'settings/tanks/:tankId/calibration',
         element: <DipCalibrations />,
+      },
+      {
+        path: 'settings/dispensers-nozzles',
+        element: <DispensersNozzlesManagement />,
+      },
+      {
+        path: 'settings/dispensers/:dispenserId',
+        element: <DispensersNozzlesManagement />,
+      },
+      {
+        path: 'settings/nozzles/:nozzleId',
+        element: <DispensersNozzlesManagement />,
+      },
+      // Migrated Administration routes
+      {
+        path: 'settings/users',
+        element: <UserManagement />,
+      },
+      {
+        path: 'settings/users/:membershipId',
+        element: <UserManagement />,
+      },
+      {
+        path: 'settings/roles',
+        element: <RolesManagement />,
+      },
+      {
+        path: 'settings/roles/:roleId',
+        element: <RolesManagement />,
       },
 
       {

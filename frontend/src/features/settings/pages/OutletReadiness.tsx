@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAppSelector } from '@/app/store';
 import { fetchOutletReadiness, type OutletReadinessCheck } from '@/api/client';
 import { PageHeader } from '@/components/navigation/PageHeader';
+import { usePermission } from '@/features/auth/hooks/usePermission';
 import { ClipboardCheck, CheckCircle2, AlertTriangle, AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
 
 export const OutletReadiness: React.FC = () => {
@@ -13,9 +14,10 @@ export const OutletReadiness: React.FC = () => {
   const [readiness, setReadiness] = useState<OutletReadinessCheck | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const canView = usePermission('outlet.view');
 
   const loadReadiness = useCallback(async () => {
-    if (!selectedOrgId || !selectedOutletId) return;
+    if (!selectedOrgId || !selectedOutletId || !canView) return;
     setLoading(true);
     setError(null);
     try {
@@ -27,16 +29,29 @@ export const OutletReadiness: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedOrgId, selectedOutletId]);
+  }, [selectedOrgId, selectedOutletId, canView]);
 
   useEffect(() => {
     loadReadiness();
   }, [loadReadiness]);
 
+  if (!canView) {
+    return (
+      <div className="card" style={{ textAlign: 'center', padding: '4rem', margin: '2rem' }}>
+        <h2 className="h3">Permission Denied</h2>
+        <p className="text-muted">You do not have permission to view outlet operational readiness check.</p>
+      </div>
+    );
+  }
+
   if (!selectedOrgId || !selectedOutletId) {
     return (
       <div className="management-page">
-        <PageHeader title="Outlet Operational Readiness" subtitle="Verify if this outlet is configured for operation" />
+        <PageHeader 
+          title="Outlet Operational Readiness" 
+          subtitle="Verify if this outlet is configured for operation" 
+          backLink={{ to: '/app/settings', label: 'Back to Settings' }}
+        />
         <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
           <AlertCircle size={40} className="text-muted" style={{ margin: '0 auto 1rem' }} />
           <p className="text-muted">Please select both an organisation and an active outlet from the sidebar to view readiness status.</p>
@@ -50,6 +65,7 @@ export const OutletReadiness: React.FC = () => {
       <PageHeader 
         title="Outlet Operational Readiness" 
         subtitle="Verify forecourt structure, shift setups, employee lists and opening balances before opening"
+        backLink={{ to: '/app/settings', label: 'Back to Settings' }}
       />
 
       {loading ? (

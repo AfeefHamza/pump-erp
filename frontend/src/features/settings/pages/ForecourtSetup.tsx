@@ -9,6 +9,7 @@ import {
   type ForecourtTankItem
 } from '@/api/client';
 import { RefreshCw, LayoutGrid, Database, Wrench, AlertTriangle, Plus, Link, Settings, AlertCircle, Edit, Fuel, X } from 'lucide-react';
+import { PageHeader } from '@/components/navigation/PageHeader';
 
 export const ForecourtSetup: React.FC = () => {
   const navigate = useNavigate();
@@ -177,47 +178,45 @@ export const ForecourtSetup: React.FC = () => {
 
   return (
     <div className="management-page" style={{ minHeight: 'calc(100vh - var(--topbar-height) - var(--space-xl))' }}>
-      <div className="management-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <div>
-          <h1 className="h2" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <LayoutGrid style={{ color: 'var(--color-accent)' }} size={28} />
-            <span>Forecourt Setup</span>
-          </h1>
-          <p className="text-muted">Operational mapping view of storage tanks, dispenser units, and nozzles at this outlet</p>
-        </div>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          {canTankCreate && (
-            <button
-              className="btn btn-secondary btn-sm"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-              onClick={() => navigate('/app/inventory/tanks', { state: { openAdd: true } })}
-            >
-              <Plus size={14} />
-              <span>Add Tank</span>
-            </button>
-          )}
-          {canDispenserCreate && (
-            <button
-              className="btn btn-secondary btn-sm"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-              onClick={() => navigate('/app/inventory/dispensers-nozzles', { state: { openDispenserAdd: true } })}
-            >
-              <Plus size={14} />
-              <span>Add Dispenser</span>
-            </button>
-          )}
-          {canNozzleCreate && (
-            <button
-              className="btn btn-secondary btn-sm"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-              onClick={() => navigate('/app/inventory/dispensers-nozzles', { state: { openNozzleAdd: true } })}
-            >
-              <Plus size={14} />
-              <span>Add Nozzle</span>
-            </button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Forecourt Setup"
+        subtitle="Operational mapping view of storage tanks, dispenser units, and nozzles at this outlet"
+        backLink={{ to: '/app/settings', label: 'Back to Settings' }}
+        actions={
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {canTankCreate && (
+              <button 
+                className="btn btn-secondary btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                onClick={() => navigate('/app/settings/tanks', { state: { openAdd: true } })}
+              >
+                <Plus size={14} />
+                <span>Add Tank</span>
+              </button>
+            )}
+            {canDispenserCreate && (
+              <button 
+                className="btn btn-secondary btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                onClick={() => navigate('/app/settings/dispensers-nozzles', { state: { openDispenserAdd: true } })}
+              >
+                <Plus size={14} />
+                <span>Add Dispenser</span>
+              </button>
+            )}
+            {canNozzleCreate && (
+              <button 
+                className="btn btn-secondary btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                onClick={() => navigate('/app/settings/dispensers-nozzles', { state: { openNozzleAdd: true } })}
+              >
+                <Plus size={14} />
+                <span>Add Nozzle</span>
+              </button>
+            )}
+          </div>
+        }
+      />
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '3rem' }}>
@@ -282,7 +281,7 @@ export const ForecourtSetup: React.FC = () => {
                             <button
                               className="btn btn-secondary btn-sm"
                               style={{ padding: '0.2rem' }}
-                              onClick={() => navigate(`/app/inventory/tanks/${tank.id}`)}
+                              onClick={() => navigate(`/app/settings/tanks/${tank.id}`)}
                               title="Edit Tank Master"
                             >
                               <Settings size={12} />
@@ -330,7 +329,7 @@ export const ForecourtSetup: React.FC = () => {
                       {canDispenserUpdate && (
                         <button
                           className="btn btn-secondary btn-sm"
-                          onClick={() => navigate(`/app/inventory/dispensers-nozzles`, { state: { editDispenserId: dispenser.id } })}
+                          onClick={() => navigate(`/app/settings/dispensers-nozzles`, { state: { editDispenserId: dispenser.id } })}
                           title="Edit Dispenser details"
                         >
                           <Edit size={12} />

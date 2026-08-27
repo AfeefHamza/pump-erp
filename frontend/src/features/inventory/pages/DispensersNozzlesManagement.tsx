@@ -16,6 +16,7 @@ import {
   ApiError
 } from '@/api/client';
 import { Search, Plus, Ban, CheckCircle, RefreshCw, X, Edit2, Wrench, Fuel, Database } from 'lucide-react';
+import { PageHeader } from '@/components/navigation/PageHeader';
 
 export const DispensersNozzlesManagement: React.FC = () => {
   const { dispenserId, nozzleId } = useParams();
@@ -213,7 +214,7 @@ export const DispensersNozzlesManagement: React.FC = () => {
         setActiveTab('dispensers');
         openDispenserEdit(disp);
       } else {
-        navigate('/app/inventory/dispensers-nozzles');
+        navigate('/app/settings/dispensers-nozzles');
       }
     } else if (nozzleId && nozzles.length > 0) {
       const noz = nozzles.find((n) => n.id === nozzleId);
@@ -221,7 +222,7 @@ export const DispensersNozzlesManagement: React.FC = () => {
         setActiveTab('nozzles');
         openNozzleEdit(noz);
       } else {
-        navigate('/app/inventory/dispensers-nozzles');
+        navigate('/app/settings/dispensers-nozzles');
       }
     }
   }, [dispenserId, nozzleId, dispensers, nozzles, openDispenserEdit, openNozzleEdit, navigate, location, tanks]);
@@ -230,7 +231,7 @@ export const DispensersNozzlesManagement: React.FC = () => {
     setIsDispenserDrawerOpen(false);
     setEditingDispenser(null);
     if (dispenserId) {
-      navigate('/app/inventory/dispensers-nozzles');
+      navigate('/app/settings/dispensers-nozzles');
     }
   };
 
@@ -238,7 +239,7 @@ export const DispensersNozzlesManagement: React.FC = () => {
     setIsNozzleDrawerOpen(false);
     setEditingNozzle(null);
     if (nozzleId) {
-      navigate('/app/inventory/dispensers-nozzles');
+      navigate('/app/settings/dispensers-nozzles');
     }
   };
 
@@ -430,68 +431,66 @@ export const DispensersNozzlesManagement: React.FC = () => {
 
   return (
     <div className="management-page" style={{ position: 'relative', minHeight: 'calc(100vh - var(--topbar-height) - var(--space-xl))' }}>
-      <div className="management-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <div>
-          <h1 className="h2" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Wrench style={{ color: 'var(--color-accent)' }} size={28} />
-            <span>Dispensers & Nozzles</span>
-          </h1>
-          <p className="text-muted">Configure fuel delivery machines, hoses, and underground tank mapping</p>
-        </div>
-        <div>
-          {activeTab === 'dispensers' && canDispenserCreate && (
-            <button
-              className="btn btn-primary"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-              onClick={() => {
-                setDrawerMode('add');
-                setEditingDispenser(null);
-                setFormErrors({});
-                setGeneralError(null);
-                setDispenserForm({
-                  code: '',
-                  name: '',
-                  manufacturer: '',
-                  model_number: '',
-                  serial_number: '',
-                  commissioned_on: '',
-                  status: 'active',
-                  notes: '',
-                });
-                setIsDispenserDrawerOpen(true);
-              }}
-            >
-              <Plus size={18} />
-              <span>Add Dispenser</span>
-            </button>
-          )}
-          {activeTab === 'nozzles' && canNozzleCreate && (
-            <button
-              className="btn btn-primary"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-              onClick={() => {
-                setDrawerMode('add');
-                setEditingNozzle(null);
-                setFormErrors({});
-                setGeneralError(null);
-                setNozzleForm({
-                  code: '',
-                  name: '',
-                  nozzle_number: '',
-                  dispenser: dispensers.length > 0 ? dispensers[0].id : '',
-                  tank: tanks.length > 0 ? tanks[0].id : '',
-                  status: 'active',
-                  notes: '',
-                });
-                setIsNozzleDrawerOpen(true);
-              }}
-            >
-              <Plus size={18} />
-              <span>Add Nozzle</span>
-            </button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Dispensers & Nozzles"
+        subtitle="Configure fuel delivery machines, hoses, and underground tank mapping"
+        backLink={{ to: '/app/settings', label: 'Back to Settings' }}
+        actions={
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {activeTab === 'dispensers' && canDispenserCreate && (
+              <button
+                className="btn btn-primary"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                onClick={() => {
+                  setDrawerMode('add');
+                  setEditingDispenser(null);
+                  setFormErrors({});
+                  setGeneralError(null);
+                  setDispenserForm({
+                    code: '',
+                    name: '',
+                    manufacturer: '',
+                    model_number: '',
+                    serial_number: '',
+                    commissioned_on: '',
+                    status: 'active',
+                    notes: '',
+                  });
+                  setIsDispenserDrawerOpen(true);
+                }}
+              >
+                <Plus size={18} />
+                <span>Add Dispenser</span>
+              </button>
+            )}
+            {activeTab === 'nozzles' && canNozzleCreate && (
+              <button
+                className="btn btn-primary"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                onClick={() => {
+                  setDrawerMode('add');
+                  setEditingNozzle(null);
+                  setFormErrors({});
+                  setGeneralError(null);
+                  setNozzleForm({
+                    code: '',
+                    name: '',
+                    nozzle_number: '',
+                    dispenser: dispensers.length > 0 ? dispensers[0].id : '',
+                    tank: tanks.length > 0 ? tanks[0].id : '',
+                    status: 'active',
+                    notes: '',
+                  });
+                  setIsNozzleDrawerOpen(true);
+                }}
+              >
+                <Plus size={18} />
+                <span>Add Nozzle</span>
+              </button>
+            )}
+          </div>
+        }
+      />
 
       {/* Tabs Layout */}
       <div className="tabs-header" style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
@@ -591,7 +590,7 @@ export const DispensersNozzlesManagement: React.FC = () => {
                           {canDispenserUpdate && (
                             <button
                               className="btn btn-secondary btn-sm"
-                              onClick={() => navigate(`/app/inventory/dispensers/${d.id}`)}
+                              onClick={() => navigate(`/app/settings/dispensers/${d.id}`)}
                               title="Edit Dispenser Details"
                             >
                               <Edit2 size={14} />
@@ -681,7 +680,7 @@ export const DispensersNozzlesManagement: React.FC = () => {
                         {canNozzleUpdate && (
                           <button
                             className="btn btn-secondary btn-sm"
-                            onClick={() => navigate(`/app/inventory/nozzles/${n.id}`)}
+                            onClick={() => navigate(`/app/settings/nozzles/${n.id}`)}
                             title="Edit Nozzle Mapping"
                           >
                             <Edit2 size={14} />

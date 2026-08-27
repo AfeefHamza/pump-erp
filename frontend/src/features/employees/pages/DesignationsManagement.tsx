@@ -163,7 +163,11 @@ export const DesignationsManagement: React.FC = () => {
   if (!selectedOrgId) {
     return (
       <div className="management-page">
-        <PageHeader title="Designations" subtitle="Configure operational job roles" />
+        <PageHeader 
+          title="Designations" 
+          subtitle="Configure operational job roles" 
+          backLink={{ to: '/app/settings', label: 'Back to Settings' }}
+        />
         <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
           <AlertCircle size={40} className="text-muted" style={{ margin: '0 auto 1rem' }} />
           <p className="text-muted">Please select an organisation to configure designation list.</p>
@@ -186,9 +190,10 @@ export const DesignationsManagement: React.FC = () => {
       <PageHeader 
         title="Employee Designations" 
         subtitle="Manage job profiles, duties, nozzle allocations, and system roles"
+        backLink={{ to: '/app/settings', label: 'Back to Settings' }}
         actions={
           <div style={{ display: 'flex', gap: '0.75rem' }}>
-            <button className="btn btn-secondary" onClick={() => navigate('/app/employees')} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            <button className="btn btn-secondary" onClick={() => navigate('/app/settings/employees')} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
               <ChevronLeft size={16} />
               <span>Back to Employees</span>
             </button>

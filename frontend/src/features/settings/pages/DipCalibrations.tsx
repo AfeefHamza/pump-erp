@@ -198,7 +198,11 @@ export const DipCalibrations: React.FC = () => {
   if (!selectedOrgId) {
     return (
       <div className="management-page">
-        <PageHeader title="Dip Calibration Charts" subtitle="Manage fuel tank geometry and volume conversions" />
+        <PageHeader 
+          title="Dip Calibration Charts" 
+          subtitle="Manage fuel tank geometry and volume conversions" 
+          backLink={{ to: '/app/settings', label: 'Back to Settings' }}
+        />
         <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
           <AlertCircle size={40} className="text-muted" style={{ margin: '0 auto 1rem' }} />
           <p className="text-muted">Please select an organisation to configure dip calibration charts.</p>
@@ -221,6 +225,7 @@ export const DipCalibrations: React.FC = () => {
       <PageHeader 
         title="Dip Calibration Charts" 
         subtitle="Upload and manage geometry-based certified volume lookup charts for storage tanks"
+        backLink={{ to: '/app/settings', label: 'Back to Settings' }}
         actions={
           <div style={{ display: 'flex', gap: '0.75rem' }}>
             <PermissionGuard permission="dip_calibration.import">

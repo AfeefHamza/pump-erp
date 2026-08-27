@@ -14,6 +14,7 @@ from apps.organizations.models import Outlet
 from apps.forecourt.views import handle_django_validation_error
 from apps.forecourt.models import Nozzle
 from apps.employees.models import Employee, EmployeeDesignation
+from apps.employees.serializers import EmployeeSerializer
 
 from .models import ShiftDefinition, ShiftRoster, ShiftStaffAssignment, ShiftNozzleAssignment
 from .serializers import ShiftDefinitionSerializer, ShiftRosterSerializer
@@ -165,32 +166,53 @@ class ShiftRosterWorkspaceView(APIView):
             return Response({'detail': "Shift definition not found for this outlet."}, status=status.HTTP_404_NOT_FOUND)
 
         # Retrieve or return blank roster structure
+        assigned_employee_ids = []
         try:
             roster = ShiftRoster.objects.get(
                 outlet=outlet,
                 shift_definition=shift_def,
                 business_date=business_date
             )
+            assigned_employee_ids = list(roster.staff_assignments.values_list('employee_id', flat=True))
+        except ShiftRoster.DoesNotExist:
+            roster = None
+
+        # Filter active employees assigned to this outlet on the business_date
+        active_staff = Employee.objects.filter(
+            models.Q(
+                organisation=membership.organisation,
+                status=Employee.STATUS_ACTIVE,
+                outlet_assignments__outlet=outlet,
+                outlet_assignments__effective_from__lte=business_date
+            ) | models.Q(
+                organisation=membership.organisation,
+                status=Employee.STATUS_ACTIVE,
+                outlet_assignments__outlet=outlet,
+                outlet_assignments__effective_from__isnull=True
+            )
+        ).filter(
+            models.Q(outlet_assignments__effective_to__gte=business_date) |
+            models.Q(outlet_assignments__effective_to__isnull=True)
+        )
+
+        if assigned_employee_ids:
+            active_staff = active_staff | Employee.objects.filter(id__in=assigned_employee_ids)
+
+        active_staff = active_staff.distinct().select_related('designation')
+        staff_serializer = EmployeeSerializer(active_staff, many=True)
+
+        if roster:
             roster_details = get_roster_details(roster)
             serializer = ShiftRosterSerializer(roster)
-            
-            # Map nozzle assignments back cleanly
             nozzles_data = roster_details['nozzles']
+            
             return Response({
                 'exists': True,
                 'roster': serializer.data,
+                'available_staff': staff_serializer.data,
                 'nozzles': nozzles_data
             }, status=status.HTTP_200_OK)
-        except ShiftRoster.DoesNotExist:
-            # Roster does not exist yet. Return available components to let user build it.
-            # Active employees assigned to outlet
-            active_staff = Employee.objects.filter(
-                organisation=membership.organisation,
-                status=Employee.STATUS_ACTIVE,
-                outlet_assignments__outlet=outlet
-            ).select_related('designation')
-            staff_serializer = EmployeeSerializer(active_staff, many=True)
-
+        else:
             # Active nozzles
             active_nozzles = Nozzle.objects.filter(
                 outlet=outlet,
@@ -219,7 +241,6 @@ class ShiftRosterWorkspaceView(APIView):
         membership = get_organisation_membership(request.user, org_id)
         outlet = self.get_outlet(org_id, outlet_id, membership)
 
-        # Needs roster create/update permission
         date_str = request.data.get('business_date')
         shift_def_id = request.data.get('shift_definition_id')
 
@@ -246,6 +267,23 @@ class ShiftRosterWorkspaceView(APIView):
         assignments_data = request.data.get('assignments', [])
         notes = request.data.get('notes', '')
 
+        # Validate duplicate employees in the payload
+        employee_ids = [a.get('employee_id') for a in assignments_data]
+        if len(employee_ids) != len(set(employee_ids)):
+            return Response({'detail': "An employee cannot be assigned multiple times in the same roster."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate duplicate nozzle assignments in the payload
+        all_nozzle_ids = []
+        for a in assignments_data:
+            all_nozzle_ids.extend(a.get('nozzle_ids', []))
+        if len(all_nozzle_ids) != len(set(all_nozzle_ids)):
+            return Response({'detail': "The same nozzle cannot be assigned to multiple employees in the same roster."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate single primary cashier constraint in the payload
+        primary_cashiers = [a for a in assignments_data if a.get('is_primary_cashier', False)]
+        if len(primary_cashiers) > 1:
+            return Response({'detail': "Only one primary cashier is allowed per roster."}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             with transaction.atomic():
                 roster = create_or_update_roster(
@@ -259,7 +297,6 @@ class ShiftRosterWorkspaceView(APIView):
 
                 # Clear existing staff assignments that are not present anymore
                 # To make saving simple and atomic:
-                # We can fetch employees passed in
                 passed_employee_ids = [a.get('employee_id') for a in assignments_data]
                 ShiftStaffAssignment.objects.filter(roster=roster).exclude(employee_id__in=passed_employee_ids).delete()
 
@@ -300,9 +337,34 @@ class ShiftRosterWorkspaceView(APIView):
             roster.refresh_from_db()
             roster_details = get_roster_details(roster)
             serializer = ShiftRosterSerializer(roster)
+            
+            # Retrieve active staff to return available_staff for updates after saving
+            active_staff = Employee.objects.filter(
+                models.Q(
+                    organisation=membership.organisation,
+                    status=Employee.STATUS_ACTIVE,
+                    outlet_assignments__outlet=outlet,
+                    outlet_assignments__effective_from__lte=business_date
+                ) | models.Q(
+                    organisation=membership.organisation,
+                    status=Employee.STATUS_ACTIVE,
+                    outlet_assignments__outlet=outlet,
+                    outlet_assignments__effective_from__isnull=True
+                )
+            ).filter(
+                models.Q(outlet_assignments__effective_to__gte=business_date) |
+                models.Q(outlet_assignments__effective_to__isnull=True)
+            )
+            passed_employee_ids = list(roster.staff_assignments.values_list('employee_id', flat=True))
+            if passed_employee_ids:
+                active_staff = active_staff | Employee.objects.filter(id__in=passed_employee_ids)
+            active_staff = active_staff.distinct().select_related('designation')
+            staff_serializer = EmployeeSerializer(active_staff, many=True)
+
             return Response({
                 'exists': True,
                 'roster': serializer.data,
+                'available_staff': staff_serializer.data,
                 'nozzles': roster_details['nozzles']
             }, status=status.HTTP_200_OK)
 

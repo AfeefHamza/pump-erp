@@ -1,6 +1,7 @@
 # apps/shifts/tests.py
 from datetime import time, date
 from django.test import TestCase
+from django.urls import reverse
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 
@@ -90,3 +91,40 @@ class ShiftRosterTests(TestCase):
         # Try assigning employee to roster
         with self.assertRaises(ValidationError):
             assign_employee_to_roster(roster, self.employee1, self.designation)
+
+    def test_roster_workspace_nonexistent_returns_available_staff(self):
+        self.client.login(email="owner@example.com", password="password")
+        url = reverse('shift_roster_workspace', kwargs={'org_id': self.org.id, 'outlet_id': self.outlet.id})
+        
+        # Create a shift definition
+        shift = create_shift_definition(self.org, self.outlet, code="S1", name="Shift 1", starts_at=time(6, 0), ends_at=time(14, 0))
+        
+        response = self.client.get(url, {
+            'business_date': '2026-08-26',
+            'shift_definition_id': str(shift.id)
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['exists'])
+        self.assertIn('available_staff', response.data)
+        # Verify both employees are in available_staff (since they are active and assigned to this outlet)
+        self.assertEqual(len(response.data['available_staff']), 2)
+        # Verify active nozzles are returned
+        self.assertIn('nozzles', response.data)
+        self.assertEqual(len(response.data['nozzles']), 2)
+
+    def test_roster_workspace_existent_returns_available_staff(self):
+        self.client.login(email="owner@example.com", password="password")
+        url = reverse('shift_roster_workspace', kwargs={'org_id': self.org.id, 'outlet_id': self.outlet.id})
+        
+        # Create shift definition and roster
+        shift = create_shift_definition(self.org, self.outlet, code="S1", name="Shift 1", starts_at=time(6, 0), ends_at=time(14, 0))
+        create_or_update_roster(self.org, self.outlet, shift, date(2026, 8, 26), user=self.owner)
+        
+        response = self.client.get(url, {
+            'business_date': '2026-08-26',
+            'shift_definition_id': str(shift.id)
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['exists'])
+        self.assertIn('available_staff', response.data)
+        self.assertEqual(len(response.data['available_staff']), 2)

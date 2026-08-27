@@ -4,7 +4,7 @@ import { useAppDispatch, useAppSelector, toggleSidebar } from '@/app/store';
 import { OrganisationSelector } from './OrganisationSelector';
 import { OutletSelector } from './OutletSelector';
 import { navigationMenu, standaloneItems, dashboardItem } from '@/lib/navigationConfig';
-import { ChevronLeft, ChevronRight, ChevronDown, Fuel, Store, Clock, Database, Sliders, ClipboardCheck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Fuel } from 'lucide-react';
 import { usePermission } from '@/features/auth/hooks/usePermission';
 
 
@@ -30,12 +30,25 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
   const hasTankView = usePermission('tank.view');
   const hasDispenserView = usePermission('dispenser.view');
   const hasNozzleView = usePermission('nozzle.view');
-  const hasForecourtView = hasTankView || hasDispenserView || hasNozzleView;
-  const hasAdminAccess = hasUserView || hasRoleView;
   const hasShiftDefView = usePermission('shift_definition.view');
   const hasOpeningBalanceView = usePermission('opening_balance.view');
   const hasDipCalibrationView = usePermission('dip_calibration.view');
+  const hasDesignationView = usePermission('employee_designation.view');
 
+  const hasSettingsAccess = 
+    hasSettingsView || 
+    hasOutletView || 
+    hasUserView || 
+    hasRoleView || 
+    hasProductView || 
+    hasPriceView || 
+    hasTankView || 
+    hasDispenserView || 
+    hasNozzleView || 
+    hasShiftDefView || 
+    hasOpeningBalanceView || 
+    hasDipCalibrationView || 
+    hasDesignationView;
 
   // Manage accordion section state
   const [expandedSection, setExpandedSection] = useState<string | null>('OPERATIONS');
@@ -135,15 +148,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
           <div style={{ height: '1px', backgroundColor: 'var(--border-sidebar)', margin: 'var(--space-sm) 0' }} />
           
           {standaloneItems.map((item) => {
-            // Check permissions for Administration and Settings
-            if (item.path === '/app/administration') {
-              if (!hasAdminAccess) return null;
-            }
+            // Check permissions for Settings
             if (item.path === '/app/settings') {
-              if (!hasSettingsView && !hasOutletView) return null;
+              if (!hasSettingsAccess) return null;
             }
 
-            const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+            const isActive = item.path === '/app/settings'
+              ? location.pathname.startsWith('/app/settings')
+              : (location.pathname === item.path || location.pathname.startsWith(item.path + '/'));
             const ItemIcon = item.icon;
 
             return (
@@ -156,97 +168,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
                   {ItemIcon && <ItemIcon className="nav-item-icon" size={18} />}
                   {sidebarExpanded && <span>{item.name}</span>}
                 </div>
-                {item.path === '/app/settings' && sidebarExpanded && (
-                  <div className="nav-section-items" style={{ paddingLeft: '2.5rem', marginTop: '0.25rem', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    {hasOutletView && (
-                      <div
-                        className={`nav-item ${location.pathname.startsWith('/app/settings/outlets') ? 'active' : ''}`}
-                        onClick={() => handleNavigate('/app/settings/outlets')}
-                        title="Outlets"
-                        style={{ fontSize: '0.9rem', height: '32px' }}
-                      >
-                        <Store size={14} className="nav-item-icon" />
-                        <span>Outlets</span>
-                      </div>
-                    )}
-                    {hasProductView && (
-                      <div
-                        className={`nav-item ${location.pathname.startsWith('/app/settings/products') ? 'active' : ''}`}
-                        onClick={() => handleNavigate('/app/settings/products')}
-                        title="Products & Pricing"
-                        style={{ fontSize: '0.9rem', height: '32px' }}
-                      >
-                        <Fuel size={14} className="nav-item-icon" />
-                        <span>Products & Pricing</span>
-                      </div>
-                    )}
-                    {hasPriceView && (
-                      <div
-                        className={`nav-item ${location.pathname.startsWith('/app/settings/product-prices') ? 'active' : ''}`}
-                        onClick={() => handleNavigate('/app/settings/product-prices')}
-                        title="Product Prices"
-                        style={{ fontSize: '0.9rem', height: '32px' }}
-                      >
-                        <Fuel size={14} className="nav-item-icon" style={{ opacity: 0.7 }} />
-                        <span>Product Prices</span>
-                      </div>
-                    )}
-                    {hasForecourtView && (
-                      <div
-                        className={`nav-item ${location.pathname.startsWith('/app/settings/forecourt') ? 'active' : ''}`}
-                        onClick={() => handleNavigate('/app/settings/forecourt')}
-                        title="Forecourt Setup"
-                        style={{ fontSize: '0.9rem', height: '32px' }}
-                      >
-                        <Fuel size={14} className="nav-item-icon" />
-                        <span>Forecourt Setup</span>
-                      </div>
-                    )}
-                    {hasShiftDefView && (
-                      <div
-                        className={`nav-item ${location.pathname.startsWith('/app/settings/shifts') ? 'active' : ''}`}
-                        onClick={() => handleNavigate('/app/settings/shifts')}
-                        title="Shift Definitions"
-                        style={{ fontSize: '0.9rem', height: '32px' }}
-                      >
-                        <Clock size={14} className="nav-item-icon" />
-                        <span>Shift Definitions</span>
-                      </div>
-                    )}
-                    {hasOpeningBalanceView && (
-                      <div
-                        className={`nav-item ${location.pathname.startsWith('/app/settings/opening-balances') ? 'active' : ''}`}
-                        onClick={() => handleNavigate('/app/settings/opening-balances')}
-                        title="Opening Balances"
-                        style={{ fontSize: '0.9rem', height: '32px' }}
-                      >
-                        <Sliders size={14} className="nav-item-icon" />
-                        <span>Opening Balances</span>
-                      </div>
-                    )}
-                    {hasDipCalibrationView && (
-                      <div
-                        className={`nav-item ${location.pathname.startsWith('/app/settings/dip-calibrations') ? 'active' : ''}`}
-                        onClick={() => handleNavigate('/app/settings/dip-calibrations')}
-                        title="Dip Calibrations"
-                        style={{ fontSize: '0.9rem', height: '32px' }}
-                      >
-                        <Database size={14} className="nav-item-icon" />
-                        <span>Dip Calibrations</span>
-                      </div>
-                    )}
-                    <div
-                      className={`nav-item ${location.pathname.startsWith('/app/settings/outlet-readiness') ? 'active' : ''}`}
-                      onClick={() => handleNavigate('/app/settings/outlet-readiness')}
-                      title="Outlet Readiness"
-                      style={{ fontSize: '0.9rem', height: '32px' }}
-                    >
-                      <ClipboardCheck size={14} className="nav-item-icon" />
-                      <span>Outlet Readiness</span>
-                    </div>
-
-                  </div>
-                )}
               </React.Fragment>
             );
           })}

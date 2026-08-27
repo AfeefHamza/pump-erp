@@ -12,6 +12,7 @@ import {
   type PermissionResponse
 } from '@/api/client';
 import { Plus, Trash2, Save, ShieldAlert, CheckSquare, Square, RefreshCw } from 'lucide-react';
+import { PageHeader } from '@/components/navigation/PageHeader';
 
 export const RolesManagement: React.FC = () => {
   const { roleId } = useParams();
@@ -161,12 +162,24 @@ export const RolesManagement: React.FC = () => {
     }
   };
 
+  const canView = usePermission('role.view');
+
+  if (!canView) {
+    return (
+      <div className="card" style={{ textAlign: 'center', padding: '4rem', margin: '2rem' }}>
+        <h2 className="h3">Permission Denied</h2>
+        <p className="text-muted">You do not have permission to view roles and permissions settings.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="management-page">
-      <div className="management-header" style={{ marginBottom: '1.5rem' }}>
-        <h1 className="h2">Roles & Permissions</h1>
-        <p className="text-muted">Configure access rights, modules permissions, and custom organization roles.</p>
-      </div>
+      <PageHeader 
+        title="Roles & Permissions" 
+        subtitle="Configure access rights, modules permissions, and custom organization roles."
+        backLink={{ to: '/app/settings', label: 'Back to Settings' }}
+      />
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '3rem' }}>

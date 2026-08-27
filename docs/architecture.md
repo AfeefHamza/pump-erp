@@ -137,4 +137,7 @@ Initial onboarding is executed as a single atomic database transaction (`transac
 4. **Financial Year Initialization**: Creates the default open `FinancialYear` ensuring dates are valid and non-overlapping.
 5. **Rollback Safety**: Any validation error or database failure causes the entire sequence of changes to roll back immediately, preventing partial setup states.
 
+### CRM Decommissioning & Separation
+The CRM (Customer Relationship Management) module and its operational fields (including leads, subscriptions, and renewals) have been decommissioned and completely removed from the Pump ERP application codebase. CRM operations are structured as a separate standalone SaaS project managed internally by the SaaS owner.
+
 

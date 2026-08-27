@@ -243,7 +243,11 @@ export const OpeningBalances: React.FC = () => {
   if (!selectedOrgId || !selectedOutletId) {
     return (
       <div className="management-page">
-        <PageHeader title="Opening Balances" subtitle="Configure opening stocks and totalizers" />
+        <PageHeader 
+          title="Opening Balances" 
+          subtitle="Configure opening stocks and totalizers" 
+          backLink={{ to: '/app/settings', label: 'Back to Settings' }}
+        />
         <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
           <AlertCircle size={40} className="text-muted" style={{ margin: '0 auto 1rem' }} />
           <p className="text-muted">Please select an organisation and an outlet in the sidebar to configure opening balances.</p>
@@ -268,6 +272,7 @@ export const OpeningBalances: React.FC = () => {
       <PageHeader 
         title="Opening Balances Setup" 
         subtitle="Establish initial starting point for forecourt stock levels and nozzle meter totalizers"
+        backLink={{ to: '/app/settings', label: 'Back to Settings' }}
       />
 
       {/* Wizard Steps indicator */}
