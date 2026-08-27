@@ -432,169 +432,183 @@ export const DipCalibrations: React.FC = () => {
 
       {/* Import Wizard Dialog */}
       {isImportOpen && (
-        <>
-          <div className="drawer-overlay" onClick={() => setIsImportOpen(false)} />
-          <div className="drawer active" style={{ width: '500px' }}>
-            <div className="drawer-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-              <h2 className="h3">Import Calibration Chart</h2>
-              <button className="btn-close" onClick={() => setIsImportOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+        <div className="slider-overlay" onClick={() => setIsImportOpen(false)}>
+          <div className="slider-panel" onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: '500px' }}>
+            <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-color)' }}>
+              <h3 className="h4" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Upload size={20} style={{ color: 'var(--color-accent)' }} />
+                <span>Import Calibration Chart</span>
+              </h3>
+              <button className="btn-close" onClick={() => setIsImportOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
                 <X size={20} />
               </button>
             </div>
 
-            {error && (
-              <div style={{ padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--color-danger)', borderRadius: 'var(--radius-sm)', color: 'var(--color-danger-text)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-                {error}
-              </div>
-            )}
-
-            {/* STEP 1: Upload file */}
-            {importStep === 1 && (
-              <div style={{ textAlign: 'center', padding: '2rem 1rem' }}>
-                <Upload size={48} className="text-muted" style={{ margin: '0 auto 1.5rem', opacity: 0.8 }} />
-                <h3 className="h4" style={{ marginBottom: '0.5rem' }}>Upload Certified Spreadsheet</h3>
-                <p className="text-muted" style={{ fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-                  Supports .xlsx and .csv. Maximum file size 5MB.
-                </p>
-                <div style={{ position: 'relative', display: 'inline-block' }}>
-                  <button className="btn btn-primary">Choose File</button>
-                  <input 
-                    type="file" 
-                    accept=".xlsx,.csv" 
-                    onChange={handleFileChange}
-                    style={{ position: 'absolute', left: 0, top: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }}
-                  />
+            <form onSubmit={importStep === 2 ? handleImportChart : (e) => e.preventDefault()} className="slider-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1.5rem', overflowY: 'auto', height: 'calc(100% - 65px)' }}>
+              {error && (
+                <div className="alert alert-danger" style={{ padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)' }}>
+                  {error}
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* STEP 2: Configure details */}
-            {importStep === 2 && previewData && (
-              <form onSubmit={handleImportChart} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="chartName">Chart Name *</label>
-                  <input
-                    id="chartName"
-                    type="text"
-                    className="form-control"
-                    value={chartName}
-                    onChange={(e) => setChartName(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label" htmlFor="nominalCapacity">Nominal Capacity (Litres) *</label>
-                  <input
-                    id="nominalCapacity"
-                    type="number"
-                    className="form-control"
-                    value={nominalCapacity}
-                    onChange={(e) => setNominalCapacity(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="heightUnit">Spreadsheet Height Unit *</label>
-                    <select
-                      id="heightUnit"
-                      className="form-control"
-                      value={heightUnit}
-                      onChange={(e) => setHeightUnit(e.target.value as any)}
-                    >
-                      <option value="millimetre">Millimetre (mm)</option>
-                      <option value="centimetre">Centimetre (cm)</option>
-                      <option value="inch">Inch (in)</option>
-                    </select>
+              {/* STEP 1: Upload file */}
+              {importStep === 1 && (
+                <>
+                  <div style={{ textAlign: 'center', padding: '2rem 1rem' }}>
+                    <Upload size={48} className="text-muted" style={{ margin: '0 auto 1.5rem', opacity: 0.8 }} />
+                    <h3 className="h4" style={{ marginBottom: '0.5rem' }}>Upload Certified Spreadsheet</h3>
+                    <p className="text-muted" style={{ fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+                      Supports .xlsx and .csv. Maximum file size 5MB.
+                    </p>
+                    <div style={{ position: 'relative', display: 'inline-block' }}>
+                      <button type="button" className="btn btn-primary">Choose File</button>
+                      <input 
+                        type="file" 
+                        accept=".xlsx,.csv" 
+                        onChange={handleFileChange}
+                        style={{ position: 'absolute', left: 0, top: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }}
+                      />
+                    </div>
                   </div>
-
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="lookupMode">Lookup Mode *</label>
-                    <select
-                      id="lookupMode"
-                      className="form-control"
-                      value={lookupMode}
-                      onChange={(e) => setLookupMode(e.target.value as any)}
-                    >
-                      <option value="linear_interpolation">Linear Interpolation</option>
-                      <option value="exact_only">Exact Match Only</option>
-                    </select>
+                  <div className="slider-actions" style={{ display: 'flex', gap: '1rem', marginTop: 'auto', borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
+                    <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setIsImportOpen(false)}>
+                      Cancel
+                    </button>
                   </div>
-                </div>
+                </>
+              )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', border: '1px solid var(--border-color)', padding: '1rem', borderRadius: 'var(--radius-sm)', background: 'var(--bg-card)' }}>
+              {/* STEP 2: Configure details */}
+              {importStep === 2 && previewData && (
+                <>
                   <div className="form-group">
-                    <label className="form-label" htmlFor="dipColIdx">Dip Column Index *</label>
+                    <label className="form-label" htmlFor="chartName">Chart Name *</label>
                     <input
-                      id="dipColIdx"
-                      type="number"
-                      min="0"
+                      id="chartName"
+                      type="text"
                       className="form-control"
-                      value={dipColIdx}
-                      onChange={(e) => setDipColIdx(e.target.value)}
+                      value={chartName}
+                      onChange={(e) => setChartName(e.target.value)}
                       required
                     />
                   </div>
+
                   <div className="form-group">
-                    <label className="form-label" htmlFor="volColIdx">Volume Column Index *</label>
+                    <label className="form-label" htmlFor="nominalCapacity">Nominal Capacity (Litres) *</label>
                     <input
-                      id="volColIdx"
+                      id="nominalCapacity"
                       type="number"
-                      min="0"
                       className="form-control"
-                      value={volColIdx}
-                      onChange={(e) => setVolColIdx(e.target.value)}
+                      value={nominalCapacity}
+                      onChange={(e) => setNominalCapacity(e.target.value)}
                       required
                     />
                   </div>
-                </div>
 
-                <div style={{ maxHeight: '150px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '0.5rem', background: 'var(--bg-card)', fontSize: '0.8rem' }}>
-                  <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>Spreadsheet Data Preview (First 5 rows):</div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <tbody>
-                      {previewData.rows.slice(0, 5).map((row: string[], rIdx: number) => (
-                        <tr key={rIdx}>
-                          {row.map((cell, cIdx) => (
-                            <td key={cIdx} style={{ padding: '2px 6px', border: '1px solid var(--border-color)', opacity: cIdx === int(dipColIdx) || cIdx === int(volColIdx) ? 1 : 0.6, fontWeight: cIdx === int(dipColIdx) || cIdx === int(volColIdx) ? 600 : 400 }}>
-                              {cell}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div className="form-group">
+                      <label className="form-label" htmlFor="heightUnit">Spreadsheet Height Unit *</label>
+                      <select
+                        id="heightUnit"
+                        className="form-control"
+                        value={heightUnit}
+                        onChange={(e) => setHeightUnit(e.target.value as any)}
+                      >
+                        <option value="millimetre">Millimetre (mm)</option>
+                        <option value="centimetre">Centimetre (cm)</option>
+                        <option value="inch">Inch (in)</option>
+                      </select>
+                    </div>
 
-                <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-                  <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={actionLoading}>
-                    {actionLoading ? 'Importing...' : 'Confirm Import'}
-                  </button>
-                  <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setImportStep(1)}>
-                    Back
-                  </button>
-                </div>
-              </form>
-            )}
+                    <div className="form-group">
+                      <label className="form-label" htmlFor="lookupMode">Lookup Mode *</label>
+                      <select
+                        id="lookupMode"
+                        className="form-control"
+                        value={lookupMode}
+                        onChange={(e) => setLookupMode(e.target.value as any)}
+                      >
+                        <option value="linear_interpolation">Linear Interpolation</option>
+                        <option value="exact_only">Exact Match Only</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', border: '1px solid var(--border-color)', padding: '1rem', borderRadius: 'var(--radius-sm)', background: 'var(--bg-card)' }}>
+                    <div className="form-group">
+                      <label className="form-label" htmlFor="dipColIdx">Dip Column Index *</label>
+                      <input
+                        id="dipColIdx"
+                        type="number"
+                        min="0"
+                        className="form-control"
+                        value={dipColIdx}
+                        onChange={(e) => setDipColIdx(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label" htmlFor="volColIdx">Volume Column Index *</label>
+                      <input
+                        id="volColIdx"
+                        type="number"
+                        min="0"
+                        className="form-control"
+                        value={volColIdx}
+                        onChange={(e) => setVolColIdx(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ maxHeight: '150px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '0.5rem', background: 'var(--bg-card)', fontSize: '0.8rem' }}>
+                    <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>Spreadsheet Data Preview (First 5 rows):</div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <tbody>
+                        {previewData.rows.slice(0, 5).map((row: string[], rIdx: number) => (
+                          <tr key={rIdx}>
+                            {row.map((cell, cIdx) => (
+                              <td key={cIdx} style={{ padding: '2px 6px', border: '1px solid var(--border-color)', opacity: cIdx === int(dipColIdx) || cIdx === int(volColIdx) ? 1 : 0.6, fontWeight: cIdx === int(dipColIdx) || cIdx === int(volColIdx) ? 600 : 400 }}>
+                                {cell}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="slider-actions" style={{ display: 'flex', gap: '1rem', marginTop: 'auto', borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
+                    <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setImportStep(1)}>
+                      Back
+                    </button>
+                    <button type="submit" className="btn btn-primary" style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }} disabled={actionLoading}>
+                      {actionLoading && <RefreshCw className="animate-spin" size={14} />}
+                      <span>Confirm Import</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </form>
           </div>
-        </>
+        </div>
       )}
 
       {/* Assign to Tank Dialog */}
       {isAssignOpen && (
-        <>
-          <div className="drawer-overlay" onClick={() => setIsAssignOpen(false)} />
-          <div className="drawer active" style={{ width: '400px' }}>
-            <div className="drawer-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-              <h2 className="h3">Assign Calibration Chart</h2>
-              <button className="btn-close" onClick={() => setIsAssignOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+        <div className="slider-overlay" onClick={() => setIsAssignOpen(false)}>
+          <div className="slider-panel" onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: '400px' }}>
+            <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-color)' }}>
+              <h3 className="h4" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Database size={20} style={{ color: 'var(--color-accent)' }} />
+                <span>Assign Calibration Chart</span>
+              </h3>
+              <button className="btn-close" onClick={() => setIsAssignOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleAssignChart} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <form onSubmit={handleAssignChart} className="slider-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1.5rem', overflowY: 'auto', height: 'calc(100% - 65px)' }}>
               <div className="form-group">
                 <label className="form-label" htmlFor="assignTankId">Select Tank *</label>
                 <select
@@ -639,12 +653,29 @@ export const DipCalibrations: React.FC = () => {
                 />
               </div>
 
-              <button type="submit" className="btn btn-primary" disabled={actionLoading} style={{ marginTop: '1rem' }}>
-                {actionLoading ? 'Assigning...' : 'Assign Chart'}
-              </button>
+              <div className="slider-actions" style={{ display: 'flex', gap: '1rem', marginTop: 'auto', borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                  onClick={() => setIsAssignOpen(false)}
+                  disabled={actionLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}
+                  disabled={actionLoading}
+                >
+                  {actionLoading && <RefreshCw className="animate-spin" size={14} />}
+                  <span>Assign Chart</span>
+                </button>
+              </div>
             </form>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
