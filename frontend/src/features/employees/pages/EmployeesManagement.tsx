@@ -461,19 +461,21 @@ export const EmployeesManagement: React.FC = () => {
 
       {/* Add/Edit Drawer */}
       {isDrawerOpen && (
-        <>
-          <div className="drawer-overlay" onClick={() => setIsDrawerOpen(false)} />
-          <div className="drawer active" style={{ width: '550px' }}>
-            <div className="drawer-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-              <h2 className="h3">{drawerMode === 'add' ? 'Add Employee' : 'Edit Employee'}</h2>
-              <button className="btn-close" onClick={() => setIsDrawerOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+        <div className="slider-overlay" onClick={() => setIsDrawerOpen(false)}>
+          <div className="slider-panel" onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: '550px' }}>
+            <div className="slider-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border-color)' }}>
+              <h3 className="h4" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Users size={20} style={{ color: 'var(--color-accent)' }} />
+                <span>{drawerMode === 'add' ? 'Add Employee' : 'Edit Employee'}</span>
+              </h3>
+              <button className="btn-close" onClick={() => setIsDrawerOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <form onSubmit={handleSubmit} className="slider-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1.5rem', overflowY: 'auto', height: 'calc(100% - 65px)' }}>
               {generalError && (
-                <div style={{ padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--color-danger)', borderRadius: 'var(--radius-sm)', color: 'var(--color-danger-text)', fontSize: '0.9rem' }}>
+                <div className="alert alert-danger" style={{ padding: '0.75rem 1rem', borderRadius: 'var(--radius-md)' }}>
                   {generalError}
                 </div>
               )}
@@ -609,6 +611,7 @@ export const EmployeesManagement: React.FC = () => {
                             type="checkbox"
                             checked={isChecked}
                             onChange={() => handleOutletToggle(o.id)}
+                            style={{ cursor: 'pointer' }}
                           />
                           <span>{o.name}</span>
                         </label>
@@ -619,6 +622,7 @@ export const EmployeesManagement: React.FC = () => {
                               name="primary_outlet"
                               checked={primaryOutletId === o.id}
                               onChange={() => setPrimaryOutletId(o.id)}
+                              style={{ cursor: 'pointer' }}
                             />
                             <span>Primary</span>
                           </label>
@@ -629,17 +633,29 @@ export const EmployeesManagement: React.FC = () => {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={actionLoading}>
-                  {actionLoading ? 'Saving...' : 'Save Employee'}
-                </button>
-                <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setIsDrawerOpen(false)}>
+              <div className="slider-actions" style={{ display: 'flex', gap: '1rem', marginTop: 'auto', borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                  onClick={() => setIsDrawerOpen(false)}
+                  disabled={actionLoading}
+                >
                   Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}
+                  disabled={actionLoading}
+                >
+                  {actionLoading && <RefreshCw className="animate-spin" size={14} />}
+                  <span>Save Employee</span>
                 </button>
               </div>
             </form>
           </div>
-        </>
+        </div>
       )}
 
       {/* Confirm Deactivate Modal */}
