@@ -6,6 +6,9 @@
   /* Palette - Light main workspace */
   --bg-main: #f8fafc;
   --bg-card: #ffffff;
+  --surface-color: #ffffff;
+  --table-header-bg: #f1f5f9;
+  --table-header-text: #0f172a;
   --text-main: #0f172a;
   --text-muted: #64748b;
   --border-color: #e2e8f0;
@@ -86,6 +89,35 @@ input,
 select {
   font-family: inherit;
   font-size: inherit;
+}
+
+/* Global Tables Styling */
+table, .table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+table th, .table th {
+  background-color: var(--table-header-bg, #f1f5f9) !important;
+  color: var(--table-header-text, #0f172a) !important;
+  font-weight: 700 !important;
+  font-size: 0.8125rem !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  padding: 0.75rem 1rem !important;
+  border-bottom: 2px solid var(--border-color, #cbd5e1) !important;
+  text-align: left !important;
+}
+
+table td, .table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  color: var(--text-main, #0f172a);
+}
+
+table tbody tr:hover, .table tbody tr:hover {
+  background-color: rgba(241, 245, 249, 0.5);
 }
 
 /* Layout - AppShell */

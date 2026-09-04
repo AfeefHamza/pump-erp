@@ -206,6 +206,14 @@ class ProductPriceListCreateView(APIView):
                         except FuelProduct.DoesNotExist:
                             raise DjangoValidationError(f"Active product with ID {prod_id} does not exist.")
 
+                        # Guardrail: Prevent bypassing in-shift price change workflow
+                        from apps.shifts.models import OperationalShift, ShiftNozzleMeter
+                        open_shift = OperationalShift.objects.filter(outlet=outlet, status=OperationalShift.STATUS_OPEN).first()
+                        if open_shift and ShiftNozzleMeter.objects.filter(shift=open_shift, nozzle__tank__product=product).exists():
+                            raise DjangoValidationError(
+                                f"Cannot change price for '{product.name}' directly because an operational shift is currently open with active nozzles dispensing this product. Please apply price changes through the in-shift price change workflow."
+                            )
+
                         p_price = set_product_price(
                             organisation=membership.organisation,
                             outlet=outlet,

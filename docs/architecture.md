@@ -140,4 +140,18 @@ Initial onboarding is executed as a single atomic database transaction (`transac
 ### CRM Decommissioning & Separation
 The CRM (Customer Relationship Management) module and its operational fields (including leads, subscriptions, and renewals) have been decommissioned and completely removed from the Pump ERP application codebase. CRM operations are structured as a separate standalone SaaS project managed internally by the SaaS owner.
 
+### 8. Live Shift Operations & Meter Calculations Architecture
+Live forecourt operations enforce strict real-time auditability and data integrity:
+1. **One Live Shift Rule**: Exactly one operational shift may be in `open` status for an outlet at any given time. Outlet-level row locking (`select_for_update`) prevents race conditions during shift opening and closing.
+2. **Business Date Integrity**: Operational shifts record scheduled hours, actual opening and closing timestamps, and an explicit business date. Overnight shifts crossing midnight are tied to their originating business date.
+3. **Nozzle Coverage & Immutability**: A shift cannot open unless every active nozzle has an assigned attendant (DSM). Staff and forecourt metadata (names, designations, dispenser names, nozzle codes, fuel products) are snapshotted onto the shift to maintain complete historical independence from subsequent master-data updates.
+4. **Opening Totalizer Derivation**: Opening readings are automatically inherited from the previous eligible shift's closing readings or confirmed opening balances. Manual opening exceptions (`first_time_setup_exception`, `new_or_replaced_meter`, `meter_reset`, `totalizer_rollover`, `approved_correction`) require granular permissions and mandatory justifications.
+5. **Continuous Meter & Price Segments**:
+   - `Gross Dispensed Quantity = Closing Totalizer − Opening Totalizer`
+   - `Sale Quantity = Gross Dispensed Quantity − All Testing Quantity`
+   - `Stock Depletion = Gross Dispensed Quantity − Testing Returned to Tank`
+   - All fuel quantities and revenues are computed using exact Python `Decimal` arithmetic.
+6. **In-Shift Price Changes**: When fuel price changes during a live shift, all active nozzles dispensing that product must capture a snapshot reading. Active price segments close at the snapshot reading and new segments start at the new selling price, preserving exact price continuity without negative volumes. Direct price updates bypassing this workflow while nozzles have an open shift are blocked.
+7. **Shift Closing & Controlled Reopening**: Shift closing validates that all active nozzles have recorded closing readings, meter readings are continuous and non-decreasing, and testing volume does not exceed gross dispensing. Shifts close atomically. Only the latest closed shift for an outlet may be reopened, requiring mandatory justification and audit logging.
+
 

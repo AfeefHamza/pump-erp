@@ -1339,4 +1339,818 @@ export async function fetchOutletReadiness(orgId: string, outletId: string): Pro
   return apiRequest<OutletReadinessCheck>(`/organisations/${orgId}/outlets/${outletId}/readiness/`);
 }
 
+/**
+ * Milestone 9: Live Shift Operations Types and API methods
+ */
+
+export interface OperationalShiftListItem {
+  id: string;
+  organisation: string;
+  outlet: string;
+  shift_definition: string;
+  shift_definition_name: string;
+  business_date: string;
+  scheduled_starts_at: string;
+  scheduled_ends_at: string;
+  opened_at: string;
+  closed_at: string | null;
+  status: 'open' | 'closed';
+  opened_by_name: string | null;
+  closed_by_name: string | null;
+  staff_count: number;
+  totals: {
+    total_gross_quantity: string;
+    total_testing_quantity: string;
+    total_sale_quantity: string;
+    total_fuel_sale_amount: string;
+  };
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShiftListResponse {
+  current_open_shift: OperationalShiftListItem | null;
+  shifts: OperationalShiftListItem[];
+}
+
+export interface OperationalShiftStaffMember {
+  id: string;
+  shift: string;
+  source_employee: string;
+  employee_code_snapshot: string;
+  employee_name_snapshot: string;
+  designation_snapshot: string;
+  is_primary_cashier: boolean;
+  assigned_nozzles: string[];
+  notes: string | null;
+  created_at: string;
+}
+
+export interface ShiftNozzlePriceSegmentItem {
+  id: string;
+  sequence: number;
+  starts_at: string;
+  ends_at: string | null;
+  opening_reading: string;
+  closing_reading: string | null;
+  unit_price: string;
+  gross_quantity: string;
+  testing_quantity: string;
+  sale_quantity: string;
+  sale_amount: string;
+  price_history_reference: string | null;
+  created_at: string;
+}
+
+export interface ShiftMeterEventItem {
+  id: string;
+  shift_nozzle_meter: string;
+  event_type: 'meter_reset' | 'meter_replacement' | 'totalizer_rollover' | 'approved_correction';
+  reading_before: string;
+  reading_after: string;
+  occurred_at: string;
+  reason: string;
+  recorded_by: string;
+  recorded_by_name: string | null;
+  created_at: string;
+}
+
+export interface ShiftNozzleMeterItem {
+  id: string;
+  shift: string;
+  nozzle: string;
+  nozzle_code: string;
+  nozzle_name: string;
+  dispenser_name: string;
+  product_id: string;
+  product_name: string;
+  product_code: string;
+  staff_assignment: string | null;
+  employee_id: string | null;
+  employee_name: string | null;
+  opening_reading: string;
+  closing_reading: string | null;
+  opening_source: string;
+  opening_source_reference: string | null;
+  manual_exception_type: string | null;
+  manual_exception_reason: string | null;
+  gross_quantity: string;
+  testing_quantity: string;
+  sale_quantity: string;
+  stock_depletion_quantity: string;
+  sale_amount: string;
+  price_segments: ShiftNozzlePriceSegmentItem[];
+  meter_events: ShiftMeterEventItem[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShiftTestingRecordItem {
+  id: string;
+  organisation: string;
+  outlet: string;
+  shift: string;
+  shift_nozzle_meter: string;
+  nozzle_code: string;
+  nozzle_name: string;
+  price_segment: string | null;
+  quantity: string;
+  returned_to_tank: boolean;
+  destination_tank: string | null;
+  destination_tank_name: string | null;
+  occurred_at: string;
+  notes: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShiftTankDipObservationItem {
+  id: string;
+  organisation: string;
+  outlet: string;
+  shift: string;
+  tank: string;
+  tank_code: string;
+  tank_name: string;
+  product_name: string;
+  tank_capacity: string;
+  observation_type: 'opening' | 'closing';
+  measured_at: string;
+  raw_dip_value: string;
+  raw_dip_unit: string;
+  converted_quantity: string | null;
+  calibration_assignment: string | null;
+  calibration_chart: string | null;
+  calibration_chart_name: string | null;
+  conversion_method: string;
+  density: string | null;
+  manual_quantity_reason: string | null;
+  notes: string | null;
+  recorded_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShiftActivityLogItem {
+  id: string;
+  organisation: string;
+  outlet: string;
+  shift: string;
+  event_type: string;
+  actor: string | null;
+  actor_name: string | null;
+  occurred_at: string;
+  reason: string | null;
+  metadata: Record<string, any>;
+}
+
+export interface ShiftTotalsResponse {
+  nozzles: Array<{
+    nozzle_id: string;
+    nozzle_code: string;
+    nozzle_name: string;
+    dispenser_name: string;
+    product_id: string;
+    product_name: string;
+    product_code: string;
+    employee_name: string;
+    opening_reading: string;
+    closing_reading: string | null;
+    gross_quantity: string;
+    testing_quantity: string;
+    sale_quantity: string;
+    stock_depletion_quantity: string;
+    sale_amount: string;
+    price_segments: Array<{
+      sequence: number;
+      unit_price: string;
+      opening_reading: string;
+      closing_reading: string | null;
+      gross_quantity: string;
+      testing_quantity: string;
+      sale_quantity: string;
+      sale_amount: string;
+    }>;
+  }>;
+  employees: Array<{
+    employee_id: string | null;
+    employee_name: string;
+    employee_code: string;
+    designation: string;
+    nozzle_count: number;
+    nozzle_codes: string[];
+    gross_quantity: string;
+    testing_quantity: string;
+    sale_quantity: string;
+    sale_amount: string;
+  }>;
+  products: Array<{
+    product_id: string;
+    product_name: string;
+    product_code: string;
+    gross_quantity: string;
+    testing_quantity: string;
+    sale_quantity: string;
+    stock_depletion_quantity: string;
+    sale_amount: string;
+  }>;
+  overall: {
+    total_nozzles: number;
+    entered_closing_readings: number;
+    pending_closing_readings: number;
+    total_gross_quantity: string;
+    total_testing_quantity: string;
+    total_sale_quantity: string;
+    total_stock_depletion_quantity: string;
+    total_fuel_sale_amount: string;
+  };
+}
+
+export interface ShiftClosingPreviewResponse {
+  can_close: boolean;
+  blocking_errors: string[];
+  warnings: string[];
+  totals: ShiftTotalsResponse;
+  meters_summary: {
+    total: number;
+    completed: number;
+    pending: number;
+  };
+  dips_summary: {
+    total_tanks: number;
+    opening_recorded: number;
+    closing_recorded: number;
+  };
+}
+
+export interface ShiftOpenPreparationResponse {
+  outlet_id: string;
+  shift_definition_id: string;
+  business_date: string;
+  can_open: boolean;
+  readiness: OutletReadinessCheck;
+  active_open_shift: {
+    id: string;
+    shift_name: string;
+    business_date: string;
+    opened_at: string;
+  } | null;
+  existing_shift: {
+    id: string;
+    status: string;
+  } | null;
+  has_planned_roster: boolean;
+  nozzles: Array<{
+    nozzle_id: string;
+    nozzle_code: string;
+    nozzle_name: string;
+    dispenser_id: string;
+    dispenser_name: string;
+    product_id: string;
+    product_name: string;
+    product_code: string;
+    tank_id: string;
+    tank_code: string;
+    derived_opening_reading: string | null;
+    opening_source: string;
+    opening_source_reference: string | null;
+    opening_source_description: string;
+    requires_manual_exception: boolean;
+    current_price: string | null;
+    preselected_employee_id: string | null;
+  }>;
+  employees: Array<{
+    id: string;
+    code: string;
+    name: string;
+    designation_id: string | null;
+    designation_name: string;
+    is_roster_cashier: boolean;
+  }>;
+}
+
+export interface OperationalShiftDetailResponse {
+  shift: {
+    id: string;
+    organisation: string;
+    outlet: string;
+    shift_definition: string;
+    shift_definition_name: string;
+    business_date: string;
+    scheduled_starts_at: string;
+    scheduled_ends_at: string;
+    opened_at: string;
+    closed_at: string | null;
+    status: 'open' | 'closed';
+    opened_by_name: string | null;
+    closed_by_name: string | null;
+    reopened_by_name: string | null;
+    reopened_at: string | null;
+    reopen_reason: string | null;
+    notes: string | null;
+    version: number;
+    staff_members: OperationalShiftStaffMember[];
+    meters: ShiftNozzleMeterItem[];
+    testing_records: ShiftTestingRecordItem[];
+    dip_observations: ShiftTankDipObservationItem[];
+    created_at: string;
+    updated_at: string;
+  };
+  totals: ShiftTotalsResponse;
+  can_reopen: boolean;
+}
+
+export async function fetchOperationalShifts(
+  orgId: string,
+  outletId: string,
+  params?: { status?: string; shift_definition_id?: string; from_date?: string; to_date?: string }
+): Promise<ShiftListResponse> {
+  const query = new URLSearchParams();
+  if (params?.status) query.append('status', params.status);
+  if (params?.shift_definition_id) query.append('shift_definition_id', params.shift_definition_id);
+  if (params?.from_date) query.append('from_date', params.from_date);
+  if (params?.to_date) query.append('to_date', params.to_date);
+
+  const qs = query.toString() ? `?${query.toString()}` : '';
+  return apiRequest<ShiftListResponse>(`/organisations/${orgId}/outlets/${outletId}/operational-shifts/${qs}`);
+}
+
+export async function prepareShiftOpening(
+  orgId: string,
+  outletId: string,
+  shiftDefinitionId: string,
+  businessDate: string
+): Promise<ShiftOpenPreparationResponse> {
+  return apiRequest<ShiftOpenPreparationResponse>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/prepare-opening/?shift_definition_id=${shiftDefinitionId}&business_date=${businessDate}`
+  );
+}
+
+export async function openOperationalShift(
+  orgId: string,
+  outletId: string,
+  payload: {
+    shift_definition_id: string;
+    business_date: string;
+    staff_assignments: Array<{
+      employee_id: string;
+      nozzle_ids: string[];
+      is_primary_cashier?: boolean;
+      notes?: string;
+    }>;
+    manual_exceptions?: Record<string, { reading: number | string; reason: string; type: string }>;
+    notes?: string;
+  }
+): Promise<any> {
+  return apiRequest<any>(`/organisations/${orgId}/outlets/${outletId}/operational-shifts/open/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchOperationalShiftDetail(
+  orgId: string,
+  outletId: string,
+  shiftId: string
+): Promise<OperationalShiftDetailResponse> {
+  return apiRequest<OperationalShiftDetailResponse>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/`
+  );
+}
+
+export async function updateShiftAssignments(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  payload: {
+    staff_assignments: Array<{
+      employee_id: string;
+      nozzle_ids: string[];
+      is_primary_cashier?: boolean;
+      notes?: string;
+    }>;
+  }
+): Promise<any> {
+  return apiRequest<any>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/assignments/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function discardOperationalShift(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  reason?: string
+): Promise<{ detail: string }> {
+  return apiRequest<{ detail: string }>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/`,
+    {
+      method: 'DELETE',
+      body: JSON.stringify({ reason: reason || '' }),
+    }
+  );
+}
+
+export interface AddShiftStaffPayload {
+  employee_id: string;
+  duty_designation_id?: string | null;
+  is_primary_cashier?: boolean;
+  notes?: string;
+  assigned_nozzle_ids?: string[];
+}
+
+export interface TransferShiftNozzlePayload {
+  nozzle_id: string;
+  new_employee_id: string;
+  handover_reading: string | number;
+  handover_time?: string | null;
+  reason: string;
+}
+
+export interface CorrectShiftNozzlePayload {
+  nozzle_id: string;
+  new_employee_id: string;
+  reason: string;
+}
+
+export interface TransferShiftCashierPayload {
+  new_staff_id: string;
+  reason: string;
+}
+
+export interface ActivateShiftNozzlePayload {
+  nozzle_id: string;
+  employee_id: string;
+  starting_reading: string | number;
+  reason: string;
+}
+
+export interface ShiftStaffHistoryResponse {
+  cashier_periods: Array<{
+    id: string;
+    shift: string;
+    staff: string;
+    staff_name: string;
+    staff_code: string;
+    effective_from: string;
+    effective_to: string | null;
+    is_active: boolean;
+    changed_by_name: string | null;
+    reason: string;
+    created_at: string;
+  }>;
+  nozzle_assignments: Array<{
+    id: string;
+    shift: string;
+    shift_staff: string;
+    nozzle: string;
+    nozzle_code: string;
+    employee_name: string;
+    employee_code: string;
+    dispenser_name_snapshot: string;
+    nozzle_name_snapshot: string;
+    product_name_snapshot: string;
+    effective_from: string;
+    effective_to: string | null;
+    is_active: boolean;
+    opening_reading: string;
+    closing_reading: string | null;
+    assignment_type: string;
+    reason: string | null;
+    created_by_name: string | null;
+    created_at: string;
+  }>;
+}
+
+export async function addShiftStaff(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  payload: AddShiftStaffPayload
+): Promise<any> {
+  return apiRequest<any>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/staff/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function transferShiftNozzle(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  payload: TransferShiftNozzlePayload
+): Promise<any> {
+  return apiRequest<any>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/handover/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function correctShiftNozzle(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  payload: CorrectShiftNozzlePayload
+): Promise<any> {
+  return apiRequest<any>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/correct-assignment/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function transferShiftCashier(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  payload: TransferShiftCashierPayload
+): Promise<any> {
+  return apiRequest<any>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/cashier-transfer/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function activateShiftNozzle(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  payload: ActivateShiftNozzlePayload
+): Promise<any> {
+  return apiRequest<any>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/activate-nozzle/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function fetchShiftStaffHistory(
+  orgId: string,
+  outletId: string,
+  shiftId: string
+): Promise<ShiftStaffHistoryResponse> {
+  return apiRequest<ShiftStaffHistoryResponse>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/staff-history/`
+  );
+}
+
+
+
+export async function recordShiftMeterReading(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  nozzleId: string,
+  payload: {
+    closing_reading: number | string;
+    reason?: string;
+  }
+): Promise<{ meter: ShiftNozzleMeterItem; totals: ShiftTotalsResponse }> {
+  return apiRequest<{ meter: ShiftNozzleMeterItem; totals: ShiftTotalsResponse }>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/meters/${nozzleId}/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function recordShiftMeterEvent(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  nozzleId: string,
+  payload: {
+    event_type: string;
+    reading_before: number | string;
+    reading_after: number | string;
+    reason: string;
+  }
+): Promise<{ event: ShiftMeterEventItem; meter: ShiftNozzleMeterItem; totals: ShiftTotalsResponse }> {
+  return apiRequest<{ event: ShiftMeterEventItem; meter: ShiftNozzleMeterItem; totals: ShiftTotalsResponse }>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/meters/${nozzleId}/events/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function fetchShiftTestingRecords(
+  orgId: string,
+  outletId: string,
+  shiftId: string
+): Promise<ShiftTestingRecordItem[]> {
+  return apiRequest<ShiftTestingRecordItem[]>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/testing/`
+  );
+}
+
+export async function recordShiftTesting(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  payload: {
+    nozzle_id: string;
+    quantity: number | string;
+    returned_to_tank: boolean;
+    destination_tank_id?: string;
+    occurred_at?: string;
+    notes?: string;
+  }
+): Promise<{ testing: ShiftTestingRecordItem; totals: ShiftTotalsResponse }> {
+  return apiRequest<{ testing: ShiftTestingRecordItem; totals: ShiftTotalsResponse }>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/testing/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function updateShiftTesting(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  testingId: string,
+  payload: {
+    quantity?: number | string;
+    returned_to_tank?: boolean;
+    destination_tank_id?: string;
+    notes?: string;
+  }
+): Promise<{ testing: ShiftTestingRecordItem; totals: ShiftTotalsResponse }> {
+  return apiRequest<{ testing: ShiftTestingRecordItem; totals: ShiftTotalsResponse }>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/testing/${testingId}/`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function deleteShiftTesting(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  testingId: string
+): Promise<{ detail: string; totals: ShiftTotalsResponse }> {
+  return apiRequest<{ detail: string; totals: ShiftTotalsResponse }>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/testing/${testingId}/`,
+    {
+      method: 'DELETE',
+    }
+  );
+}
+
+export async function fetchShiftDips(
+  orgId: string,
+  outletId: string,
+  shiftId: string
+): Promise<ShiftTankDipObservationItem[]> {
+  return apiRequest<ShiftTankDipObservationItem[]>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/dips/`
+  );
+}
+
+export async function recordShiftDip(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  payload: {
+    tank_id: string;
+    observation_type: 'opening' | 'closing';
+    raw_dip_value: number | string;
+    raw_dip_unit: string;
+    density?: number | string;
+    manual_quantity?: number | string;
+    manual_quantity_reason?: string;
+    notes?: string;
+  }
+): Promise<ShiftTankDipObservationItem> {
+  return apiRequest<ShiftTankDipObservationItem>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/dips/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function previewShiftPriceChange(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  payload: {
+    product_id: string;
+    new_price: number | string;
+    nozzle_snapshot_readings: Record<string, number | string>;
+  }
+): Promise<any> {
+  return apiRequest<any>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/price-change/preview/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function confirmShiftPriceChange(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  payload: {
+    product_id: string;
+    new_price: number | string;
+    effective_at?: string;
+    nozzle_snapshot_readings: Record<string, number | string>;
+  }
+): Promise<any> {
+  return apiRequest<any>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/price-change/confirm/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function previewShiftClosing(
+  orgId: string,
+  outletId: string,
+  shiftId: string
+): Promise<ShiftClosingPreviewResponse> {
+  return apiRequest<ShiftClosingPreviewResponse>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/closing-preview/`
+  );
+}
+
+export async function closeOperationalShift(
+  orgId: string,
+  outletId: string,
+  shiftId: string
+): Promise<any> {
+  return apiRequest<any>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/close/`,
+    {
+      method: 'POST',
+    }
+  );
+}
+
+export async function reopenOperationalShift(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  reason: string
+): Promise<any> {
+  return apiRequest<any>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/reopen/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }
+  );
+}
+
+export async function fetchShiftActivityLogs(
+  orgId: string,
+  outletId: string,
+  shiftId: string
+): Promise<ShiftActivityLogItem[]> {
+  return apiRequest<ShiftActivityLogItem[]>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/activity/`
+  );
+}
+
+export async function fetchShiftTotals(
+  orgId: string,
+  outletId: string,
+  shiftId: string
+): Promise<ShiftTotalsResponse> {
+  return apiRequest<ShiftTotalsResponse>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/totals/`
+  );
+}
+
 

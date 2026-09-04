@@ -115,13 +115,13 @@ export const ShiftAssignments: React.FC = () => {
       
       if (data.exists && data.roster) {
         // Map staff assignments from roster
-        const mapped = data.roster.staff_assignments.map((sa) => ({
-          employee_id: sa.employee_id,
-          display_name: sa.employee_details.display_name,
-          duty_designation_id: sa.duty_designation_id,
-          duty_designation_name: sa.duty_designation_details.name,
+        const mapped = data.roster.staff_assignments.map((sa: any) => ({
+          employee_id: sa.employee_id || sa.employee_details?.id,
+          display_name: sa.employee_details?.display_name || '',
+          duty_designation_id: sa.duty_designation_id || sa.duty_designation_details?.id,
+          duty_designation_name: sa.duty_designation_details?.name || '',
           is_primary_cashier: sa.is_primary_cashier,
-          nozzle_ids: sa.nozzle_assignments.map(na => na.nozzle_id),
+          nozzle_ids: (sa.nozzle_assignments || []).map((na: any) => na.nozzle_id || na.nozzle_details?.id),
           notes: sa.notes || '',
         }));
         setLocalAssignments(mapped);
@@ -203,6 +203,18 @@ export const ShiftAssignments: React.FC = () => {
 
   const handleSaveWorkspace = async () => {
     if (!selectedOrgId || !selectedOutletId || !selectedShiftId || !businessDate) return;
+    // Validate assignments before submitting
+    for (const a of localAssignments) {
+      if (!a.employee_id) {
+        showToast('Each staff entry must have a valid employee assigned.', 'error');
+        return;
+      }
+      if (!a.duty_designation_id) {
+        showToast(`Duty designation is required for ${a.display_name || 'employee'}.`, 'error');
+        return;
+      }
+    }
+
     setActionLoading(true);
 
     const payload = {
@@ -223,13 +235,13 @@ export const ShiftAssignments: React.FC = () => {
       setWorkspace(response);
       setNotes(response.roster?.notes || '');
       
-      const mapped = response.roster?.staff_assignments.map((sa) => ({
-        employee_id: sa.employee_id,
-        display_name: sa.employee_details.display_name,
-        duty_designation_id: sa.duty_designation_id,
-        duty_designation_name: sa.duty_designation_details.name,
+      const mapped = response.roster?.staff_assignments.map((sa: any) => ({
+        employee_id: sa.employee_id || sa.employee_details?.id,
+        display_name: sa.employee_details?.display_name || '',
+        duty_designation_id: sa.duty_designation_id || sa.duty_designation_details?.id,
+        duty_designation_name: sa.duty_designation_details?.name || '',
         is_primary_cashier: sa.is_primary_cashier,
-        nozzle_ids: sa.nozzle_assignments.map(na => na.nozzle_id),
+        nozzle_ids: (sa.nozzle_assignments || []).map((na: any) => na.nozzle_id || na.nozzle_details?.id),
         notes: sa.notes || '',
       })) || [];
       setLocalAssignments(mapped);
@@ -1084,7 +1096,7 @@ export const ShiftAssignments: React.FC = () => {
                   setDrawerEmployeeId(empId);
                   const emp = (workspace?.available_staff || []).find((x) => x.id === empId);
                   if (emp) {
-                    setDrawerDesignationId(emp.designation_id);
+                    setDrawerDesignationId((emp as any).designation_details?.id || (emp as any).designation_id || '');
                   }
                 }}
               >

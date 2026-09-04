@@ -37,13 +37,27 @@ Implements secure user authentication, signup, and session management.
 
 ---
 
+### 4. Live Shift Operations (`apps/shifts/`, `features/operations/`)
+Live forecourt shift operations, meter totalizers, testing records, in-shift price segments, tank dip observations, and shift closing/reopening workflows.
+- **Backend**:
+  - Models: `OperationalShift`, `OperationalShiftStaff`, `OperationalShiftNozzleAssignment`, `ShiftNozzleMeter`, `ShiftNozzlePriceSegment`, `ShiftMeterEvent`, `ShiftTestingRecord`, `ShiftTankDipObservation`, `ShiftActivityLog`.
+  - Services: `prepare_shift_opening()`, `open_operational_shift()`, `update_open_shift_assignments()`, `record_closing_meter_reading()`, `record_meter_event()`, `record_testing()`, `record_shift_dip()`, `apply_product_price_change_during_shift()`, `close_operational_shift()`, `reopen_operational_shift()`, `log_shift_activity()`.
+  - Selectors: `get_open_shift_for_outlet()`, `derive_nozzle_opening_reading()`, `calculate_shift_totals()`, `preview_shift_closing_data()`, `check_can_reopen_shift()`.
+  - APIs: Comprehensive REST API under `/api/v1/organisations/<org_id>/outlets/<outlet_id>/operational-shifts/`.
+- **Frontend**:
+  - Live Shift Operations page at `/app/operations/shifts`.
+  - Shift Workspace at `/app/operations/shifts/:shiftId` with real-time overview, meters, testing deductions, tank dips, price segments, attendants, and audit trail.
+  - Dedicated operational pages at `/app/operations/meter-readings` and `/app/operations/dip-readings`.
+  - Guided step-by-step `OpenShiftWizard`, `CloseShiftModal`, `ReopenShiftModal`, `PriceChangeModal`, `MeterEventModal`, and `RecordTestingModal`.
+
+---
+
 ## Planned Business Modules (Postponed)
 
-### 1. Shifts & Operations
-- **Shifts**: Track active shifts, cashiers assigned, nozzle allocations, and shift transitions.
-- **Meter Readings**: Nozzle opening and closing readings to calculate actual volumes sold.
-- **Dip Readings**: Physical tank fuel depth measurements to compare with theoretical stock levels.
-- **Day Close**: Reconcile daily metrics, check stock variances, lock records, and sync journal entries.
+### 1. Day Close & Cash Reconciliation
+- **Shift Payment Reconciliation**: Cash/card/UPI reconciliation against cashier balances.
+- **Employee Shortages**: Shortage and recovery tracking.
+- **Day Close**: Daily station reconciliation, stock variance confirmation, accounting sync.
 
 ### 2. Sales
 - **Credit Slips**: Manage sales credit vouchers issued to corporate fleet accounts.

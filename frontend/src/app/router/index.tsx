@@ -25,6 +25,10 @@ import { OpeningBalances } from '@/features/settings/pages/OpeningBalances';
 import { OutletReadiness } from '@/features/settings/pages/OutletReadiness';
 import { DipCalibrations } from '@/features/settings/pages/DipCalibrations';
 import { SettingsHub } from '@/features/settings/pages/SettingsHub';
+import { ShiftListPage } from '@/features/operations/pages/ShiftListPage';
+import { LiveShiftWorkspace } from '@/features/operations/pages/LiveShiftWorkspace';
+import { MeterReadingsPage } from '@/features/operations/pages/MeterReadingsPage';
+import { DipReadingsPage } from '@/features/operations/pages/DipReadingsPage';
 import { useParams, useLocation } from 'react-router-dom';
 
 const RedirectWithSearchAndHash: React.FC<{ getDest: (params: Record<string, string | undefined>) => string }> = ({ getDest }) => {
@@ -115,15 +119,19 @@ export const router = createBrowserRouter([
       // Operations
       {
         path: 'operations/shifts',
-        element: <ComingSoonPage title="Shifts" />,
+        element: <ShiftListPage />,
+      },
+      {
+        path: 'operations/shifts/:shiftId',
+        element: <LiveShiftWorkspace />,
       },
       {
         path: 'operations/meter-readings',
-        element: <ComingSoonPage title="Meter Readings" />,
+        element: <MeterReadingsPage />,
       },
       {
         path: 'operations/dip-readings',
-        element: <ComingSoonPage title="Dip Readings" />,
+        element: <DipReadingsPage />,
       },
       {
         path: 'operations/day-close',

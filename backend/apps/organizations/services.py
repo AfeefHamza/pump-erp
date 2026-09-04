@@ -207,6 +207,16 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'tank.view', 'tank.create', 'tank.update', 'tank.deactivate',
                 'dispenser.view', 'dispenser.create', 'dispenser.update', 'dispenser.deactivate',
                 'nozzle.view', 'nozzle.create', 'nozzle.update', 'nozzle.deactivate',
+                'employee.view', 'employee.create', 'employee.update', 'employee.deactivate',
+                'employee_designation.view', 'employee_designation.create', 'employee_designation.update', 'employee_designation.deactivate',
+                'shift_definition.view', 'shift_definition.create', 'shift_definition.update', 'shift_definition.deactivate',
+                'shift_roster.view', 'shift_roster.create', 'shift_roster.update',
+                'opening_balance.view', 'opening_balance.configure', 'opening_balance.confirm',
+                'dip_calibration.view', 'dip_calibration.import', 'dip_calibration.update', 'dip_calibration.activate', 'dip_calibration.assign',
+                'shift.view', 'shift.open', 'shift.update_open', 'shift.close', 'shift.reopen',
+                'meter_reading.view', 'meter_reading.record', 'meter_reading.correct', 'meter_event.record',
+                'testing.view', 'testing.record', 'testing.update', 'testing.delete',
+                'dip_reading.view', 'dip_reading.record', 'dip_reading.correct',
             ]
         },
         {
@@ -224,6 +234,16 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'tank.view', 'tank.create', 'tank.update',
                 'dispenser.view', 'dispenser.create', 'dispenser.update',
                 'nozzle.view', 'nozzle.create', 'nozzle.update',
+                'employee.view', 'employee.create', 'employee.update',
+                'employee_designation.view', 'employee_designation.create', 'employee_designation.update',
+                'shift_definition.view', 'shift_definition.create', 'shift_definition.update',
+                'shift_roster.view', 'shift_roster.create', 'shift_roster.update',
+                'opening_balance.view', 'opening_balance.configure', 'opening_balance.confirm',
+                'dip_calibration.view', 'dip_calibration.import', 'dip_calibration.update', 'dip_calibration.activate', 'dip_calibration.assign',
+                'shift.view', 'shift.open', 'shift.update_open', 'shift.close',
+                'meter_reading.view', 'meter_reading.record', 'meter_reading.correct', 'meter_event.record',
+                'testing.view', 'testing.record', 'testing.update', 'testing.delete',
+                'dip_reading.view', 'dip_reading.record', 'dip_reading.correct',
             ]
         },
         {
@@ -239,6 +259,15 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'tank.view',
                 'dispenser.view',
                 'nozzle.view',
+                'employee.view',
+                'shift_definition.view',
+                'shift_roster.view',
+                'opening_balance.view', 'opening_balance.confirm',
+                'dip_calibration.view',
+                'shift.view',
+                'meter_reading.view',
+                'testing.view',
+                'dip_reading.view',
             ]
         },
         {
@@ -252,6 +281,15 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'tank.view',
                 'dispenser.view',
                 'nozzle.view',
+                'employee.view',
+                'shift_definition.view',
+                'shift_roster.view',
+                'dip_calibration.view',
+                'opening_balance.view',
+                'shift.view', 'shift.open', 'shift.update_open',
+                'meter_reading.view', 'meter_reading.record',
+                'testing.view', 'testing.record',
+                'dip_reading.view', 'dip_reading.record',
             ]
         },
         {
@@ -266,6 +304,16 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'tank.view',
                 'dispenser.view',
                 'nozzle.view',
+                'employee.view',
+                'employee_designation.view',
+                'shift_definition.view',
+                'shift_roster.view',
+                'opening_balance.view',
+                'dip_calibration.view',
+                'shift.view',
+                'meter_reading.view',
+                'testing.view',
+                'dip_reading.view',
             ]
         }
     ]
