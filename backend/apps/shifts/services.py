@@ -89,7 +89,6 @@ def assign_employee_to_roster(roster: ShiftRoster, employee: Employee, duty_desi
         employee=employee,
         defaults={
             'duty_designation': duty_designation,
-            'is_primary_cashier': kwargs.get('is_primary_cashier', False),
             'notes': kwargs.get('notes')
         }
     )
@@ -130,7 +129,6 @@ from apps.operations.services import convert_dip_to_volume
 from apps.operations.selectors import check_outlet_operational_readiness
 from .models import (
     OperationalShift, OperationalShiftStaff, OperationalShiftNozzleAssignment,
-    OperationalShiftCashierPeriod,
     ShiftNozzleMeter, ShiftNozzlePriceSegment, ShiftMeterEvent,
     ShiftTestingRecord, ShiftTankDipObservation, ShiftActivityLog
 )
@@ -188,11 +186,8 @@ def prepare_shift_opening(organisation, outlet, shift_definition, business_date)
     ).first()
 
     roster_assignments = {} # nozzle_id -> employee_id
-    roster_cashier_id = None
     if roster:
         for sa in roster.staff_assignments.prefetch_related('nozzle_assignments'):
-            if sa.is_primary_cashier:
-                roster_cashier_id = str(sa.employee_id)
             for na in sa.nozzle_assignments.all():
                 roster_assignments[str(na.nozzle_id)] = str(sa.employee_id)
 
@@ -205,7 +200,7 @@ def prepare_shift_opening(organisation, outlet, shift_definition, business_date)
     nozzle_previews = []
     now = timezone.now()
     for n in active_nozzles:
-        derived = derive_nozzle_opening_reading(outlet, n)
+        derived = derive_nozzle_opening_reading(outlet, n, as_of_time=now)
         price_obj = ProductPrice.objects.filter(
             outlet=outlet,
             product=n.tank.product,
@@ -255,7 +250,6 @@ def prepare_shift_opening(organisation, outlet, shift_definition, business_date)
         'name': e.display_name,
         'designation_id': str(e.designation.id) if e.designation else None,
         'designation_name': e.designation.name if e.designation else "Staff",
-        'is_roster_cashier': str(e.id) == roster_cashier_id
     } for e in employees]
 
     can_open = readiness['ready'] and (open_shift is None) and (existing_shift is None)
@@ -339,15 +333,11 @@ def open_operational_shift(organisation, outlet, shift_definition, business_date
     # Check staff assignments
     assigned_nozzle_ids = set()
     nozzle_to_emp_data = {} # nozzle_id -> staff_data
-    assigned_cashiers = 0
 
     for staff_data in staff_assignments_data:
         emp_id = staff_data.get('employee_id')
         if not emp_id:
             raise ValidationError("Each staff assignment must include an employee_id.")
-
-        if staff_data.get('is_primary_cashier'):
-            assigned_cashiers += 1
 
         nozzle_ids = staff_data.get('nozzle_ids', [])
         for nid in nozzle_ids:
@@ -400,7 +390,6 @@ def open_operational_shift(organisation, outlet, shift_definition, business_date
             raise ValidationError(f"Employee {employee.display_name} is not assigned to this outlet.")
 
         designation_name = employee.designation.name if employee.designation else "Staff"
-        is_cashier = bool(staff_data.get('is_primary_cashier', False))
         staff_member = OperationalShiftStaff.objects.create(
             shift=shift,
             source_employee=employee,
@@ -408,19 +397,10 @@ def open_operational_shift(organisation, outlet, shift_definition, business_date
             employee_code_snapshot=employee.employee_code,
             employee_name_snapshot=employee.display_name,
             designation_snapshot=designation_name,
-            is_primary_cashier=is_cashier,
             notes=staff_data.get('notes'),
             effective_from=now,
             added_by=user
         )
-        if is_cashier:
-            OperationalShiftCashierPeriod.objects.create(
-                shift=shift,
-                staff=staff_member,
-                effective_from=now,
-                changed_by=user,
-                reason='Shift initial primary cashier'
-            )
         staff_obj_map[str(emp_id)] = staff_member
 
     # 9. Derive opening meters, snapshot nozzle assignments, and create price segments
@@ -445,7 +425,7 @@ def open_operational_shift(organisation, outlet, shift_definition, business_date
             manual_type = exc_type
             manual_reason = exc_reason.strip()
         else:
-            derived = derive_nozzle_opening_reading(outlet, nozzle)
+            derived = derive_nozzle_opening_reading(outlet, nozzle, as_of_time=now)
             if derived['reading'] is None:
                 raise ValidationError(f"No previous reading or opening balance found for nozzle {nozzle.code}. A manual opening exception with reason is required.")
             opening_reading = derived['reading']
@@ -532,16 +512,14 @@ def add_staff_to_open_shift(
     shift: OperationalShift,
     employee_id,
     duty_designation_id=None,
-    is_primary_cashier: bool = False,
     notes: str = None,
     assigned_nozzle_ids: list = None,
     user=None
 ) -> OperationalShiftStaff:
     """
     Adds staff to an open shift:
-    - Allows adding non-nozzle staff (cashier, supervisor, manager, helper).
+    - Allows adding non-nozzle staff (supervisor, manager, helper, support).
     - Prevents bypassing handover: can only assign nozzles that have NO active handler.
-    - Manages OperationalShiftCashierPeriod if made primary cashier.
     """
     shift = OperationalShift.objects.select_for_update().get(id=shift.id)
     if shift.status != OperationalShift.STATUS_OPEN:
@@ -608,24 +586,9 @@ def add_staff_to_open_shift(
             employee_code_snapshot=employee.employee_code,
             employee_name_snapshot=employee.display_name,
             designation_snapshot=desig_name,
-            is_primary_cashier=False,
             notes=notes,
             effective_from=now,
             added_by=user
-        )
-
-    if is_primary_cashier:
-        OperationalShiftCashierPeriod.objects.filter(shift=shift, effective_to__isnull=True).update(effective_to=now)
-        OperationalShiftStaff.objects.filter(shift=shift, is_primary_cashier=True).exclude(id=staff_member.id).update(is_primary_cashier=False)
-        staff_member.is_primary_cashier = True
-        staff_member.save(update_fields=['is_primary_cashier'])
-
-        OperationalShiftCashierPeriod.objects.create(
-            shift=shift,
-            staff=staff_member,
-            effective_from=now,
-            changed_by=user,
-            reason=notes or 'Assigned primary cashier on staff join'
         )
 
     for nozzle in assigned_nozzles:
@@ -659,7 +622,6 @@ def add_staff_to_open_shift(
             'employee_name': employee.display_name,
             'employee_code': employee.employee_code,
             'designation': desig_name,
-            'is_primary_cashier': staff_member.is_primary_cashier,
             'assigned_nozzles': [n.code for n in assigned_nozzles]
         }
     )
@@ -772,7 +734,6 @@ def transfer_nozzle_assignment(
             employee_code_snapshot=new_employee.employee_code,
             employee_name_snapshot=new_employee.display_name,
             designation_snapshot=designation_name,
-            is_primary_cashier=False,
             effective_from=handover_time,
             added_by=user
         )
@@ -883,7 +844,6 @@ def correct_nozzle_assignment(
             employee_code_snapshot=new_employee.employee_code,
             employee_name_snapshot=new_employee.display_name,
             designation_snapshot=designation_name,
-            is_primary_cashier=False,
             effective_from=active_assignment.effective_from,
             added_by=user
         )
@@ -914,64 +874,7 @@ def correct_nozzle_assignment(
     return active_assignment
 
 
-@transaction.atomic
-def transfer_primary_cashier(
-    shift: OperationalShift,
-    new_staff_id,
-    reason: str = '',
-    user=None
-) -> OperationalShiftCashierPeriod:
-    """
-    Atomically transfers primary cashier role and records historical period.
-    """
-    shift = OperationalShift.objects.select_for_update().get(id=shift.id)
-    if shift.status != OperationalShift.STATUS_OPEN:
-        raise ValidationError("Primary cashier can only be transferred while the shift is open.")
 
-    if not reason or not reason.strip():
-        raise ValidationError("A mandatory reason is required to transfer primary cashier accountability.")
-
-    try:
-        new_staff = OperationalShiftStaff.objects.get(id=new_staff_id, shift=shift)
-    except OperationalShiftStaff.DoesNotExist:
-        raise ValidationError("Target staff member does not exist in this operational shift.")
-
-    if new_staff.is_primary_cashier:
-        raise ValidationError(f"{new_staff.employee_name_snapshot} is already the active primary cashier.")
-
-    now = timezone.now()
-
-    prev_period = OperationalShiftCashierPeriod.objects.filter(shift=shift, effective_to__isnull=True).first()
-    prev_cashier_name = prev_period.staff.employee_name_snapshot if prev_period else "None"
-    if prev_period:
-        prev_period.effective_to = now
-        prev_period.save(update_fields=['effective_to'])
-
-    OperationalShiftStaff.objects.filter(shift=shift, is_primary_cashier=True).update(is_primary_cashier=False)
-    new_staff.is_primary_cashier = True
-    new_staff.save(update_fields=['is_primary_cashier'])
-
-    new_period = OperationalShiftCashierPeriod.objects.create(
-        shift=shift,
-        staff=new_staff,
-        effective_from=now,
-        changed_by=user,
-        reason=reason.strip()
-    )
-
-    log_shift_activity(
-        shift=shift,
-        event_type='primary_cashier_transferred',
-        actor=user,
-        reason=reason.strip(),
-        metadata={
-            'from_cashier': prev_cashier_name,
-            'to_cashier': new_staff.employee_name_snapshot,
-            'transferred_at': now.isoformat()
-        }
-    )
-
-    return new_period
 
 
 @transaction.atomic
@@ -1032,7 +935,6 @@ def activate_nozzle_midshift(
             employee_code_snapshot=employee.employee_code,
             employee_name_snapshot=employee.display_name,
             designation_snapshot=desig_name,
-            is_primary_cashier=False,
             effective_from=timezone.now(),
             added_by=user
         )
@@ -1118,7 +1020,6 @@ def update_open_shift_assignments(shift: OperationalShift, staff_assignments_dat
         add_staff_to_open_shift(
             shift=shift,
             employee_id=emp_id,
-            is_primary_cashier=bool(staff_data.get('is_primary_cashier', False)),
             notes=staff_data.get('notes'),
             user=user
         )
@@ -1697,8 +1598,7 @@ def close_operational_shift(shift: OperationalShift, user) -> OperationalShift:
             na.closing_reading = meter.closing_reading
         na.save(update_fields=['effective_to', 'closing_reading'])
 
-    # Close active cashier period and staff periods
-    OperationalShiftCashierPeriod.objects.filter(shift=shift, effective_to__isnull=True).update(effective_to=now)
+    # Close active staff periods
     shift.staff_members.filter(effective_to__isnull=True).update(effective_to=now)
 
     recalculate_shift_totals(shift)

@@ -153,5 +153,13 @@ Live forecourt operations enforce strict real-time auditability and data integri
    - All fuel quantities and revenues are computed using exact Python `Decimal` arithmetic.
 6. **In-Shift Price Changes**: When fuel price changes during a live shift, all active nozzles dispensing that product must capture a snapshot reading. Active price segments close at the snapshot reading and new segments start at the new selling price, preserving exact price continuity without negative volumes. Direct price updates bypassing this workflow while nozzles have an open shift are blocked.
 7. **Shift Closing & Controlled Reopening**: Shift closing validates that all active nozzles have recorded closing readings, meter readings are continuous and non-decreasing, and testing volume does not exceed gross dispensing. Shifts close atomically. Only the latest closed shift for an outlet may be reopened, requiring mandatory justification and audit logging.
+8. **Employee-Wise Accountability & Shift Accountability Model**:
+   - Pump ERP enforces an employee-wise collection accountability model.
+   - Every attendant is individually responsible for fuel sales generated across their assigned nozzle meter intervals (`OperationalShiftStaffNozzleInterval`).
+   - There is no shift-level "Primary Cashier" role or operational workflow in live shifts or roster planning.
+   - "Cashier" is an ordinary employee designation configured in the Employee Master, not a shift-level operational authority.
+   - Collections, payments, and shortages/excesses are reconciled per employee against their attributed fuel sales.
+   - A centralized-cashier model may be considered as a future configurable option if required by different petrol pump workflows, but is explicitly not part of the active shift domain.
+
 
 

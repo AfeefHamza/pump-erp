@@ -3,9 +3,12 @@ from django.utils import timezone
 from django.db import models
 from apps.organizations.models import Outlet
 from apps.forecourt.models import FuelProduct, Tank, Dispenser, Nozzle, ProductPrice
-from apps.shifts.models import ShiftDefinition
+from apps.shifts.models import ShiftDefinition, ShiftNozzleMeter, OperationalShift
 from apps.employees.models import Employee
-from .models import TankCalibrationAssignment, OpeningBalanceBatch, NozzleOpeningBalance, TankOpeningBalance
+from .models import (
+    TankCalibrationAssignment, OpeningBalanceBatch, NozzleOpeningBalance, TankOpeningBalance,
+    NozzleCommissioning
+)
 
 def check_outlet_operational_readiness(outlet: Outlet) -> dict:
     """
@@ -45,8 +48,8 @@ def check_outlet_operational_readiness(outlet: Outlet) -> dict:
     has_dispensers = dispensers_count > 0
 
     # 5. Active nozzles exist
-    active_nozzles = Nozzle.objects.filter(outlet=outlet, status=Nozzle.STATUS_ACTIVE)
-    nozzles_count = active_nozzles.count()
+    active_nozzles = list(Nozzle.objects.filter(outlet=outlet, status=Nozzle.STATUS_ACTIVE))
+    nozzles_count = len(active_nozzles)
     has_nozzles = nozzles_count > 0
 
     # 6. Every active nozzle is connected to a tank
@@ -89,24 +92,43 @@ def check_outlet_operational_readiness(outlet: Outlet) -> dict:
     ).first()
     has_confirmed_balance = confirmed_batch is not None
 
-    # 11 & 12. Every active nozzle has initial totalizer and every active tank has physical/book quantities in confirmed batch
-    nozzles_missing_balance = []
+    # 11 & 12. Every active nozzle has starting totalizer and every active tank has physical/book quantities in confirmed batch
+    # An active nozzle passes when it has at least one valid starting source:
+    # - Confirmed initial opening balance
+    # - Valid commissioning record
+    # - Eligible previous closed-shift final reading
+    confirmed_nozzle_ids = set(
+        NozzleOpeningBalance.objects.filter(
+            batch__outlet=outlet,
+            batch__status=OpeningBalanceBatch.STATUS_CONFIRMED
+        ).values_list('nozzle_id', flat=True)
+    )
+    commissioned_nozzle_ids = set(
+        NozzleCommissioning.objects.filter(
+            outlet=outlet,
+            effective_at__lte=now
+        ).values_list('nozzle_id', flat=True)
+    )
+    previous_shift_nozzle_ids = set(
+        ShiftNozzleMeter.objects.filter(
+            shift__outlet=outlet,
+            shift__status=OperationalShift.STATUS_CLOSED,
+            closing_reading__isnull=False
+        ).values_list('nozzle_id', flat=True)
+    )
+
+    valid_starting_nozzle_ids = confirmed_nozzle_ids | commissioned_nozzle_ids | previous_shift_nozzle_ids
+    missing_active_nozzles = [n for n in active_nozzles if n.id not in valid_starting_nozzle_ids]
+    has_nozzle_balances = len(missing_active_nozzles) == 0 if has_nozzles else False
+
+    # Check tanks in confirmed batch
     tanks_missing_balance = []
-    
     if has_confirmed_balance:
-        # Check nozzles
-        nozzle_bal_ids = set(NozzleOpeningBalance.objects.filter(batch=confirmed_batch).values_list('nozzle_id', flat=True))
-        for n in active_nozzles:
-            if n.id not in nozzle_bal_ids:
-                nozzles_missing_balance.append(n.code)
-        
-        # Check tanks
         tank_bal_ids = set(TankOpeningBalance.objects.filter(batch=confirmed_batch).values_list('tank_id', flat=True))
         for t in active_tanks:
             if t.id not in tank_bal_ids:
                 tanks_missing_balance.append(t.code)
 
-    has_nozzle_balances = len(nozzles_missing_balance) == 0 if (has_confirmed_balance and has_nozzles) else False
     has_tank_balances = len(tanks_missing_balance) == 0 if (has_confirmed_balance and has_tanks) else False
 
     # Overall readiness
@@ -125,6 +147,16 @@ def check_outlet_operational_readiness(outlet: Outlet) -> dict:
         has_tank_balances
     )
 
+    nozzle_failure_info = {
+        'code': 'nozzle_starting_reading_missing',
+        'message': f"{len(missing_active_nozzles)} active nozzle{'s' if len(missing_active_nozzles) != 1 else ''} require commissioning.",
+        'items': [
+            {'nozzle_id': str(n.id), 'nozzle_code': n.code}
+            for n in missing_active_nozzles
+        ],
+        'resolution_path': '/app/settings/dispensers-nozzles'
+    } if not has_nozzle_balances else None
+
     # Compile requirements check checklist
     checks = [
         {'id': 'fuel_products', 'name': 'Active fuel products exist', 'passed': has_products, 'details': f"{products_count} active product(s) found."},
@@ -137,7 +169,17 @@ def check_outlet_operational_readiness(outlet: Outlet) -> dict:
         {'id': 'employees', 'name': 'Active employees assigned', 'passed': has_employees, 'details': f"{employees_count} active employee(s) assigned to this outlet."},
         {'id': 'calibration', 'name': 'Tank calibration assignments set', 'passed': has_calibration, 'details': 'All tanks calibrated or set to manual.' if has_calibration else f"Tanks missing calibration: {', '.join(tanks_missing_calibration)}."},
         {'id': 'opening_batch', 'name': 'Confirmed opening balance batch exists', 'passed': has_confirmed_balance, 'details': f"Effective date: {confirmed_batch.effective_at.strftime('%Y-%m-%d %H:%M')}" if has_confirmed_balance else "No confirmed opening balances."},
-        {'id': 'nozzle_totalizers', 'name': 'Every active nozzle has opening totalizer', 'passed': has_nozzle_balances, 'details': 'All nozzles have opening readings.' if has_nozzle_balances else f"Nozzles missing reading: {', '.join(nozzles_missing_balance)}."},
+        {
+            'id': 'nozzle_totalizers',
+            'name': 'Every active nozzle has opening totalizer',
+            'passed': has_nozzle_balances,
+            'details': 'All nozzles have opening readings.' if has_nozzle_balances else 'Some active nozzles do not have an opening totalizer or commissioning record.',
+            'code': 'nozzle_starting_reading_missing' if not has_nozzle_balances else None,
+            'message': f"{len(missing_active_nozzles)} active nozzle{'s' if len(missing_active_nozzles) != 1 else ''} require commissioning." if not has_nozzle_balances else '',
+            'items': [{'nozzle_id': str(n.id), 'nozzle_code': n.code} for n in missing_active_nozzles] if not has_nozzle_balances else [],
+            'resolution_path': '/app/settings/dispensers-nozzles',
+            'failure_info': nozzle_failure_info
+        },
         {'id': 'tank_opening_stock', 'name': 'Every active tank has book and physical stock', 'passed': has_tank_balances, 'details': 'All tanks have opening stock.' if has_tank_balances else f"Tanks missing opening stock: {', '.join(tanks_missing_balance)}."}
     ]
 
@@ -167,7 +209,7 @@ def check_outlet_operational_readiness(outlet: Outlet) -> dict:
             'employees': '/app/settings/employees',
             'calibration': '/app/settings/dip-calibrations',
             'opening_batch': '/app/settings/opening-balances',
-            'nozzle_totalizers': '/app/settings/opening-balances',
+            'nozzle_totalizers': '/app/settings/dispensers-nozzles',
             'tank_opening_stock': '/app/settings/opening-balances'
         }
     }

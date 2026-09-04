@@ -55,7 +55,7 @@ class ShiftStaffAssignmentSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'roster', 'employee_id', 'employee_details',
             'duty_designation_id', 'duty_designation_details',
-            'is_primary_cashier', 'nozzle_assignments', 'notes', 'created_at'
+            'nozzle_assignments', 'notes', 'created_at'
         ]
         read_only_fields = ['id', 'roster', 'created_at']
 
@@ -77,7 +77,6 @@ class ShiftRosterSerializer(serializers.ModelSerializer):
 
 from .models import (
     OperationalShift, OperationalShiftStaff, OperationalShiftNozzleAssignment,
-    OperationalShiftCashierPeriod,
     ShiftNozzleMeter, ShiftNozzlePriceSegment, ShiftMeterEvent,
     ShiftTestingRecord, ShiftTankDipObservation, ShiftActivityLog
 )
@@ -93,7 +92,7 @@ class OperationalShiftStaffSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'shift', 'source_employee', 'duty_designation',
             'employee_code_snapshot', 'employee_name_snapshot', 'designation_snapshot',
-            'is_primary_cashier', 'effective_from', 'effective_to', 'is_active',
+            'effective_from', 'effective_to', 'is_active',
             'added_by', 'added_by_name', 'assigned_nozzles', 'notes', 'created_at'
         ]
         read_only_fields = ['id', 'created_at']
@@ -139,36 +138,16 @@ class OperationalShiftNozzleAssignmentSerializer(serializers.ModelSerializer):
         return None
 
 
-class OperationalShiftCashierPeriodSerializer(serializers.ModelSerializer):
-    staff_name = serializers.CharField(source='staff.employee_name_snapshot', read_only=True)
-    staff_code = serializers.CharField(source='staff.employee_code_snapshot', read_only=True)
-    changed_by_name = serializers.SerializerMethodField()
-    is_active = serializers.SerializerMethodField()
-
-    class Meta:
-        model = OperationalShiftCashierPeriod
-        fields = [
-            'id', 'shift', 'staff', 'staff_name', 'staff_code',
-            'effective_from', 'effective_to', 'is_active',
-            'changed_by', 'changed_by_name', 'reason', 'created_at'
-        ]
-        read_only_fields = ['id', 'created_at']
-
-    def get_is_active(self, obj) -> bool:
-        return obj.effective_to is None
-
-    def get_changed_by_name(self, obj) -> str | None:
-        if obj.changed_by:
-            return obj.changed_by.get_full_name() or obj.changed_by.email
-        return None
-
-
 class ShiftStaffAddInputSerializer(serializers.Serializer):
     employee_id = serializers.UUIDField(required=True)
     duty_designation_id = serializers.UUIDField(required=False, allow_null=True)
-    is_primary_cashier = serializers.BooleanField(required=False, default=False)
     notes = serializers.CharField(required=False, allow_blank=True, default='')
     assigned_nozzle_ids = serializers.ListField(child=serializers.UUIDField(), required=False, default=list)
+
+    def validate(self, attrs):
+        if 'is_primary_cashier' in self.initial_data:
+            raise serializers.ValidationError({"is_primary_cashier": "The field 'is_primary_cashier' has been retired and is not accepted."})
+        return attrs
 
 
 class ShiftNozzleHandoverInputSerializer(serializers.Serializer):
@@ -182,11 +161,6 @@ class ShiftNozzleHandoverInputSerializer(serializers.Serializer):
 class ShiftNozzleCorrectInputSerializer(serializers.Serializer):
     nozzle_id = serializers.UUIDField(required=True)
     new_employee_id = serializers.UUIDField(required=True)
-    reason = serializers.CharField(required=True, min_length=3)
-
-
-class ShiftCashierTransferInputSerializer(serializers.Serializer):
-    new_staff_id = serializers.UUIDField(required=True)
     reason = serializers.CharField(required=True, min_length=3)
 
 

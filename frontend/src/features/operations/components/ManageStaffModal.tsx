@@ -21,7 +21,6 @@ interface StaffEntry {
   employee_id: string;
   employee_name: string;
   designation_name: string;
-  is_primary_cashier: boolean;
   nozzle_ids: string[];
   notes?: string;
 }
@@ -74,7 +73,6 @@ export const ManageStaffModal: React.FC<ManageStaffModalProps> = ({
         employee_id: sm.source_employee,
         employee_name: sm.employee_name_snapshot,
         designation_name: sm.designation_snapshot,
-        is_primary_cashier: sm.is_primary_cashier,
         nozzle_ids: nozzleIds,
         notes: sm.notes || '',
       };
@@ -107,7 +105,6 @@ export const ManageStaffModal: React.FC<ManageStaffModalProps> = ({
       employee_id: emp.id,
       employee_name: emp.display_name,
       designation_name: emp.designation_details?.name || 'Staff',
-      is_primary_cashier: staffEntries.length === 0, // make first person cashier by default
       nozzle_ids: [],
       notes: '',
     };
@@ -127,14 +124,7 @@ export const ManageStaffModal: React.FC<ManageStaffModalProps> = ({
     setError(null);
   };
 
-  const handleSetPrimaryCashier = (empId: string) => {
-    setStaffEntries(
-      staffEntries.map((s) => ({
-        ...s,
-        is_primary_cashier: s.employee_id === empId,
-      }))
-    );
-  };
+
 
   const handleNozzleAssignmentChange = (nozzleId: string, targetEmpId: string) => {
     setStaffEntries((prev) =>
@@ -163,11 +153,7 @@ export const ManageStaffModal: React.FC<ManageStaffModalProps> = ({
       return;
     }
 
-    const cashier = staffEntries.find((s) => s.is_primary_cashier);
-    if (!cashier) {
-      setError('Please designate one staff member as the Primary Cashier.');
-      return;
-    }
+
 
     // Ensure all active nozzles are assigned
     const assignedNozzleIds = new Set<string>();
@@ -190,7 +176,6 @@ export const ManageStaffModal: React.FC<ManageStaffModalProps> = ({
         staff_assignments: staffEntries.map((s) => ({
           employee_id: s.employee_id,
           nozzle_ids: s.nozzle_ids,
-          is_primary_cashier: s.is_primary_cashier,
           notes: s.notes || undefined,
         })),
       };
@@ -281,7 +266,7 @@ export const ManageStaffModal: React.FC<ManageStaffModalProps> = ({
             <div>
               <h3 className="h4" style={{ margin: 0, fontSize: '1.1rem' }}>Manage Shift Staff & Nozzles</h3>
               <p className="text-muted" style={{ margin: 0, fontSize: '0.8rem' }}>
-                Add attendants, assign primary cashier, or re-map nozzle handlers during this live shift.
+                Add attendants or re-map nozzle handlers during this live shift.
               </p>
             </div>
           </div>
@@ -368,9 +353,6 @@ export const ManageStaffModal: React.FC<ManageStaffModalProps> = ({
               <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>
                 Shift Attendants & Staff ({staffEntries.length})
               </h4>
-              <span className="text-muted" style={{ fontSize: '0.8rem' }}>
-                One employee must be designated as Primary Cashier.
-              </span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -379,8 +361,8 @@ export const ManageStaffModal: React.FC<ManageStaffModalProps> = ({
                   key={staff.employee_id}
                   style={{
                     padding: '1rem',
-                    backgroundColor: staff.is_primary_cashier ? 'rgba(59, 130, 246, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-                    border: staff.is_primary_cashier ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid var(--border-color, #334155)',
+                    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                    border: '1px solid var(--border-color, #334155)',
                     borderRadius: '8px',
                     display: 'flex',
                     flexDirection: 'column',
@@ -396,16 +378,6 @@ export const ManageStaffModal: React.FC<ManageStaffModalProps> = ({
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.85rem' }}>
-                        <input
-                          type="radio"
-                          name="primary_cashier"
-                          checked={staff.is_primary_cashier}
-                          onChange={() => handleSetPrimaryCashier(staff.employee_id)}
-                        />
-                        <span>Primary Cashier</span>
-                      </label>
-
                       {staffEntries.length > 1 && (
                         <button
                           type="button"

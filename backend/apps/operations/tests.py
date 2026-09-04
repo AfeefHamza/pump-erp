@@ -18,15 +18,19 @@ from apps.employees.services import create_employee, create_designation, assign_
 
 from .models import (
     DipCalibrationChart, DipCalibrationPoint, TankCalibrationAssignment,
-    OpeningBalanceBatch, NozzleOpeningBalance, TankOpeningBalance
+    OpeningBalanceBatch, NozzleOpeningBalance, TankOpeningBalance,
+    NozzleCommissioning, NozzleCommissioningAuditLog
 )
 from .services import (
     import_calibration_chart, activate_calibration_chart,
     assign_calibration_chart_to_tank, convert_dip_to_volume,
     create_opening_balance_batch, set_nozzle_opening_balance, set_tank_opening_balance,
-    confirm_opening_balance_batch
+    confirm_opening_balance_batch, commission_nozzle, bulk_commission_nozzles
 )
 from .selectors import check_outlet_operational_readiness
+from apps.shifts.models import OperationalShift, ShiftNozzleMeter, ShiftStaffAssignment
+from rest_framework.test import APIClient
+from apps.organizations.models import Role, RolePermission, PermissionDefinition, OrganisationMembership, MembershipRole
 
 User = get_user_model()
 
@@ -147,3 +151,213 @@ class OperationsTests(TestCase):
         # Now check readiness
         readiness2 = check_outlet_operational_readiness(self.outlet)
         self.assertTrue(readiness2['ready'])
+
+    def test_newly_added_nozzle_commissioning_and_readiness(self):
+        # 1. Setup confirmed opening balance for original nozzle
+        batch = create_opening_balance_batch(self.org, self.outlet, timezone.now(), self.owner)
+        set_nozzle_opening_balance(batch, self.nozzle, Decimal('1000.000'))
+        set_tank_opening_balance(batch, self.tank, Decimal('2000.0'), Decimal('1980.0'), manual_quantity_reason="Initial setup")
+        confirmed_batch = confirm_opening_balance_batch(batch, self.owner)
+        batch_id = confirmed_batch.id
+        confirmed_at_orig = confirmed_batch.confirmed_at
+        orig_batch_count = confirmed_batch.nozzle_balances.count()
+
+        # 2. Add a new nozzle after opening balance confirmation
+        nozzle2 = create_nozzle(self.org, self.outlet, self.dispenser, self.tank, code="NZ2", name="Nozzle 2")
+
+        # 3. Check readiness: nozzle2 has no opening totalizer, so readiness must fail
+        readiness = check_outlet_operational_readiness(self.outlet)
+        nozzle_check = next(c for c in readiness['checks'] if c['id'] == 'nozzle_totalizers')
+        self.assertFalse(nozzle_check['passed'])
+        self.assertEqual(nozzle_check['details'], "Some active nozzles do not have an opening totalizer or commissioning record.")
+        self.assertEqual(nozzle_check['code'], "nozzle_starting_reading_missing")
+        self.assertTrue(any(item['nozzle_id'] == str(nozzle2.id) for item in nozzle_check['items']))
+        self.assertEqual(readiness['resolution_links']['nozzle_totalizers'], '/app/settings/dispensers-nozzles')
+
+        # 4. Commission the newly added nozzle
+        effective_time = timezone.now()
+        comm = commission_nozzle(
+            organisation=self.org,
+            outlet=self.outlet,
+            nozzle=nozzle2,
+            initial_totalizer=Decimal('456.789'),
+            effective_at=effective_time,
+            reason="Newly installed dispenser nozzle",
+            notes="Factory calibration confirmed",
+            actor=self.owner
+        )
+
+        # 5. Verify commissioning record and snapshot fields
+        self.assertIsNotNone(comm.id)
+        self.assertEqual(comm.initial_totalizer, Decimal('456.789'))
+        self.assertEqual(comm.dispenser_code_snapshot, self.dispenser.code)
+        self.assertEqual(comm.nozzle_code_snapshot, "NZ2")
+        self.assertEqual(comm.product_id_snapshot, self.product.id)
+        self.assertEqual(comm.product_name_snapshot, self.product.name)
+
+        # 6. Confirmed opening balance batch remains strictly unchanged
+        confirmed_batch.refresh_from_db()
+        self.assertEqual(confirmed_batch.id, batch_id)
+        self.assertEqual(confirmed_batch.status, OpeningBalanceBatch.STATUS_CONFIRMED)
+        self.assertEqual(confirmed_batch.confirmed_at, confirmed_at_orig)
+        self.assertEqual(confirmed_batch.nozzle_balances.count(), orig_batch_count)
+
+        # 7. Check readiness passes now that nozzle2 is commissioned
+        # Provide prerequisites (price, shift, employee, calibration)
+        set_product_price(self.org, self.outlet, self.product, Decimal('95.00'), effective_from=timezone.now() - timedelta(days=1))
+        create_shift_definition(self.org, self.outlet, code="S1", name="Morning", starts_at=time(6, 0), ends_at=time(14, 0))
+        desig = create_designation(self.org, code="DSM", name="Attendant")
+        emp = create_employee(self.org, employee_code="E1", display_name="John Attendant", designation=desig)
+        assign_employee_to_outlets(emp, [{'outlet_id': self.outlet.id, 'is_primary': True}])
+        self.tank.acknowledged_manual_dip = True
+        self.tank.save()
+
+        readiness2 = check_outlet_operational_readiness(self.outlet)
+        nozzle_check2 = next(c for c in readiness2['checks'] if c['id'] == 'nozzle_totalizers')
+        self.assertTrue(nozzle_check2['passed'])
+        self.assertTrue(readiness2['ready'])
+
+    def test_duplicate_commissioning_rejected(self):
+        nozzle2 = create_nozzle(self.org, self.outlet, self.dispenser, self.tank, code="NZ2", name="Nozzle 2")
+        commission_nozzle(
+            self.org, self.outlet, nozzle2, Decimal('100.000'),
+            timezone.now(), "First commissioning", None, self.owner
+        )
+        with self.assertRaises(ValidationError):
+            commission_nozzle(
+                self.org, self.outlet, nozzle2, Decimal('200.000'),
+                timezone.now(), "Duplicate attempt", None, self.owner
+            )
+
+    def test_negative_totalizer_rejected(self):
+        nozzle2 = create_nozzle(self.org, self.outlet, self.dispenser, self.tank, code="NZ2", name="Nozzle 2")
+        with self.assertRaises(ValidationError):
+            commission_nozzle(
+                self.org, self.outlet, nozzle2, Decimal('-10.000'),
+                timezone.now(), "Negative test", None, self.owner
+            )
+
+    def test_cross_outlet_and_tenant_commissioning_rejected(self):
+        org2 = create_organisation_with_owner(name="Org 2", code="TORG2", owner_user=self.owner)
+        outlet2 = create_outlet(org2, name="Outlet 2", code="OUT2")
+        nozzle2 = create_nozzle(self.org, self.outlet, self.dispenser, self.tank, code="NZ2", name="Nozzle 2")
+
+        # Mismatched outlet
+        with self.assertRaises(ValidationError):
+            commission_nozzle(
+                self.org, outlet2, nozzle2, Decimal('100.000'),
+                timezone.now(), "Cross outlet test", None, self.owner
+            )
+
+        # Mismatched org
+        with self.assertRaises(ValidationError):
+            commission_nozzle(
+                org2, self.outlet, nozzle2, Decimal('100.000'),
+                timezone.now(), "Cross org test", None, self.owner
+            )
+
+    def test_bulk_commissioning_is_atomic(self):
+        nozzle2 = create_nozzle(self.org, self.outlet, self.dispenser, self.tank, code="NZ2", name="Nozzle 2")
+        nozzle3 = create_nozzle(self.org, self.outlet, self.dispenser, self.tank, code="NZ3", name="Nozzle 3")
+
+        # Row 1 valid, row 2 negative -> should fail atomically
+        invalid_items = [
+            {'nozzle_id': nozzle2.id, 'initial_totalizer': Decimal('100.000'), 'notes': 'Valid'},
+            {'nozzle_id': nozzle3.id, 'initial_totalizer': Decimal('-50.000'), 'notes': 'Invalid'}
+        ]
+        with self.assertRaises(ValidationError):
+            bulk_commission_nozzles(
+                organisation=self.org,
+                outlet=self.outlet,
+                items=invalid_items,
+                effective_at=timezone.now(),
+                common_reason="Bulk install test",
+                actor=self.owner
+            )
+
+        # Neither nozzle should be commissioned
+        self.assertFalse(NozzleCommissioning.objects.filter(nozzle=nozzle2).exists())
+        self.assertFalse(NozzleCommissioning.objects.filter(nozzle=nozzle3).exists())
+
+        # Now supply valid items for both
+        valid_items = [
+            {'nozzle_id': nozzle2.id, 'initial_totalizer': Decimal('100.000'), 'notes': 'Valid N2'},
+            {'nozzle_id': nozzle3.id, 'initial_totalizer': Decimal('200.000'), 'notes': 'Valid N3'}
+        ]
+        created = bulk_commission_nozzles(
+            organisation=self.org,
+            outlet=self.outlet,
+            items=valid_items,
+            effective_at=timezone.now(),
+            common_reason="Bulk install test",
+            actor=self.owner
+        )
+        self.assertEqual(len(created), 2)
+        self.assertTrue(NozzleCommissioning.objects.filter(nozzle=nozzle2).exists())
+        self.assertTrue(NozzleCommissioning.objects.filter(nozzle=nozzle3).exists())
+
+    def test_commissioning_audit_event_created(self):
+        nozzle2 = create_nozzle(self.org, self.outlet, self.dispenser, self.tank, code="NZ2", name="Nozzle 2")
+        comm = commission_nozzle(
+            self.org, self.outlet, nozzle2, Decimal('350.000'),
+            timezone.now(), "Audit event test", "Notes on audit", self.owner
+        )
+        audit = NozzleCommissioningAuditLog.objects.filter(commissioning=comm).first()
+        self.assertIsNotNone(audit)
+        self.assertEqual(audit.event_type, 'nozzle_commissioned')
+        self.assertEqual(audit.actor, self.owner)
+        self.assertEqual(audit.reason, "Audit event test")
+        self.assertEqual(audit.metadata['initial_totalizer'], '350.000')
+        self.assertEqual(audit.metadata['nozzle_code'], 'NZ2')
+
+        # Audit cannot be updated or deleted
+        with self.assertRaises(ValidationError):
+            audit.reason = "Modified"
+            audit.save()
+
+        with self.assertRaises(ValidationError):
+            audit.delete()
+
+    def test_commissioning_api_and_permissions(self):
+        nozzle2 = create_nozzle(self.org, self.outlet, self.dispenser, self.tank, code="NZ2", name="Nozzle 2")
+        client = APIClient()
+
+        # 1. Owner has implicit permission
+        client.force_authenticate(user=self.owner)
+        url = f"/api/v1/organisations/{self.org.id}/outlets/{self.outlet.id}/nozzles/{nozzle2.id}/commission/"
+        res = client.post(url, {
+            'initial_totalizer': '150.250',
+            'effective_at': timezone.now().isoformat(),
+            'reason': 'Owner API commissioning'
+        }, format='json')
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data['commissioning']['initial_totalizer'], '150.250')
+
+        # 2. Check status endpoint
+        status_url = f"/api/v1/organisations/{self.org.id}/outlets/{self.outlet.id}/nozzles/commissioning-status/"
+        res_status = client.get(status_url)
+        self.assertEqual(res_status.status_code, 200)
+        items = res_status.data
+        n2_item = next(i for i in items if i['nozzle_id'] == str(nozzle2.id))
+        self.assertEqual(n2_item['status'], 'commissioned')
+        self.assertFalse(n2_item['commissioning_allowed'])
+
+        # 3. User without permission (e.g. Accountant) cannot commission
+        accountant_user = User.objects.create_user(email="accountant@example.com", password="password")
+        accountant_role = Role.objects.get(organisation=self.org, name='Accountant')
+        membership = OrganisationMembership.objects.create(
+            organisation=self.org, user=accountant_user, membership_type=OrganisationMembership.TYPE_MEMBER,
+            status=OrganisationMembership.STATUS_ACTIVE
+        )
+        MembershipRole.objects.create(membership=membership, role=accountant_role)
+
+        nozzle3 = create_nozzle(self.org, self.outlet, self.dispenser, self.tank, code="NZ3", name="Nozzle 3")
+        client.force_authenticate(user=accountant_user)
+        url3 = f"/api/v1/organisations/{self.org.id}/outlets/{self.outlet.id}/nozzles/{nozzle3.id}/commission/"
+        res3 = client.post(url3, {
+            'initial_totalizer': '200.000',
+            'effective_at': timezone.now().isoformat(),
+            'reason': 'Accountant commissioning attempt'
+        }, format='json')
+        self.assertEqual(res3.status_code, 403)
+

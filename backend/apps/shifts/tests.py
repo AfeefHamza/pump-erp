@@ -129,6 +129,17 @@ class ShiftRosterTests(TestCase):
         self.assertIn('available_staff', response.data)
         self.assertEqual(len(response.data['available_staff']), 2)
 
+    def test_roster_can_save_without_primary_cashier(self):
+        shift = create_shift_definition(self.org, self.outlet, code="S1", name="Shift 1", starts_at=time(6, 0), ends_at=time(14, 0))
+        roster = create_or_update_roster(self.org, self.outlet, shift, date(2026, 8, 26), user=self.owner)
+        staff_ass = assign_employee_to_roster(roster, self.employee1, self.designation)
+        assign_nozzles_to_employee(staff_ass, [self.nozzle1])
+
+        # Verify assignment in DB
+        saved_ass = ShiftStaffAssignment.objects.get(id=staff_ass.id)
+        self.assertEqual(saved_ass.employee, self.employee1)
+        self.assertEqual(saved_ass.nozzle_assignments.count(), 1)
+
 
 from decimal import Decimal
 from datetime import date, time, timedelta, datetime
@@ -139,27 +150,28 @@ from apps.forecourt.models import ProductPrice
 from apps.forecourt.services import set_product_price
 from apps.operations.models import (
     DipCalibrationChart, DipCalibrationPoint, TankCalibrationAssignment,
-    OpeningBalanceBatch, NozzleOpeningBalance, TankOpeningBalance
+    OpeningBalanceBatch, NozzleOpeningBalance, TankOpeningBalance,
+    NozzleCommissioning
 )
 from apps.operations.services import (
     import_calibration_chart, activate_calibration_chart,
     assign_calibration_chart_to_tank, create_opening_balance_batch,
-    set_nozzle_opening_balance, set_tank_opening_balance, confirm_opening_balance_batch
+    set_nozzle_opening_balance, set_tank_opening_balance, confirm_opening_balance_batch,
+    commission_nozzle
 )
 from .models import (
     OperationalShift, OperationalShiftStaff, OperationalShiftNozzleAssignment,
-    OperationalShiftCashierPeriod,
     ShiftNozzleMeter, ShiftNozzlePriceSegment, ShiftMeterEvent,
     ShiftTestingRecord, ShiftTankDipObservation, ShiftActivityLog
 )
 from .services import (
     prepare_shift_opening, open_operational_shift, update_open_shift_assignments,
     add_staff_to_open_shift, transfer_nozzle_assignment, correct_nozzle_assignment,
-    transfer_primary_cashier, activate_nozzle_midshift,
+    activate_nozzle_midshift,
     record_closing_meter_reading, record_meter_event, record_testing,
     update_testing, delete_testing, record_shift_dip,
     apply_product_price_change_during_shift, recalculate_shift_totals,
-    close_operational_shift, reopen_operational_shift
+    close_operational_shift, reopen_operational_shift, discard_open_operational_shift
 )
 from .selectors import (
     derive_nozzle_opening_reading, calculate_shift_totals,
@@ -268,7 +280,7 @@ class OperationalShiftMilestone9Tests(TestCase):
     def test_one_open_shift_per_outlet(self):
         # Open shift 1
         staff_data = [
-            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)], 'is_primary_cashier': True}
+            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)]}
         ]
         shift1 = open_operational_shift(
             organisation=self.org, outlet=self.outlet, shift_definition=self.shift_def_day,
@@ -290,8 +302,8 @@ class OperationalShiftMilestone9Tests(TestCase):
     def test_business_date_for_overnight_shift(self):
         # Overnight shift starting at 22:00
         staff_data = [
-            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id)], 'is_primary_cashier': True},
-            {'employee_id': str(self.emp2.id), 'nozzle_ids': [str(self.nozzle2.id)], 'is_primary_cashier': False}
+            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id)]},
+            {'employee_id': str(self.emp2.id), 'nozzle_ids': [str(self.nozzle2.id)]}
         ]
         night_shift = open_operational_shift(
             organisation=self.org, outlet=self.outlet, shift_definition=self.shift_def_night,
@@ -309,7 +321,7 @@ class OperationalShiftMilestone9Tests(TestCase):
         self.assertEqual(derived1['reading'], Decimal('1000.000'))
 
         staff_data = [
-            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)], 'is_primary_cashier': True}
+            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)]}
         ]
         shift = open_operational_shift(
             organisation=self.org, outlet=self.outlet, shift_definition=self.shift_def_day,
@@ -323,7 +335,7 @@ class OperationalShiftMilestone9Tests(TestCase):
 
     def test_roster_snapshot_independence(self):
         staff_data = [
-            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)], 'is_primary_cashier': True}
+            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)]}
         ]
         shift = open_operational_shift(
             organisation=self.org, outlet=self.outlet, shift_definition=self.shift_def_day,
@@ -344,7 +356,7 @@ class OperationalShiftMilestone9Tests(TestCase):
     def test_every_active_nozzle_assigned_before_opening(self):
         # Assign only nozzle1, leaving nozzle2 unassigned -> Must fail validation
         staff_data = [
-            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id)], 'is_primary_cashier': True}
+            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id)]}
         ]
         with self.assertRaises(ValidationError) as ctx:
             open_operational_shift(
@@ -356,7 +368,7 @@ class OperationalShiftMilestone9Tests(TestCase):
 
     def test_decimal_meter_and_testing_calculations(self):
         staff_data = [
-            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)], 'is_primary_cashier': True}
+            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)]}
         ]
         shift = open_operational_shift(
             organisation=self.org, outlet=self.outlet, shift_definition=self.shift_def_day,
@@ -386,7 +398,7 @@ class OperationalShiftMilestone9Tests(TestCase):
 
     def test_testing_cannot_exceed_gross_dispensing(self):
         staff_data = [
-            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)], 'is_primary_cashier': True}
+            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)]}
         ]
         shift = open_operational_shift(
             organisation=self.org, outlet=self.outlet, shift_definition=self.shift_def_day,
@@ -407,7 +419,7 @@ class OperationalShiftMilestone9Tests(TestCase):
 
     def test_price_change_segment_continuity_and_atomic_apply(self):
         staff_data = [
-            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)], 'is_primary_cashier': True}
+            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)]}
         ]
         shift = open_operational_shift(
             organisation=self.org, outlet=self.outlet, shift_definition=self.shift_def_day,
@@ -455,7 +467,7 @@ class OperationalShiftMilestone9Tests(TestCase):
 
     def test_meter_reset_rollover_continuity(self):
         staff_data = [
-            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)], 'is_primary_cashier': True}
+            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)]}
         ]
         shift = open_operational_shift(
             organisation=self.org, outlet=self.outlet, shift_definition=self.shift_def_day,
@@ -481,7 +493,7 @@ class OperationalShiftMilestone9Tests(TestCase):
 
     def test_closing_validation_and_reopen_workflow(self):
         staff_data = [
-            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)], 'is_primary_cashier': True}
+            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)]}
         ]
         shift1 = open_operational_shift(
             organisation=self.org, outlet=self.outlet, shift_definition=self.shift_def_day,
@@ -549,7 +561,7 @@ class OperationalShiftMilestone9Tests(TestCase):
         # Manager user CAN open shift
         self.client.login(email="manager9@example.com", password="password")
         staff_data = [
-            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)], 'is_primary_cashier': True}
+            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)]}
         ]
         resp_mgr = self.client.post(url, {
             'shift_definition_id': str(self.shift_def_day.id),
@@ -560,7 +572,7 @@ class OperationalShiftMilestone9Tests(TestCase):
 
     def test_audit_activity_logging(self):
         staff_data = [
-            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)], 'is_primary_cashier': True}
+            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)]}
         ]
         shift = open_operational_shift(
             organisation=self.org, outlet=self.outlet, shift_definition=self.shift_def_day,
@@ -578,7 +590,7 @@ class OperationalShiftMilestone9Tests(TestCase):
 
     def test_discard_open_operational_shift(self):
         staff_data = [
-            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)], 'is_primary_cashier': True}
+            {'employee_id': str(self.emp1.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)]}
         ]
         shift = open_operational_shift(
             organisation=self.org, outlet=self.outlet, shift_definition=self.shift_def_day,
@@ -700,7 +712,7 @@ class OperationalShiftStaffManagementTests(TestCase):
 
     def _open_test_shift(self):
         staff_data = [
-            {'employee_id': str(self.emp_alice.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)], 'is_primary_cashier': True}
+            {'employee_id': str(self.emp_alice.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)]}
         ]
         return open_operational_shift(
             organisation=self.org, outlet=self.outlet, shift_definition=self.shift_def,
@@ -716,14 +728,12 @@ class OperationalShiftStaffManagementTests(TestCase):
             shift=shift,
             employee_id=self.emp_carol.id,
             duty_designation_id=self.desig_supervisor.id,
-            is_primary_cashier=False,
             notes="Added for afternoon forecourt supervision",
             user=self.owner
         )
 
         self.assertEqual(staff.source_employee, self.emp_carol)
         self.assertEqual(staff.designation_snapshot, "Forecourt Supervisor")
-        self.assertFalse(staff.is_primary_cashier)
         self.assertIsNone(staff.effective_to)
         self.assertEqual(staff.nozzle_assignments.count(), 0)
 
@@ -733,39 +743,124 @@ class OperationalShiftStaffManagementTests(TestCase):
         self.assertEqual(log.metadata['employee_name'], "Carol Cashier")
         self.assertEqual(log.metadata['designation'], "Forecourt Supervisor")
 
-    def test_only_one_active_primary_cashier_and_period_history(self):
+    def test_employee_with_no_nozzles_has_zero_fuel_sales_totals(self):
+        """
+        Multiple staff can exist without nozzles (e.g. Supervisor, Cashier designation).
+        Attendants with assigned nozzles account for sales; non-nozzle staff have 0 sales.
+        """
         shift = self._open_test_shift()
 
-        # Alice is the initial primary cashier
-        alice_staff = OperationalShiftStaff.objects.get(shift=shift, source_employee=self.emp_alice)
-        self.assertTrue(alice_staff.is_primary_cashier)
-        alice_period = OperationalShiftCashierPeriod.objects.get(shift=shift, staff=alice_staff)
-        self.assertIsNone(alice_period.effective_to)
-
-        # Add Carol as a staff member
-        carol_staff = add_staff_to_open_shift(
+        # Add Carol (Cashier designation) and Bob (Supervisor) with no nozzles
+        add_staff_to_open_shift(
             shift=shift, employee_id=self.emp_carol.id, duty_designation_id=self.desig_cashier.id,
-            is_primary_cashier=False, user=self.owner
+            user=self.owner
+        )
+        add_staff_to_open_shift(
+            shift=shift, employee_id=self.emp_bob.id, duty_designation_id=self.desig_supervisor.id,
+            user=self.owner
         )
 
-        # Transfer primary cashier to Carol
-        new_period = transfer_primary_cashier(
-            shift=shift, new_staff_id=carol_staff.id, reason="Cash desk changeover for lunch", user=self.owner
-        )
+        # Alice dispenses fuel on N1 (1000 -> 1050 = 50L) and N2 (2000 -> 2030 = 30L)
+        record_closing_meter_reading(shift, self.nozzle1, Decimal('1050.000'), self.owner)
+        record_closing_meter_reading(shift, self.nozzle2, Decimal('2030.000'), self.owner)
 
-        alice_staff.refresh_from_db()
-        carol_staff.refresh_from_db()
-        alice_period.refresh_from_db()
+        totals = calculate_shift_totals(shift)
+        emp_map = {e['employee_name']: e for e in totals['employees']}
 
-        self.assertFalse(alice_staff.is_primary_cashier)
-        self.assertTrue(carol_staff.is_primary_cashier)
-        self.assertIsNotNone(alice_period.effective_to)
-        self.assertIsNone(new_period.effective_to)
-        self.assertEqual(new_period.staff, carol_staff)
-        self.assertEqual(new_period.reason, "Cash desk changeover for lunch")
+        # Alice has all 80L sales
+        self.assertEqual(emp_map['Alice Attendant']['gross_quantity'], Decimal('80.000'))
+        self.assertEqual(emp_map['Alice Attendant']['sale_amount'], Decimal('8000.00'))
 
-        # Exactly ONE active cashier period exists
-        self.assertEqual(OperationalShiftCashierPeriod.objects.filter(shift=shift, effective_to__isnull=True).count(), 1)
+        # Carol Cashier has 0 fuel sales
+        self.assertEqual(emp_map['Carol Cashier']['gross_quantity'], Decimal('0.000'))
+        self.assertEqual(emp_map['Carol Cashier']['sale_amount'], Decimal('0.00'))
+        self.assertEqual(emp_map['Carol Cashier']['nozzle_codes'], [])
+
+        # Bob Attendant has 0 fuel sales
+        self.assertEqual(emp_map['Bob Attendant']['gross_quantity'], Decimal('0.000'))
+        self.assertEqual(emp_map['Bob Attendant']['sale_amount'], Decimal('0.00'))
+
+    def test_legacy_cashier_transfer_endpoint_returns_410_gone(self):
+        """Legacy primary cashier transfer endpoint must return 410 Gone."""
+        shift = self._open_test_shift()
+        self.client.force_authenticate(user=self.owner)
+        url = reverse('shift_cashier_transfer', kwargs={'org_id': self.org.id, 'outlet_id': self.outlet.id, 'shift_id': shift.id})
+        resp = self.client.post(url, {'new_staff_id': 'fake-id', 'reason': 'test'}, format='json')
+        self.assertEqual(resp.status_code, 410)
+        self.assertIn("decommissioned", resp.data['detail'])
+
+    def test_cashier_transfer_permission_removed(self):
+        """The shift.cashier_transfer permission must not exist in active permissions."""
+        from apps.organizations.models import PermissionDefinition
+        self.assertFalse(PermissionDefinition.objects.filter(code='shift.cashier_transfer').exists())
+
+    def test_roster_and_shift_apis_reject_legacy_primary_cashier_field(self):
+        """APIs must reject legacy is_primary_cashier field with 400 Bad Request."""
+        self.client.force_authenticate(user=self.owner)
+
+        # 1. Roster workspace save rejects is_primary_cashier (via staff_assignments or assignments)
+        roster_url = reverse('shift_roster_workspace', kwargs={'org_id': self.org.id, 'outlet_id': self.outlet.id})
+        resp_roster = self.client.post(roster_url, {
+            'shift_definition_id': str(self.shift_def.id),
+            'business_date': '2026-09-15',
+            'staff_assignments': [
+                {'employee_id': str(self.emp_alice.id), 'nozzle_ids': [str(self.nozzle1.id)], 'is_primary_cashier': True}
+            ]
+        }, format='json')
+        self.assertEqual(resp_roster.status_code, 400)
+        self.assertIn("is_primary_cashier", resp_roster.data['detail'])
+
+        resp_roster_direct = self.client.post(roster_url, {
+            'shift_definition_id': str(self.shift_def.id),
+            'business_date': '2026-09-15',
+            'assignments': [
+                {'employee_id': str(self.emp_alice.id), 'nozzle_ids': [str(self.nozzle1.id)], 'is_primary_cashier': True}
+            ]
+        }, format='json')
+        self.assertEqual(resp_roster_direct.status_code, 400)
+        self.assertIn("is_primary_cashier", resp_roster_direct.data['detail'])
+
+        # 2. Shift open rejects is_primary_cashier
+        open_url = reverse('shift_open', kwargs={'org_id': self.org.id, 'outlet_id': self.outlet.id})
+        resp_open = self.client.post(open_url, {
+            'shift_definition_id': str(self.shift_def.id),
+            'business_date': '2026-09-15',
+            'staff_assignments': [
+                {'employee_id': str(self.emp_alice.id), 'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id)], 'is_primary_cashier': True}
+            ]
+        }, format='json')
+        self.assertEqual(resp_open.status_code, 400)
+        self.assertIn("is_primary_cashier", resp_open.data['detail'])
+
+        # 3. Add staff rejects is_primary_cashier
+        shift = self._open_test_shift()
+        add_staff_url = reverse('shift_staff_add', kwargs={'org_id': self.org.id, 'outlet_id': self.outlet.id, 'shift_id': shift.id})
+        resp_add = self.client.post(add_staff_url, {
+            'employee_id': str(self.emp_bob.id),
+            'is_primary_cashier': True
+        }, format='json')
+        self.assertEqual(resp_add.status_code, 400)
+        self.assertIn("is_primary_cashier", str(resp_add.data))
+
+    def test_api_responses_omit_is_primary_cashier(self):
+        """API shift detail and staff history responses must not return is_primary_cashier or cashier_periods."""
+        shift = self._open_test_shift()
+        self.client.force_authenticate(user=self.owner)
+
+        # Shift detail
+        detail_url = reverse('operational_shift_detail', kwargs={'org_id': self.org.id, 'outlet_id': self.outlet.id, 'shift_id': shift.id})
+        resp = self.client.get(detail_url)
+        self.assertEqual(resp.status_code, 200)
+        staff_list = resp.data['shift']['staff_members']
+        self.assertTrue(len(staff_list) > 0)
+        for s in staff_list:
+            self.assertNotIn('is_primary_cashier', s)
+
+        # Staff history
+        history_url = reverse('shift_staff_history', kwargs={'org_id': self.org.id, 'outlet_id': self.outlet.id, 'shift_id': shift.id})
+        hist_resp = self.client.get(history_url)
+        self.assertEqual(hist_resp.status_code, 200)
+        self.assertNotIn('cashier_periods', hist_resp.data)
 
     def test_nozzle_handover_exact_meter_interval_split(self):
         """
@@ -1014,5 +1109,196 @@ class OperationalShiftStaffManagementTests(TestCase):
         asm = OperationalShiftNozzleAssignment.objects.get(shift=shift, nozzle=new_nozzle)
         self.assertEqual(asm.opening_reading, Decimal('500.000'))
         self.assertIsNone(asm.effective_to)
+
+    def test_commissioned_nozzle_opening_derivation_and_continuity(self):
+        # 1. nozzle1 and nozzle2 have opening balance (1000.000, 2000.000)
+        # Create nozzle3 which has NO opening balance
+        nozzle3 = Nozzle.objects.create(
+            organisation=self.org, outlet=self.outlet, dispenser=self.dispenser,
+            tank=self.tank, code="N3", name="Nozzle 3"
+        )
+
+        # Commission nozzle3 with starting reading 3000.000
+        comm_time = timezone.now() - timedelta(hours=1)
+        comm = commission_nozzle(
+            organisation=self.org, outlet=self.outlet, nozzle=nozzle3,
+            initial_totalizer=Decimal('3000.000'), effective_at=comm_time,
+            reason="Commissioned Nozzle 3", actor=self.owner
+        )
+
+        # 2. Check preview
+        preview = prepare_shift_opening(
+            organisation=self.org, outlet=self.outlet,
+            shift_definition=self.shift_def, business_date=date(2026, 9, 1)
+        )
+        n1_preview = next(n for n in preview['nozzles'] if n['nozzle_id'] == str(self.nozzle1.id))
+        n3_preview = next(n for n in preview['nozzles'] if n['nozzle_id'] == str(nozzle3.id))
+
+        # Original nozzle continues using opening balance
+        self.assertEqual(n1_preview['opening_source'], ShiftNozzleMeter.SOURCE_OPENING_BALANCE)
+        self.assertEqual(n1_preview['derived_opening_reading'], Decimal('1000.000'))
+
+        # Newly commissioned nozzle uses commissioning reading
+        self.assertEqual(n3_preview['opening_source'], ShiftNozzleMeter.SOURCE_COMMISSIONING)
+        self.assertEqual(n3_preview['derived_opening_reading'], Decimal('3000.000'))
+        self.assertEqual(n3_preview['opening_source_description'], "Opening source: Nozzle commissioning")
+        self.assertEqual(n3_preview['opening_source_reference'], str(comm.id))
+
+        # 3. Open operational shift
+        staff_data = [
+            {
+                'employee_id': str(self.emp_alice.id),
+                'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id), str(nozzle3.id)]
+            }
+        ]
+        shift = open_operational_shift(
+            organisation=self.org, outlet=self.outlet, shift_definition=self.shift_def,
+            business_date=date(2026, 9, 1), staff_assignments_data=staff_data,
+            manual_exceptions_data={}, notes="Commissioning test shift", user=self.owner
+        )
+
+        meter3 = ShiftNozzleMeter.objects.get(shift=shift, nozzle=nozzle3)
+        self.assertEqual(meter3.opening_reading, Decimal('3000.000'))
+        self.assertEqual(meter3.opening_source, ShiftNozzleMeter.SOURCE_COMMISSIONING)
+        self.assertEqual(meter3.opening_source_reference, str(comm.id))
+
+        # 4. Record closing reading and close shift
+        record_closing_meter_reading(shift, self.nozzle1, Decimal('1100.000'), self.owner)
+        record_closing_meter_reading(shift, self.nozzle2, Decimal('2100.000'), self.owner)
+        record_closing_meter_reading(shift, nozzle3, Decimal('3250.000'), self.owner)
+        closed_shift = close_operational_shift(shift, self.owner)
+        self.assertEqual(closed_shift.status, OperationalShift.STATUS_CLOSED)
+
+        # 5. Subsequent shift MUST use previous closed-shift reading instead of commissioning!
+        derived_next = derive_nozzle_opening_reading(self.outlet, nozzle3)
+        self.assertEqual(derived_next['source'], ShiftNozzleMeter.SOURCE_PREVIOUS_SHIFT)
+        self.assertEqual(derived_next['reading'], Decimal('3250.000'))
+
+    def test_future_commissioning_not_used_for_earlier_shift(self):
+        nozzle_future = Nozzle.objects.create(
+            organisation=self.org, outlet=self.outlet, dispenser=self.dispenser,
+            tank=self.tank, code="NFuture", name="Nozzle Future"
+        )
+        # Commission effective tomorrow
+        future_time = timezone.now() + timedelta(days=1)
+        commission_nozzle(
+            organisation=self.org, outlet=self.outlet, nozzle=nozzle_future,
+            initial_totalizer=Decimal('500.000'), effective_at=future_time,
+            reason="Future installation", actor=self.owner
+        )
+
+        # Deriving opening reading for NOW should NOT use the future commissioning
+        derived = derive_nozzle_opening_reading(self.outlet, nozzle_future, as_of_time=timezone.now())
+        self.assertEqual(derived['source'], ShiftNozzleMeter.SOURCE_MANUAL_EXCEPTION)
+        self.assertIsNone(derived['reading'])
+
+    def test_discarded_shift_does_not_corrupt_commissioning(self):
+        nozzle_discard = Nozzle.objects.create(
+            organisation=self.org, outlet=self.outlet, dispenser=self.dispenser,
+            tank=self.tank, code="NDisc", name="Nozzle Discard"
+        )
+        comm = commission_nozzle(
+            organisation=self.org, outlet=self.outlet, nozzle=nozzle_discard,
+            initial_totalizer=Decimal('700.000'), effective_at=timezone.now() - timedelta(hours=2),
+            reason="Commissioning before discarded shift", actor=self.owner
+        )
+
+        # Open shift
+        staff_data = [
+            {
+                'employee_id': str(self.emp_alice.id),
+                'nozzle_ids': [str(self.nozzle1.id), str(self.nozzle2.id), str(nozzle_discard.id)]
+            }
+        ]
+        shift = open_operational_shift(
+            organisation=self.org, outlet=self.outlet, shift_definition=self.shift_def,
+            business_date=date(2026, 9, 1), staff_assignments_data=staff_data,
+            manual_exceptions_data={}, notes="Shift to discard", user=self.owner
+        )
+
+        # Discard the shift
+        discard_open_operational_shift(shift, self.owner, reason="Test discard")
+
+        # After discard, nozzle_discard still has valid commissioning as starting source
+        derived = derive_nozzle_opening_reading(self.outlet, nozzle_discard)
+        self.assertEqual(derived['source'], ShiftNozzleMeter.SOURCE_COMMISSIONING)
+        self.assertEqual(derived['reading'], Decimal('700.000'))
+
+    def test_open_shift_requires_separate_midshift_activation(self):
+        shift = self._open_test_shift()
+
+        # Add a new nozzle while shift is open
+        nozzle_mid = Nozzle.objects.create(
+            organisation=self.org, outlet=self.outlet, dispenser=self.dispenser,
+            tank=self.tank, code="NMid", name="Nozzle Mid"
+        )
+
+        # Commission it normally
+        comm = commission_nozzle(
+            organisation=self.org, outlet=self.outlet, nozzle=nozzle_mid,
+            initial_totalizer=Decimal('800.000'), effective_at=timezone.now(),
+            reason="Commissioned while shift open", actor=self.owner
+        )
+
+        # Ordinary commissioning must NOT silently inject the nozzle into the active shift!
+        self.assertFalse(ShiftNozzleMeter.objects.filter(shift=shift, nozzle=nozzle_mid).exists())
+
+        # Mid-shift activation workflow is required to bring it into the live shift
+        meter = activate_nozzle_midshift(
+            shift=shift,
+            nozzle_id=nozzle_mid.id,
+            employee_id=self.emp_bob.id,
+            starting_reading=Decimal('800.000'),
+            reason="Activating newly commissioned nozzle mid-shift",
+            user=self.owner
+        )
+        self.assertEqual(meter.opening_reading, Decimal('800.000'))
+        self.assertTrue(ShiftNozzleMeter.objects.filter(shift=shift, nozzle=nozzle_mid).exists())
+
+    def test_one_employee_multiple_nozzles_aggregates_sales(self):
+        """One employee managing multiple nozzles aggregates sales from all intervals."""
+        shift = self._open_test_shift()
+
+        # Alice has N1 and N2. N1: 1000 -> 1010 (10L). N2: 2000 -> 2025 (25L).
+        record_closing_meter_reading(shift, self.nozzle1, Decimal('1010.000'), self.owner)
+        record_closing_meter_reading(shift, self.nozzle2, Decimal('2025.000'), self.owner)
+
+        totals = calculate_shift_totals(shift)
+        emp_totals = {e['employee_name']: e for e in totals['employees']}
+
+        alice = emp_totals['Alice Attendant']
+        self.assertEqual(alice['gross_quantity'], Decimal('35.000'))
+        self.assertEqual(alice['sale_quantity'], Decimal('35.000'))
+        self.assertEqual(alice['sale_amount'], Decimal('3500.00'))
+        self.assertIn('N1', alice['nozzle_codes'])
+        self.assertIn('N2', alice['nozzle_codes'])
+
+    def test_cross_tenant_access_denied_for_shift_staff(self):
+        """User belonging to another organization cannot manage or access shift staff."""
+        other_user = get_user_model().objects.create_user(email="intruder@foreign.test", password="Password123!")
+        other_org = Organisation.objects.create(name="Foreign Org", code="FORG")
+        OrganisationMembership.objects.create(
+            organisation=other_org, user=other_user, membership_type=OrganisationMembership.TYPE_OWNER,
+            status=OrganisationMembership.STATUS_ACTIVE, joined_at=timezone.now()
+        )
+
+        shift = self._open_test_shift()
+        self.client.force_authenticate(user=other_user)
+
+        # Attempt to add staff from foreign tenant
+        add_url = reverse('shift_staff_add', kwargs={'org_id': self.org.id, 'outlet_id': self.outlet.id, 'shift_id': shift.id})
+        resp = self.client.post(add_url, {'employee_id': str(self.emp_bob.id)}, format='json')
+        self.assertEqual(resp.status_code, 403)
+
+        # Attempt to handover nozzle from foreign tenant
+        handover_url = reverse('shift_nozzle_handover', kwargs={'org_id': self.org.id, 'outlet_id': self.outlet.id, 'shift_id': shift.id})
+        resp_h = self.client.post(handover_url, {
+            'nozzle_id': str(self.nozzle1.id),
+            'new_employee_id': str(self.emp_bob.id),
+            'handover_reading': '1010.000',
+            'reason': 'Intrusion'
+        }, format='json')
+        self.assertEqual(resp_h.status_code, 403)
+
 
 

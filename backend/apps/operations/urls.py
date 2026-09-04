@@ -7,7 +7,8 @@ from .views import (
     DipConversionPreviewView,
     OpeningBalanceBatchView, OpeningBalanceEntryView,
     OpeningBalancePreviewView, OpeningBalanceConfirmView,
-    OutletOperationalReadinessView
+    OutletOperationalReadinessView,
+    NozzleCommissioningStatusView, NozzleCommissionView, NozzleBulkCommissionView
 )
 
 urlpatterns = [
@@ -32,4 +33,10 @@ urlpatterns = [
 
     # Outlet Readiness
     path('<uuid:org_id>/outlets/<uuid:outlet_id>/readiness/', OutletOperationalReadinessView.as_view(), name='outlet_readiness'),
+
+    # Nozzle Commissioning
+    path('<uuid:org_id>/outlets/<uuid:outlet_id>/nozzles/commissioning-status/', NozzleCommissioningStatusView.as_view(), name='nozzle_commissioning_status'),
+    path('<uuid:org_id>/outlets/<uuid:outlet_id>/nozzles/<uuid:nozzle_id>/commission/', NozzleCommissionView.as_view(), name='nozzle_commission'),
+    path('<uuid:org_id>/outlets/<uuid:outlet_id>/nozzles/bulk-commission/', NozzleBulkCommissionView.as_view(), name='nozzle_bulk_commission'),
 ]
+

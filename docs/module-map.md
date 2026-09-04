@@ -55,7 +55,7 @@ Live forecourt shift operations, meter totalizers, testing records, in-shift pri
 ## Planned Business Modules (Postponed)
 
 ### 1. Day Close & Cash Reconciliation
-- **Shift Payment Reconciliation**: Cash/card/UPI reconciliation against cashier balances.
+- **Shift Payment Reconciliation**: Cash/card/UPI reconciliation against employee collections and attributed nozzle sales.
 - **Employee Shortages**: Shortage and recovery tracking.
 - **Day Close**: Daily station reconciliation, stock variance confirmation, accounting sync.
 
@@ -85,4 +85,4 @@ Live forecourt shift operations, meter totalizers, testing records, in-shift pri
 ### 6. Employees
 - **Employees**: Manage station workers, roles, and shifts.
 - **Shift Assignments**: Track roster schedules.
-- **Cash Collections**: Reconcile cash collected by nozzle cashiers at shift close.
+- **Cash Collections**: Reconcile cash and digital payments collected by attendants at shift close.

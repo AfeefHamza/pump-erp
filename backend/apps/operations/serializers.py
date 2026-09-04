@@ -3,7 +3,8 @@ from rest_framework import serializers
 from apps.forecourt.serializers import TankSerializer, NozzleSerializer
 from .models import (
     DipCalibrationChart, DipCalibrationPoint, TankCalibrationAssignment,
-    OpeningBalanceBatch, NozzleOpeningBalance, TankOpeningBalance
+    OpeningBalanceBatch, NozzleOpeningBalance, TankOpeningBalance,
+    NozzleCommissioning
 )
 
 class DipCalibrationPointSerializer(serializers.ModelSerializer):
@@ -95,3 +96,28 @@ class OpeningBalanceBatchSerializer(serializers.ModelSerializer):
             'tank_balances', 'created_by', 'confirmed_by', 'created_at',
             'confirmed_at'
         ]
+
+
+class NozzleCommissioningSerializer(serializers.ModelSerializer):
+    commissioned_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NozzleCommissioning
+        fields = [
+            'id', 'organisation', 'outlet', 'nozzle', 'effective_at',
+            'initial_totalizer', 'reason', 'notes', 'commissioned_by',
+            'commissioned_by_name', 'created_at', 'dispenser_code_snapshot',
+            'nozzle_code_snapshot', 'product_id_snapshot', 'product_name_snapshot'
+        ]
+        read_only_fields = [
+            'id', 'organisation', 'outlet', 'commissioned_by',
+            'commissioned_by_name', 'created_at', 'dispenser_code_snapshot',
+            'nozzle_code_snapshot', 'product_id_snapshot', 'product_name_snapshot'
+        ]
+
+    def get_commissioned_by_name(self, obj) -> str | None:
+        if obj.commissioned_by:
+            name = obj.commissioned_by.get_full_name()
+            return name if name else obj.commissioned_by.username
+        return None
+

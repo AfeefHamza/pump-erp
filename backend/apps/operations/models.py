@@ -396,3 +396,128 @@ class TankOpeningBalance(models.Model):
 
     def __str__(self):
         return f"{self.tank.name} : Book: {self.book_quantity} , Physical: {self.physical_quantity}"
+
+
+class NozzleCommissioning(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(
+        Organisation,
+        on_delete=models.CASCADE,
+        related_name='nozzle_commissionings'
+    )
+    outlet = models.ForeignKey(
+        Outlet,
+        on_delete=models.CASCADE,
+        related_name='nozzle_commissionings'
+    )
+    nozzle = models.ForeignKey(
+        Nozzle,
+        on_delete=models.PROTECT,
+        related_name='commissionings'
+    )
+    effective_at = models.DateTimeField()
+    initial_totalizer = models.DecimalField(max_digits=15, decimal_places=3)
+    reason = models.TextField()
+    notes = models.TextField(blank=True, null=True)
+    commissioned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='commissioned_nozzles'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # Snapshot fields for historical clarity
+    dispenser_code_snapshot = models.CharField(max_length=50)
+    nozzle_code_snapshot = models.CharField(max_length=50)
+    product_id_snapshot = models.UUIDField()
+    product_name_snapshot = models.CharField(max_length=255)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['nozzle'],
+                name='unique_nozzle_commissioning'
+            )
+        ]
+        ordering = ['-effective_at', '-created_at']
+
+    def clean(self):
+        super().clean()
+        if hasattr(self, 'outlet') and hasattr(self, 'organisation'):
+            if self.outlet.organisation_id != self.organisation_id:
+                raise ValidationError("Outlet must belong to the same organisation.")
+
+        if hasattr(self, 'nozzle') and hasattr(self, 'outlet'):
+            if self.nozzle.outlet_id != self.outlet_id:
+                raise ValidationError("Nozzle must belong to the selected outlet.")
+            if self.nozzle.organisation_id != self.organisation_id:
+                raise ValidationError("Nozzle must belong to the same organisation.")
+
+        if self.initial_totalizer is not None and self.initial_totalizer < Decimal('0.000'):
+            raise ValidationError({'initial_totalizer': "Initial totalizer cannot be negative."})
+
+        if not self.reason or not self.reason.strip():
+            raise ValidationError({'reason': "A mandatory reason is required for nozzle commissioning."})
+
+        if self.notes == '':
+            self.notes = None
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding and self.pk:
+            raise ValidationError("Commissioning records are immutable and cannot be updated.")
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Commissioning records are immutable and cannot be deleted.")
+
+    def __str__(self):
+        return f"{self.nozzle_code_snapshot} commissioned @ {self.initial_totalizer} ({self.effective_at})"
+
+
+class NozzleCommissioningAuditLog(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(
+        Organisation,
+        on_delete=models.CASCADE,
+        related_name='nozzle_commissioning_audit_logs'
+    )
+    outlet = models.ForeignKey(
+        Outlet,
+        on_delete=models.CASCADE,
+        related_name='nozzle_commissioning_audit_logs'
+    )
+    commissioning = models.ForeignKey(
+        NozzleCommissioning,
+        on_delete=models.PROTECT,
+        related_name='audit_logs'
+    )
+    nozzle = models.ForeignKey(
+        Nozzle,
+        on_delete=models.PROTECT,
+        related_name='commissioning_audit_logs'
+    )
+    event_type = models.CharField(max_length=50, default='nozzle_commissioned')
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='nozzle_commissioning_audits'
+    )
+    occurred_at = models.DateTimeField(auto_now_add=True)
+    reason = models.TextField()
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['-occurred_at']
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding and self.pk:
+            raise ValidationError("Audit logs are append-only and cannot be updated.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Audit logs cannot be deleted.")
+
+    def __str__(self):
+        return f"Audit: {self.event_type} on {self.nozzle.code} by {self.actor} at {self.occurred_at}"
+

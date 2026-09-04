@@ -49,7 +49,6 @@ export const ShiftAssignments: React.FC = () => {
     display_name: string;
     duty_designation_id: string;
     duty_designation_name: string;
-    is_primary_cashier: boolean;
     nozzle_ids: string[];
     notes: string;
   }>>([]);
@@ -61,7 +60,6 @@ export const ShiftAssignments: React.FC = () => {
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null); // null means "Assign Employee", truthy means "Edit"
   const [drawerEmployeeId, setDrawerEmployeeId] = useState('');
   const [drawerDesignationId, setDrawerDesignationId] = useState('');
-  const [drawerPrimaryCashier, setDrawerPrimaryCashier] = useState(false);
   const [drawerNozzleIds, setDrawerNozzleIds] = useState<string[]>([]);
   const [drawerNotes, setDrawerNotes] = useState('');
 
@@ -120,7 +118,6 @@ export const ShiftAssignments: React.FC = () => {
           display_name: sa.employee_details?.display_name || '',
           duty_designation_id: sa.duty_designation_id || sa.duty_designation_details?.id,
           duty_designation_name: sa.duty_designation_details?.name || '',
-          is_primary_cashier: sa.is_primary_cashier,
           nozzle_ids: (sa.nozzle_assignments || []).map((na: any) => na.nozzle_id || na.nozzle_details?.id),
           notes: sa.notes || '',
         }));
@@ -154,7 +151,6 @@ export const ShiftAssignments: React.FC = () => {
       const saved = savedStaff.find(s => s.employee_id === local.employee_id);
       if (!saved) return true;
       if (saved.duty_designation_id !== local.duty_designation_id) return true;
-      if (saved.is_primary_cashier !== local.is_primary_cashier) return true;
       if ((saved.notes || '') !== (local.notes || '')) return true;
 
       const savedNozzles = saved.nozzle_assignments.map(na => na.nozzle_id);
@@ -224,7 +220,6 @@ export const ShiftAssignments: React.FC = () => {
       assignments: localAssignments.map((a) => ({
         employee_id: a.employee_id,
         duty_designation_id: a.duty_designation_id,
-        is_primary_cashier: a.is_primary_cashier,
         notes: a.notes || null,
         nozzle_ids: a.nozzle_ids,
       }))
@@ -240,7 +235,6 @@ export const ShiftAssignments: React.FC = () => {
         display_name: sa.employee_details?.display_name || '',
         duty_designation_id: sa.duty_designation_id || sa.duty_designation_details?.id,
         duty_designation_name: sa.duty_designation_details?.name || '',
-        is_primary_cashier: sa.is_primary_cashier,
         nozzle_ids: (sa.nozzle_assignments || []).map((na: any) => na.nozzle_id || na.nozzle_details?.id),
         notes: sa.notes || '',
       })) || [];
@@ -292,7 +286,6 @@ export const ShiftAssignments: React.FC = () => {
     setEditingEmployeeId(null);
     setDrawerEmployeeId('');
     setDrawerDesignationId('');
-    setDrawerPrimaryCashier(false);
     setDrawerNozzleIds([]);
     setDrawerNotes('');
     setDrawerOpen(true);
@@ -305,7 +298,6 @@ export const ShiftAssignments: React.FC = () => {
     setEditingEmployeeId(employeeId);
     setDrawerEmployeeId(target.employee_id);
     setDrawerDesignationId(target.duty_designation_id);
-    setDrawerPrimaryCashier(target.is_primary_cashier);
     setDrawerNozzleIds([...target.nozzle_ids]);
     setDrawerNotes(target.notes);
     setDrawerOpen(true);
@@ -314,15 +306,6 @@ export const ShiftAssignments: React.FC = () => {
   const handleRemoveAssignment = (employeeId: string) => {
     setLocalAssignments((prev) => prev.filter((a) => a.employee_id !== employeeId));
     showToast('Employee removed locally. Click Save Changes to commit.', 'success');
-  };
-
-  const handleTogglePrimaryCashierInline = (employeeId: string) => {
-    setLocalAssignments((prev) =>
-      prev.map((a) => ({
-        ...a,
-        is_primary_cashier: a.employee_id === employeeId ? !a.is_primary_cashier : false
-      }))
-    );
   };
 
   // Drawer Save Actions
@@ -361,20 +344,11 @@ export const ShiftAssignments: React.FC = () => {
       display_name: employeeName,
       duty_designation_id: drawerDesignationId,
       duty_designation_name: designationName,
-      is_primary_cashier: drawerPrimaryCashier,
       nozzle_ids: drawerNozzleIds,
       notes: drawerNotes
     };
 
     let updatedAssignments = [...localAssignments];
-
-    // Enforce single primary cashier locally
-    if (drawerPrimaryCashier) {
-      updatedAssignments = updatedAssignments.map((la) => ({
-        ...la,
-        is_primary_cashier: la.employee_id === drawerEmployeeId ? true : false
-      }));
-    }
 
     if (editingEmployeeId) {
       updatedAssignments = updatedAssignments.map((la) =>
@@ -554,12 +528,6 @@ export const ShiftAssignments: React.FC = () => {
           font-size: 0.75rem;
           font-weight: 600;
           line-height: 1;
-        }
-
-        .badge-cashier {
-          background-color: var(--color-accent-light);
-          color: var(--color-accent-text);
-          border: 1px solid rgba(15, 118, 110, 0.2);
         }
 
         .badge-nozzle {
@@ -875,7 +843,6 @@ export const ShiftAssignments: React.FC = () => {
                           <th>Employee</th>
                           <th>Duty Designation</th>
                           <th>Nozzles Assigned</th>
-                          <th>Primary Cashier</th>
                           <th style={{ textAlign: 'right' }}>Actions</th>
                         </tr>
                       </thead>
@@ -905,22 +872,6 @@ export const ShiftAssignments: React.FC = () => {
                                 })}
                                 {a.nozzle_ids.length === 0 && (
                                   <span className="text-muted" style={{ fontSize: '0.8rem', fontStyle: 'italic' }}>None</span>
-                                )}
-                              </div>
-                            </td>
-                            <td>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={a.is_primary_cashier}
-                                  onChange={() => handleTogglePrimaryCashierInline(a.employee_id)}
-                                  disabled={!canUpdate}
-                                  style={{ cursor: canUpdate ? 'pointer' : 'not-allowed', width: '16px', height: '16px' }}
-                                />
-                                {a.is_primary_cashier && (
-                                  <span className="badge-premium badge-cashier">
-                                    Primary Cashier
-                                  </span>
                                 )}
                               </div>
                             </td>
@@ -1124,26 +1075,6 @@ export const ShiftAssignments: React.FC = () => {
                   <option key={d.id} value={d.id}>{d.name}</option>
                 ))}
               </select>
-            </div>
-
-            <div className="form-group" style={{ marginTop: '0.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <input
-                  type="checkbox"
-                  id="drawerPrimaryCashier"
-                  checked={drawerPrimaryCashier}
-                  onChange={(e) => setDrawerPrimaryCashier(e.target.checked)}
-                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                />
-                <label htmlFor="drawerPrimaryCashier" className="form-label" style={{ margin: 0, cursor: 'pointer' }}>
-                  Set as Primary Cashier
-                </label>
-              </div>
-              {drawerPrimaryCashier && (
-                <div style={{ fontSize: '0.75rem', color: 'var(--color-warning-text)', marginTop: '0.25rem', fontWeight: 500 }}>
-                  * This will clear the primary cashier status on all other assigned employees.
-                </div>
-              )}
             </div>
 
             <div className="form-group">

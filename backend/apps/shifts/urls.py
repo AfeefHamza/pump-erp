@@ -31,6 +31,7 @@ urlpatterns = [
     path('<uuid:org_id>/outlets/<uuid:outlet_id>/operational-shifts/<uuid:shift_id>/handover/', OperationalShiftNozzleHandoverView.as_view(), name='shift_nozzle_handover'),
     path('<uuid:org_id>/outlets/<uuid:outlet_id>/operational-shifts/<uuid:shift_id>/correct-assignment/', OperationalShiftNozzleCorrectView.as_view(), name='shift_nozzle_correct'),
     path('<uuid:org_id>/outlets/<uuid:outlet_id>/operational-shifts/<uuid:shift_id>/cashier-transfer/', OperationalShiftCashierTransferView.as_view(), name='shift_cashier_transfer'),
+    path('<uuid:org_id>/outlets/<uuid:outlet_id>/operational-shifts/<uuid:shift_id>/transfer-cashier/', OperationalShiftCashierTransferView.as_view()),
     path('<uuid:org_id>/outlets/<uuid:outlet_id>/operational-shifts/<uuid:shift_id>/activate-nozzle/', OperationalShiftNozzleActivateView.as_view(), name='shift_nozzle_activate'),
     path('<uuid:org_id>/outlets/<uuid:outlet_id>/operational-shifts/<uuid:shift_id>/staff-history/', OperationalShiftStaffHistoryView.as_view(), name='shift_staff_history'),
     path('<uuid:org_id>/outlets/<uuid:outlet_id>/operational-shifts/<uuid:shift_id>/meters/<uuid:nozzle_id>/', ShiftMeterReadingView.as_view(), name='shift_meter_reading'),

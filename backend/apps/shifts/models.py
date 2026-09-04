@@ -159,7 +159,6 @@ class ShiftStaffAssignment(models.Model):
         on_delete=models.PROTECT,
         related_name='roster_assignments'
     )
-    is_primary_cashier = models.BooleanField(default=False)
     notes = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -191,12 +190,6 @@ class ShiftStaffAssignment(models.Model):
 
     def save(self, *args, **kwargs):
         self.full_clean()
-        if self.is_primary_cashier:
-            # Enforce single primary cashier per roster
-            ShiftStaffAssignment.objects.filter(
-                roster=self.roster,
-                is_primary_cashier=True
-            ).exclude(id=self.id).update(is_primary_cashier=False)
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -378,7 +371,6 @@ class OperationalShiftStaff(models.Model):
     employee_code_snapshot = models.CharField(max_length=50)
     employee_name_snapshot = models.CharField(max_length=255)
     designation_snapshot = models.CharField(max_length=255)
-    is_primary_cashier = models.BooleanField(default=False)
     notes = models.TextField(blank=True, null=True)
     effective_from = models.DateTimeField(default=timezone.now)
     effective_to = models.DateTimeField(null=True, blank=True)
@@ -408,66 +400,10 @@ class OperationalShiftStaff(models.Model):
 
     def save(self, *args, **kwargs):
         self.full_clean()
-        if self.is_primary_cashier:
-            # Enforce single primary cashier per operational shift
-            OperationalShiftStaff.objects.filter(
-                shift=self.shift,
-                is_primary_cashier=True
-            ).exclude(id=self.id).update(is_primary_cashier=False)
         super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.employee_name_snapshot} ({self.designation_snapshot}) - {self.shift}"
-
-
-class OperationalShiftCashierPeriod(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    shift = models.ForeignKey(
-        OperationalShift,
-        on_delete=models.CASCADE,
-        related_name='cashier_periods'
-    )
-    staff = models.ForeignKey(
-        OperationalShiftStaff,
-        on_delete=models.CASCADE,
-        related_name='cashier_periods'
-    )
-    effective_from = models.DateTimeField(default=timezone.now)
-    effective_to = models.DateTimeField(null=True, blank=True)
-    changed_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='cashier_period_changes'
-    )
-    reason = models.TextField(blank=True, default='')
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=['shift'],
-                condition=models.Q(effective_to__isnull=True),
-                name='unique_active_shift_cashier_period'
-            )
-        ]
-        ordering = ['effective_from']
-
-    def clean(self):
-        super().clean()
-        if hasattr(self, 'shift') and hasattr(self, 'staff'):
-            if self.staff.shift_id != self.shift.id:
-                raise ValidationError("Cashier staff must belong to this operational shift.")
-        if self.effective_to and self.effective_to < self.effective_from:
-            raise ValidationError({'effective_to': "Effective to cannot precede effective from."})
-
-    def save(self, *args, **kwargs):
-        self.full_clean()
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return f"Cashier {self.staff.employee_name_snapshot} ({self.effective_from} -> {self.effective_to or 'Active'})"
 
 
 class OperationalShiftNozzleAssignment(models.Model):
@@ -554,10 +490,12 @@ class OperationalShiftNozzleAssignment(models.Model):
 
 class ShiftNozzleMeter(models.Model):
     SOURCE_PREVIOUS_SHIFT = 'previous_shift'
+    SOURCE_COMMISSIONING = 'commissioning'
     SOURCE_OPENING_BALANCE = 'opening_balance'
     SOURCE_MANUAL_EXCEPTION = 'manual_exception'
     SOURCE_CHOICES = [
         (SOURCE_PREVIOUS_SHIFT, 'Previous Shift'),
+        (SOURCE_COMMISSIONING, 'Nozzle Commissioning'),
         (SOURCE_OPENING_BALANCE, 'Opening Balance'),
         (SOURCE_MANUAL_EXCEPTION, 'Manual Exception'),
     ]

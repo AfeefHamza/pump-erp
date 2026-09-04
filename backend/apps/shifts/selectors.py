@@ -114,23 +114,31 @@ def get_open_shift_for_outlet(outlet):
     ).select_related('shift_definition', 'opened_by').first()
 
 
-def derive_nozzle_opening_reading(outlet, nozzle) -> dict:
+def derive_nozzle_opening_reading(outlet, nozzle, as_of_time=None) -> dict:
     """
     Derives opening totalizer for an active nozzle:
-    1. Looks up the latest closed operational shift at this outlet having a closing reading for this nozzle.
-    2. If not found, looks up the confirmed NozzleOpeningBalance from the outlet's confirmed opening batch.
-    3. If neither exists, returns manual_exception indicator.
+    1. Looks up the latest eligible closed operational shift at this outlet having a closing reading for this nozzle.
+    2. If not found, looks up a valid NozzleCommissioning record effective on or before as_of_time.
+    3. If not found, looks up the confirmed NozzleOpeningBalance from the outlet's confirmed opening batch.
+    4. If none exists, returns manual_exception indicator.
     """
     from .models import OperationalShift, ShiftNozzleMeter
-    from apps.operations.models import OpeningBalanceBatch, NozzleOpeningBalance
+    from apps.operations.models import OpeningBalanceBatch, NozzleOpeningBalance, NozzleCommissioning
+    from django.utils import timezone
+
+    effective_cutoff = as_of_time or timezone.now()
 
     # 1. Previous closed shift
-    prev_meter = ShiftNozzleMeter.objects.filter(
+    prev_meter_qs = ShiftNozzleMeter.objects.filter(
         shift__outlet=outlet,
         shift__status=OperationalShift.STATUS_CLOSED,
         nozzle=nozzle,
         closing_reading__isnull=False
-    ).select_related('shift', 'shift__shift_definition').order_by(
+    )
+    if as_of_time:
+        prev_meter_qs = prev_meter_qs.filter(shift__closed_at__lte=as_of_time)
+
+    prev_meter = prev_meter_qs.select_related('shift', 'shift__shift_definition').order_by(
         '-shift__closed_at', '-shift__business_date', '-shift__opened_at'
     ).first()
 
@@ -142,12 +150,32 @@ def derive_nozzle_opening_reading(outlet, nozzle) -> dict:
             'source_description': f"Previous Shift: {prev_meter.shift.shift_definition.name} ({prev_meter.shift.business_date})"
         }
 
-    # 2. Confirmed Opening Balance
-    confirmed_balance = NozzleOpeningBalance.objects.filter(
+    # 2. Valid Nozzle Commissioning reading
+    comm_qs = NozzleCommissioning.objects.filter(
+        outlet=outlet,
+        nozzle=nozzle,
+        effective_at__lte=effective_cutoff
+    ).order_by('-effective_at', '-created_at')
+    commissioning = comm_qs.first()
+
+    if commissioning:
+        return {
+            'reading': commissioning.initial_totalizer,
+            'source': ShiftNozzleMeter.SOURCE_COMMISSIONING,
+            'reference': str(commissioning.id),
+            'source_description': "Opening source: Nozzle commissioning"
+        }
+
+    # 3. Confirmed Opening Balance
+    ob_qs = NozzleOpeningBalance.objects.filter(
         batch__outlet=outlet,
         batch__status=OpeningBalanceBatch.STATUS_CONFIRMED,
         nozzle=nozzle
-    ).select_related('batch').order_by('-batch__confirmed_at').first()
+    )
+    if as_of_time:
+        ob_qs = ob_qs.filter(batch__effective_at__lte=as_of_time)
+
+    confirmed_balance = ob_qs.select_related('batch').order_by('-batch__confirmed_at').first()
 
     if confirmed_balance:
         return {
@@ -157,7 +185,7 @@ def derive_nozzle_opening_reading(outlet, nozzle) -> dict:
             'source_description': f"Confirmed Opening Balance ({confirmed_balance.batch.effective_at.strftime('%Y-%m-%d')})"
         }
 
-    # 3. Manual Exception required
+    # 4. Manual Exception required
     return {
         'reading': None,
         'source': ShiftNozzleMeter.SOURCE_MANUAL_EXCEPTION,
@@ -194,7 +222,6 @@ def calculate_shift_totals(shift) -> dict:
                 'employee_name': sm.employee_name_snapshot,
                 'employee_code': sm.employee_code_snapshot,
                 'designation': sm.designation_snapshot,
-                'is_primary_cashier': sm.is_primary_cashier,
                 'effective_from': sm.effective_from.isoformat() if sm.effective_from else None,
                 'effective_to': sm.effective_to.isoformat() if sm.effective_to else None,
                 'assigned_nozzles': [],
@@ -398,22 +425,8 @@ def calculate_shift_totals(shift) -> dict:
 
 def get_shift_staff_history(shift) -> dict:
     """
-    Returns structured timeline of staff join events, cashier transfers, and nozzle handovers.
+    Returns structured timeline of nozzle handovers and staff assignment history.
     """
-    cashier_periods = []
-    for cp in shift.cashier_periods.select_related('staff', 'changed_by').order_by('-effective_from'):
-        cashier_periods.append({
-            'id': str(cp.id),
-            'staff_id': str(cp.staff_id),
-            'employee_name': cp.staff.employee_name_snapshot,
-            'employee_code': cp.staff.employee_code_snapshot,
-            'effective_from': cp.effective_from.isoformat(),
-            'effective_to': cp.effective_to.isoformat() if cp.effective_to else None,
-            'is_active': cp.effective_to is None,
-            'changed_by_name': cp.changed_by.get_full_name() or cp.changed_by.email if cp.changed_by else None,
-            'reason': cp.reason
-        })
-
     nozzle_handovers = []
     for na in shift.nozzle_assignments.select_related('shift_staff', 'nozzle', 'created_by').order_by('-effective_from'):
         nozzle_handovers.append({
@@ -435,7 +448,6 @@ def get_shift_staff_history(shift) -> dict:
 
     return {
         'shift_id': str(shift.id),
-        'cashier_periods': cashier_periods,
         'nozzle_handovers': nozzle_handovers
     }
 

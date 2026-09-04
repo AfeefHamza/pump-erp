@@ -988,7 +988,6 @@ export interface ShiftStaffAssignment {
   employee_details: Employee;
   duty_designation_id: string;
   duty_designation_details: EmployeeDesignation;
-  is_primary_cashier: boolean;
   nozzle_assignments: ShiftNozzleAssignment[];
   notes: string | null;
   created_at: string;
@@ -1332,11 +1331,75 @@ export async function previewDipConversion(orgId: string, outletId: string, para
   return apiRequest<any>(`/organisations/${orgId}/outlets/${outletId}/tanks/convert-dip/?tank_id=${params.tank_id}&height=${params.height}&unit=${params.unit}`);
 }
 
-/**
- * Outlet Readiness APIs
- */
 export async function fetchOutletReadiness(orgId: string, outletId: string): Promise<OutletReadinessCheck> {
   return apiRequest<OutletReadinessCheck>(`/organisations/${orgId}/outlets/${outletId}/readiness/`);
+}
+
+/**
+ * Nozzle Commissioning APIs
+ */
+export interface NozzleCommissioningStatusItem {
+  nozzle_id: string;
+  nozzle_code: string;
+  nozzle_name: string;
+  nozzle_number: number | null;
+  dispenser_id: string;
+  dispenser_code: string;
+  dispenser_name: string;
+  product_id: string | null;
+  product_code: string | null;
+  product_name: string | null;
+  tank_id: string | null;
+  tank_code: string | null;
+  is_active: boolean;
+  status: 'opening_balance' | 'commissioned' | 'previous_shift' | 'missing';
+  starting_totalizer: string | null;
+  source_effective_time: string | null;
+  commissioning_allowed: boolean;
+  blocking_reason: string | null;
+  commissioned_by_name: string | null;
+  commissioned_at: string | null;
+  reason: string | null;
+  notes: string | null;
+}
+
+export interface CommissionNozzlePayload {
+  initial_totalizer: number | string;
+  effective_at: string;
+  reason: string;
+  notes?: string;
+  activate?: boolean;
+}
+
+export interface BulkCommissionItemPayload {
+  nozzle_id: string;
+  initial_totalizer: number | string;
+  notes?: string;
+}
+
+export interface BulkCommissionNozzlePayload {
+  effective_at: string;
+  reason: string;
+  items: BulkCommissionItemPayload[];
+  activate?: boolean;
+}
+
+export async function fetchNozzleCommissioningStatus(orgId: string, outletId: string): Promise<NozzleCommissioningStatusItem[]> {
+  return apiRequest<NozzleCommissioningStatusItem[]>(`/organisations/${orgId}/outlets/${outletId}/nozzles/commissioning-status/`);
+}
+
+export async function commissionNozzle(orgId: string, outletId: string, nozzleId: string, payload: CommissionNozzlePayload): Promise<any> {
+  return apiRequest<any>(`/organisations/${orgId}/outlets/${outletId}/nozzles/${nozzleId}/commission/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function bulkCommissionNozzles(orgId: string, outletId: string, payload: BulkCommissionNozzlePayload): Promise<any> {
+  return apiRequest<any>(`/organisations/${orgId}/outlets/${outletId}/nozzles/bulk-commission/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 /**
@@ -1381,7 +1444,6 @@ export interface OperationalShiftStaffMember {
   employee_code_snapshot: string;
   employee_name_snapshot: string;
   designation_snapshot: string;
-  is_primary_cashier: boolean;
   assigned_nozzles: string[];
   notes: string | null;
   created_at: string;
@@ -1627,7 +1689,6 @@ export interface ShiftOpenPreparationResponse {
     name: string;
     designation_id: string | null;
     designation_name: string;
-    is_roster_cashier: boolean;
   }>;
 }
 
@@ -1697,7 +1758,6 @@ export async function openOperationalShift(
     staff_assignments: Array<{
       employee_id: string;
       nozzle_ids: string[];
-      is_primary_cashier?: boolean;
       notes?: string;
     }>;
     manual_exceptions?: Record<string, { reading: number | string; reason: string; type: string }>;
@@ -1728,7 +1788,6 @@ export async function updateShiftAssignments(
     staff_assignments: Array<{
       employee_id: string;
       nozzle_ids: string[];
-      is_primary_cashier?: boolean;
       notes?: string;
     }>;
   }
@@ -1760,7 +1819,6 @@ export async function discardOperationalShift(
 export interface AddShiftStaffPayload {
   employee_id: string;
   duty_designation_id?: string | null;
-  is_primary_cashier?: boolean;
   notes?: string;
   assigned_nozzle_ids?: string[];
 }
@@ -1779,11 +1837,6 @@ export interface CorrectShiftNozzlePayload {
   reason: string;
 }
 
-export interface TransferShiftCashierPayload {
-  new_staff_id: string;
-  reason: string;
-}
-
 export interface ActivateShiftNozzlePayload {
   nozzle_id: string;
   employee_id: string;
@@ -1792,19 +1845,6 @@ export interface ActivateShiftNozzlePayload {
 }
 
 export interface ShiftStaffHistoryResponse {
-  cashier_periods: Array<{
-    id: string;
-    shift: string;
-    staff: string;
-    staff_name: string;
-    staff_code: string;
-    effective_from: string;
-    effective_to: string | null;
-    is_active: boolean;
-    changed_by_name: string | null;
-    reason: string;
-    created_at: string;
-  }>;
   nozzle_assignments: Array<{
     id: string;
     shift: string;
@@ -1866,21 +1906,6 @@ export async function correctShiftNozzle(
 ): Promise<any> {
   return apiRequest<any>(
     `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/correct-assignment/`,
-    {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }
-  );
-}
-
-export async function transferShiftCashier(
-  orgId: string,
-  outletId: string,
-  shiftId: string,
-  payload: TransferShiftCashierPayload
-): Promise<any> {
-  return apiRequest<any>(
-    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/cashier-transfer/`,
     {
       method: 'POST',
       body: JSON.stringify(payload),

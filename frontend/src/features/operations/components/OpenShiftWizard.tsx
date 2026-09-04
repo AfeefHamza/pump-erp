@@ -35,8 +35,6 @@ export const OpenShiftWizard: React.FC<OpenShiftWizardProps> = ({
 
   // Assignments state: nozzleId -> { employeeId: string }
   const [nozzleAssignments, setNozzleAssignments] = useState<Record<string, string>>({});
-  // Staff cashier: employeeId -> boolean
-  const [primaryCashierId, setPrimaryCashierId] = useState<string>('');
 
   // Manual exceptions: nozzleId -> { reading: string, type: string, reason: string }
   const [manualExceptions, setManualExceptions] = useState<
@@ -88,7 +86,6 @@ export const OpenShiftWizard: React.FC<OpenShiftWizardProps> = ({
 
       // Pre-fill assignments
       const initialNozzleMap: Record<string, string> = {};
-      let initialCashier = '';
       data.nozzles.forEach((n) => {
         if (n.preselected_employee_id) {
           initialNozzleMap[n.nozzle_id] = n.preselected_employee_id;
@@ -96,14 +93,7 @@ export const OpenShiftWizard: React.FC<OpenShiftWizardProps> = ({
           initialNozzleMap[n.nozzle_id] = data.employees[0].id;
         }
       });
-      const rosterCashier = data.employees.find((e) => e.is_roster_cashier);
-      if (rosterCashier) {
-        initialCashier = rosterCashier.id;
-      } else if (data.employees.length > 0) {
-        initialCashier = data.employees[0].id;
-      }
       setNozzleAssignments(initialNozzleMap);
-      setPrimaryCashierId(initialCashier);
 
       // Check nozzles requiring manual exception
       const initialExceptions: Record<string, { reading: string; type: string; reason: string }> = {};
@@ -144,7 +134,6 @@ export const OpenShiftWizard: React.FC<OpenShiftWizardProps> = ({
     const staffAssignmentsPayload = Object.entries(empToNozzles).map(([empId, nIds]) => ({
       employee_id: empId,
       nozzle_ids: nIds,
-      is_primary_cashier: empId === primaryCashierId,
     }));
 
     try {
@@ -310,37 +299,6 @@ export const OpenShiftWizard: React.FC<OpenShiftWizardProps> = ({
           {/* STEP 2: Staff & Nozzle Assignments */}
           {step === 2 && prepData && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '0.85rem 1rem',
-                  backgroundColor: '#f8fafc',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color, #e2e8f0)',
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>Primary Shift Cashier</div>
-                  <div className="text-muted" style={{ fontSize: '0.8rem' }}>
-                    Select employee accountable for consolidated shift collections.
-                  </div>
-                </div>
-                <select
-                  className="form-input"
-                  value={primaryCashierId}
-                  onChange={(e) => setPrimaryCashierId(e.target.value)}
-                  style={{ width: '220px', padding: '0.5rem' }}
-                >
-                  {prepData.employees.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name} ({emp.code})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               <div>
                 <h4 style={{ margin: '0.5rem 0 0.75rem 0', fontSize: '0.95rem', fontWeight: 600 }}>
                   Active Forecourt Nozzle Assignments ({prepData.nozzles.length})
@@ -434,7 +392,13 @@ export const OpenShiftWizard: React.FC<OpenShiftWizardProps> = ({
                             </span>
                           </td>
                           <td>
-                            <span className="badge" style={{ backgroundColor: '#334155' }}>
+                            <span
+                              className="badge"
+                              style={{
+                                backgroundColor: n.opening_source === 'commissioning' ? '#0d9488' : '#334155',
+                                color: '#ffffff',
+                              }}
+                            >
                               {n.opening_source_description}
                             </span>
                           </td>
@@ -554,12 +518,6 @@ export const OpenShiftWizard: React.FC<OpenShiftWizardProps> = ({
                 <div>
                   <div className="text-muted" style={{ fontSize: '0.8rem' }}>Business Date</div>
                   <div style={{ fontWeight: 600, fontSize: '1rem' }}>{businessDate}</div>
-                </div>
-                <div>
-                  <div className="text-muted" style={{ fontSize: '0.8rem' }}>Primary Cashier</div>
-                  <div style={{ fontWeight: 600, fontSize: '1rem' }}>
-                    {prepData.employees.find((e) => e.id === primaryCashierId)?.name || 'Not assigned'}
-                  </div>
                 </div>
               </div>
 

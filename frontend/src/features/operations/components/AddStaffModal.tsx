@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { addShiftStaff, type AddShiftStaffPayload } from '@/api/client';
-import { UserPlus, X, AlertCircle, Shield, Fuel } from 'lucide-react';
+import { UserPlus, X, AlertCircle, Fuel } from 'lucide-react';
 
 interface AddStaffModalProps {
   isOpen: boolean;
@@ -44,7 +44,6 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
 }) => {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [selectedDesignationId, setSelectedDesignationId] = useState('');
-  const [isPrimaryCashier, setIsPrimaryCashier] = useState(false);
   const [selectedNozzleIds, setSelectedNozzleIds] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -79,7 +78,6 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
     const payload: AddShiftStaffPayload = {
       employee_id: selectedEmployeeId,
       duty_designation_id: selectedDesignationId || null,
-      is_primary_cashier: isPrimaryCashier,
       notes: notes.trim() || undefined,
       assigned_nozzle_ids: selectedNozzleIds.length > 0 ? selectedNozzleIds : undefined,
     };
@@ -254,35 +252,6 @@ export const AddStaffModal: React.FC<AddStaffModalProps> = ({
               <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-secondary, #64748b)' }}>
                 Allows designating as Cashier, Forecourt Supervisor, Manager, or Helper for this shift.
               </p>
-            </div>
-
-            {/* Primary Cashier Status */}
-            <div
-              style={{
-                padding: '0.875rem 1rem',
-                borderRadius: '8px',
-                backgroundColor: isPrimaryCashier ? 'rgba(14, 165, 233, 0.06)' : 'var(--bg-surface, #f8fafc)',
-                border: isPrimaryCashier ? '1px solid rgba(14, 165, 233, 0.3)' : '1px solid var(--border-color, #e2e8f0)',
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '0.75rem',
-              }}
-            >
-              <input
-                type="checkbox"
-                id="is_primary_cashier_cb"
-                checked={isPrimaryCashier}
-                onChange={(e) => setIsPrimaryCashier(e.target.checked)}
-                style={{ marginTop: '0.25rem', width: '16px', height: '16px', cursor: 'pointer' }}
-              />
-              <label htmlFor="is_primary_cashier_cb" style={{ cursor: 'pointer', fontSize: '0.875rem' }}>
-                <span style={{ fontWeight: 600, color: 'var(--text-primary, #0f172a)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                  <Shield size={15} color="#0284c7" /> Assign as Primary Cashier
-                </span>
-                <span style={{ display: 'block', fontSize: '0.78125rem', color: 'var(--text-secondary, #64748b)', marginTop: '2px' }}>
-                  If checked, the currently active cashier will be replaced and a new cashier period will begin.
-                </span>
-              </label>
             </div>
 
             {/* Unassigned Nozzles (Optional Direct Assignment) */}

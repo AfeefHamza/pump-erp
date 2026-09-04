@@ -1,8 +1,8 @@
-# apps/operations/services.py
 import hashlib
 import csv
 import io
-from decimal import Decimal
+import uuid
+from decimal import Decimal, InvalidOperation
 from django.db import models, transaction
 from django.core.exceptions import ValidationError
 from django.utils import timezone
@@ -13,7 +13,8 @@ from apps.organizations.models import Organisation, Outlet
 from apps.forecourt.models import Tank, Nozzle
 from .models import (
     DipCalibrationChart, DipCalibrationPoint, TankCalibrationAssignment,
-    OpeningBalanceBatch, NozzleOpeningBalance, TankOpeningBalance
+    OpeningBalanceBatch, NozzleOpeningBalance, TankOpeningBalance,
+    NozzleCommissioning, NozzleCommissioningAuditLog
 )
 
 def calculate_checksum(file_obj) -> str:
@@ -501,3 +502,223 @@ def confirm_opening_balance_batch(batch: OpeningBalanceBatch, user) -> OpeningBa
     batch.confirmed_at = timezone.now()
     batch.save()
     return batch
+
+
+@transaction.atomic
+def commission_nozzle(
+    organisation,
+    outlet,
+    nozzle,
+    initial_totalizer,
+    effective_at,
+    reason: str,
+    notes: str | None = None,
+    actor=None,
+    activate: bool = True
+) -> NozzleCommissioning:
+    """
+    Establishes the authoritative initial totalizer for a newly added nozzle.
+    1. Lock the nozzle and relevant starting-reading records.
+    2. Validate tenant and outlet consistency.
+    3. Confirm the nozzle has no existing authoritative starting record that makes commissioning invalid.
+    4. Confirm it has no closed-shift history.
+    5. Validate the effective timestamp.
+    6. Create the immutable commissioning record.
+    7. Recalculate outlet readiness.
+    8. Add an append-only audit event.
+    9. Complete atomically.
+    """
+    from apps.shifts.models import OperationalShift, ShiftNozzleMeter
+    from .selectors import check_outlet_operational_readiness
+
+    if isinstance(nozzle, (str, uuid.UUID)):
+        try:
+            nozzle = Nozzle.objects.select_for_update().select_related(
+                'dispenser', 'tank', 'tank__product', 'outlet', 'organisation'
+            ).get(id=nozzle)
+        except Nozzle.DoesNotExist:
+            raise ValidationError("Nozzle does not exist.")
+    else:
+        # Row-lock nozzle
+        nozzle = Nozzle.objects.select_for_update().select_related(
+            'dispenser', 'tank', 'tank__product', 'outlet', 'organisation'
+        ).get(id=nozzle.id)
+
+    # Validate tenant and outlet consistency
+    if outlet.organisation_id != organisation.id:
+        raise ValidationError("Outlet must belong to the specified organisation.")
+
+    if nozzle.outlet_id != outlet.id:
+        raise ValidationError("Nozzle must belong to the specified outlet.")
+
+    if nozzle.organisation_id != organisation.id:
+        raise ValidationError("Nozzle must belong to the specified organisation.")
+
+    # Status check
+    if nozzle.status != Nozzle.STATUS_ACTIVE:
+        if activate:
+            nozzle.status = Nozzle.STATUS_ACTIVE
+            nozzle.save(update_fields=['status', 'updated_at'])
+        else:
+            raise ValidationError("Nozzle is not active. It must be active or explicitly activated through this workflow.")
+
+    # Confirm the nozzle has no existing authoritative starting record
+    has_opening_balance = NozzleOpeningBalance.objects.filter(
+        batch__outlet=outlet,
+        batch__status=OpeningBalanceBatch.STATUS_CONFIRMED,
+        nozzle=nozzle
+    ).exists()
+    if has_opening_balance:
+        raise ValidationError(f"Nozzle '{nozzle.code}' already has a confirmed opening balance. Commissioning is not permitted.")
+
+    if NozzleCommissioning.objects.filter(nozzle=nozzle).exists():
+        raise ValidationError(f"Nozzle '{nozzle.code}' has already been commissioned. Ordinary commissioning is allowed only once per nozzle.")
+
+    # Confirm it has no closed-shift history
+    has_closed_shift = ShiftNozzleMeter.objects.filter(
+        nozzle=nozzle,
+        shift__status=OperationalShift.STATUS_CLOSED
+    ).exists()
+    if has_closed_shift:
+        raise ValidationError(f"Nozzle '{nozzle.code}' has historical closed-shift meter data. Ordinary commissioning is not permitted.")
+
+    # Validate totalizer
+    if initial_totalizer is None or initial_totalizer == '':
+        raise ValidationError("Initial totalizer reading is required.")
+
+    try:
+        totalizer_dec = Decimal(str(initial_totalizer))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValidationError("Initial totalizer must be a valid numeric decimal.")
+
+    if totalizer_dec < Decimal('0.000'):
+        raise ValidationError("Initial totalizer cannot be negative.")
+
+    if not effective_at:
+        raise ValidationError("Effective date and time is required.")
+
+    if timezone.is_naive(effective_at):
+        effective_at = timezone.make_aware(effective_at)
+
+    if not reason or not str(reason).strip():
+        raise ValidationError("A mandatory reason is required for nozzle commissioning.")
+
+    clean_reason = str(reason).strip()
+    clean_notes = str(notes).strip() if notes and str(notes).strip() else None
+
+    # Create immutable commissioning record
+    commissioning = NozzleCommissioning(
+        organisation=organisation,
+        outlet=outlet,
+        nozzle=nozzle,
+        effective_at=effective_at,
+        initial_totalizer=totalizer_dec,
+        reason=clean_reason,
+        notes=clean_notes,
+        commissioned_by=actor,
+        dispenser_code_snapshot=nozzle.dispenser.code,
+        nozzle_code_snapshot=nozzle.code,
+        product_id_snapshot=nozzle.tank.product.id,
+        product_name_snapshot=nozzle.tank.product.name,
+    )
+    commissioning.full_clean()
+    commissioning.save()
+
+    # Add append-only audit event
+    audit_log = NozzleCommissioningAuditLog(
+        organisation=organisation,
+        outlet=outlet,
+        commissioning=commissioning,
+        nozzle=nozzle,
+        event_type='nozzle_commissioned',
+        actor=actor,
+        reason=clean_reason,
+        metadata={
+            'nozzle_id': str(nozzle.id),
+            'nozzle_code': nozzle.code,
+            'dispenser_id': str(nozzle.dispenser.id),
+            'dispenser_code': nozzle.dispenser.code,
+            'product_id': str(nozzle.tank.product.id),
+            'product_name': nozzle.tank.product.name,
+            'initial_totalizer': str(totalizer_dec),
+            'effective_at': effective_at.isoformat(),
+            'notes': clean_notes,
+        }
+    )
+    audit_log.full_clean()
+    audit_log.save()
+
+    # Recalculate outlet readiness
+    check_outlet_operational_readiness(outlet)
+
+    return commissioning
+
+
+@transaction.atomic
+def bulk_commission_nozzles(
+    organisation,
+    outlet,
+    items: list[dict],
+    effective_at,
+    common_reason: str,
+    actor,
+    activate: bool = True
+) -> list[NozzleCommissioning]:
+    """
+    Atomically commissions multiple nozzles together.
+    Validates all rows; if one row fails, none are saved.
+    """
+    if not items:
+        raise ValidationError("At least one nozzle must be provided for bulk commissioning.")
+
+    if not common_reason or not str(common_reason).strip():
+        raise ValidationError("A common mandatory reason is required for bulk commissioning.")
+
+    if not effective_at:
+        raise ValidationError("A common effective date and time is required for bulk commissioning.")
+
+    if timezone.is_naive(effective_at):
+        effective_at = timezone.make_aware(effective_at)
+
+    clean_reason = str(common_reason).strip()
+
+    seen_nozzle_ids = set()
+    for idx, item in enumerate(items):
+        raw_nozzle = item.get('nozzle') or item.get('nozzle_id')
+        nozzle_id = str(raw_nozzle.id if hasattr(raw_nozzle, 'id') else raw_nozzle)
+        if nozzle_id in seen_nozzle_ids:
+            raise ValidationError(f"Row {idx + 1}: Duplicate nozzle in bulk commissioning list.")
+        seen_nozzle_ids.add(nozzle_id)
+
+    created_records = []
+    for idx, item in enumerate(items):
+        nozzle = item.get('nozzle') or item.get('nozzle_id')
+        reading = item.get('initial_totalizer')
+        row_notes = item.get('notes')
+
+        if reading is None or reading == '':
+            raise ValidationError(f"Row {idx + 1}: Initial totalizer is required.")
+
+        try:
+            reading_dec = Decimal(str(reading))
+        except (InvalidOperation, TypeError, ValueError):
+            raise ValidationError(f"Row {idx + 1}: Initial totalizer must be a valid numeric decimal.")
+
+        if reading_dec < Decimal('0.000'):
+            raise ValidationError(f"Row {idx + 1}: Initial totalizer cannot be negative.")
+
+        comm = commission_nozzle(
+            organisation=organisation,
+            outlet=outlet,
+            nozzle=nozzle,
+            initial_totalizer=reading_dec,
+            effective_at=effective_at,
+            reason=clean_reason,
+            notes=row_notes,
+            actor=actor,
+            activate=activate
+        )
+        created_records.append(comm)
+
+    return created_records
+

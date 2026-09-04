@@ -16,16 +16,21 @@ from apps.organizations.models import Outlet
 from apps.forecourt.views import handle_django_validation_error
 from apps.forecourt.models import Tank, Nozzle
 
-from .models import DipCalibrationChart, TankCalibrationAssignment, OpeningBalanceBatch, NozzleOpeningBalance, TankOpeningBalance
+from .models import (
+    DipCalibrationChart, TankCalibrationAssignment, OpeningBalanceBatch,
+    NozzleOpeningBalance, TankOpeningBalance, NozzleCommissioning
+)
 from .serializers import (
     DipCalibrationChartSerializer, TankCalibrationAssignmentSerializer,
-    OpeningBalanceBatchSerializer, NozzleOpeningBalanceSerializer, TankOpeningBalanceSerializer
+    OpeningBalanceBatchSerializer, NozzleOpeningBalanceSerializer, TankOpeningBalanceSerializer,
+    NozzleCommissioningSerializer
 )
 from .services import (
     detect_excel_or_csv_columns, import_calibration_chart, activate_calibration_chart,
     assign_calibration_chart_to_tank, convert_dip_to_volume,
     create_opening_balance_batch, set_nozzle_opening_balance, set_tank_opening_balance,
-    preview_opening_balance_confirmation, confirm_opening_balance_batch
+    preview_opening_balance_confirmation, confirm_opening_balance_batch,
+    commission_nozzle, bulk_commission_nozzles
 )
 from .selectors import check_outlet_operational_readiness
 
@@ -463,3 +468,289 @@ class OutletOperationalReadinessView(APIView):
 
         readiness = check_outlet_operational_readiness(outlet)
         return Response(readiness, status=status.HTTP_200_OK)
+
+
+class NozzleCommissioningStatusView(APIView):
+    permission_classes = [IsAuthenticated, HasGranularPermission]
+    required_permission = 'nozzle.view'
+
+    def get(self, request, org_id, outlet_id):
+        membership = get_organisation_membership(request.user, org_id)
+        try:
+            outlet = Outlet.objects.get(organisation_id=org_id, id=outlet_id)
+            if not can_access_outlet(membership, outlet):
+                raise Http404()
+        except Outlet.DoesNotExist:
+            raise Http404()
+
+        # Load all nozzles for this outlet
+        nozzles = Nozzle.objects.filter(outlet=outlet).select_related(
+            'dispenser', 'tank', 'tank__product'
+        ).order_by('dispenser__code', 'code')
+
+        # Load confirmed batch opening balances for this outlet
+        confirmed_batch = OpeningBalanceBatch.objects.filter(
+            outlet=outlet,
+            status=OpeningBalanceBatch.STATUS_CONFIRMED
+        ).first()
+
+        ob_map = {}
+        if confirmed_batch:
+            for nob in NozzleOpeningBalance.objects.filter(batch=confirmed_batch):
+                ob_map[nob.nozzle_id] = nob
+
+        # Load commissioning records for this outlet
+        comm_map = {}
+        for comm in NozzleCommissioning.objects.filter(outlet=outlet).select_related('commissioned_by'):
+            comm_map[comm.nozzle_id] = comm
+
+        # Load latest closed shift readings
+        from apps.shifts.models import ShiftNozzleMeter, OperationalShift
+        latest_meters = {}
+        closed_meters = ShiftNozzleMeter.objects.filter(
+            shift__outlet=outlet,
+            shift__status=OperationalShift.STATUS_CLOSED,
+            closing_reading__isnull=False
+        ).select_related('shift', 'shift__shift_definition').order_by(
+            '-shift__closed_at', '-shift__business_date', '-shift__opened_at'
+        )
+        for m in closed_meters:
+            if m.nozzle_id not in latest_meters:
+                latest_meters[m.nozzle_id] = m
+
+        results = []
+        for n in nozzles:
+            nob = ob_map.get(n.id)
+            comm = comm_map.get(n.id)
+            prev_m = latest_meters.get(n.id)
+
+            if prev_m:
+                st_status = 'previous_shift'
+                st_totalizer = prev_m.closing_reading
+                source_eff_time = prev_m.shift.closed_at
+                comm_allowed = False
+                blocking_reason = "Nozzle has historical closed shift readings. Ordinary commissioning is not permitted."
+                comm_by_name = None
+                comm_at = None
+                reason_val = None
+                notes_val = None
+            elif comm:
+                st_status = 'commissioned'
+                st_totalizer = comm.initial_totalizer
+                source_eff_time = comm.effective_at
+                comm_allowed = False
+                blocking_reason = "Nozzle has already been commissioned."
+                comm_by_name = comm.commissioned_by.get_full_name() or comm.commissioned_by.username if comm.commissioned_by else None
+                comm_at = comm.created_at
+                reason_val = comm.reason
+                notes_val = comm.notes
+            elif nob:
+                st_status = 'opening_balance'
+                st_totalizer = nob.totalizer_reading
+                source_eff_time = confirmed_batch.effective_at if confirmed_batch else None
+                comm_allowed = False
+                blocking_reason = "Nozzle configured from confirmed opening balance."
+                comm_by_name = None
+                comm_at = None
+                reason_val = None
+                notes_val = None
+            else:
+                st_status = 'missing'
+                st_totalizer = None
+                source_eff_time = None
+                comm_allowed = True
+                blocking_reason = None
+                comm_by_name = None
+                comm_at = None
+                reason_val = None
+                notes_val = None
+
+            results.append({
+                'nozzle_id': str(n.id),
+                'nozzle_code': n.code,
+                'nozzle_name': n.name,
+                'nozzle_number': n.nozzle_number,
+                'dispenser_id': str(n.dispenser.id),
+                'dispenser_code': n.dispenser.code,
+                'dispenser_name': n.dispenser.name,
+                'product_id': str(n.tank.product.id) if n.tank and n.tank.product else None,
+                'product_code': n.tank.product.code if n.tank and n.tank.product else None,
+                'product_name': n.tank.product.name if n.tank and n.tank.product else None,
+                'tank_id': str(n.tank.id) if n.tank else None,
+                'tank_code': n.tank.code if n.tank else None,
+                'is_active': n.status == Nozzle.STATUS_ACTIVE,
+                'status': st_status,
+                'starting_totalizer': str(st_totalizer) if st_totalizer is not None else None,
+                'source_effective_time': source_eff_time.isoformat() if source_eff_time else None,
+                'commissioning_allowed': comm_allowed,
+                'blocking_reason': blocking_reason,
+                'commissioned_by_name': comm_by_name,
+                'commissioned_at': comm_at.isoformat() if comm_at else None,
+                'reason': reason_val,
+                'notes': notes_val
+            })
+
+        return Response(results, status=status.HTTP_200_OK)
+
+
+class NozzleCommissionView(APIView):
+    permission_classes = [IsAuthenticated, HasGranularPermission]
+    required_permission = 'nozzle.commission'
+
+    def post(self, request, org_id, outlet_id, nozzle_id):
+        membership = get_organisation_membership(request.user, org_id)
+        try:
+            outlet = Outlet.objects.get(organisation_id=org_id, id=outlet_id)
+            if not can_access_outlet(membership, outlet):
+                raise Http404()
+            nozzle = Nozzle.objects.get(outlet=outlet, id=nozzle_id)
+        except (Outlet.DoesNotExist, Nozzle.DoesNotExist):
+            raise Http404()
+
+        initial_totalizer = request.data.get('initial_totalizer')
+        effective_at = request.data.get('effective_at')
+        reason = request.data.get('reason')
+        notes = request.data.get('notes')
+        activate = request.data.get('activate', True)
+
+        errors = {}
+        if initial_totalizer is None or str(initial_totalizer).strip() == '':
+            errors['initial_totalizer'] = ["Initial totalizer reading is required."]
+        else:
+            try:
+                dec_reading = Decimal(str(initial_totalizer))
+                if dec_reading < Decimal('0.000'):
+                    errors['initial_totalizer'] = ["Initial totalizer cannot be negative."]
+            except Exception:
+                errors['initial_totalizer'] = ["Initial totalizer must be a valid numeric decimal."]
+
+        if not reason or not str(reason).strip():
+            errors['reason'] = ["A mandatory reason is required for nozzle commissioning."]
+
+        if not effective_at:
+            errors['effective_at'] = ["Effective date and time is required."]
+        else:
+            try:
+                from django.utils.dateparse import parse_datetime
+                if isinstance(effective_at, str):
+                    parsed_dt = parse_datetime(effective_at)
+                    if parsed_dt is None:
+                        parsed_dt = datetime.fromisoformat(effective_at.replace('Z', '+00:00'))
+                else:
+                    parsed_dt = effective_at
+                from django.utils import timezone
+                if timezone.is_naive(parsed_dt):
+                    parsed_dt = timezone.make_aware(parsed_dt)
+                effective_at = parsed_dt
+            except Exception:
+                errors['effective_at'] = ["Invalid datetime format for effective_at."]
+
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            comm = commission_nozzle(
+                organisation=outlet.organisation,
+                outlet=outlet,
+                nozzle=nozzle,
+                initial_totalizer=dec_reading,
+                effective_at=effective_at,
+                reason=reason,
+                notes=notes,
+                actor=request.user,
+                activate=activate
+            )
+            readiness = check_outlet_operational_readiness(outlet)
+            return Response({
+                'commissioning': NozzleCommissioningSerializer(comm).data,
+                'readiness': readiness
+            }, status=status.HTTP_201_CREATED)
+        except DjangoValidationError as e:
+            return handle_django_validation_error(e)
+
+
+class NozzleBulkCommissionView(APIView):
+    permission_classes = [IsAuthenticated, HasGranularPermission]
+    required_permission = 'nozzle.commission'
+
+    def post(self, request, org_id, outlet_id):
+        membership = get_organisation_membership(request.user, org_id)
+        try:
+            outlet = Outlet.objects.get(organisation_id=org_id, id=outlet_id)
+            if not can_access_outlet(membership, outlet):
+                raise Http404()
+        except Outlet.DoesNotExist:
+            raise Http404()
+
+        items = request.data.get('items', [])
+        effective_at = request.data.get('effective_at')
+        reason = request.data.get('reason')
+        activate = request.data.get('activate', True)
+
+        errors = {}
+        if not items or not isinstance(items, list):
+            errors['items'] = ["A non-empty list of nozzles is required for bulk commissioning."]
+
+        if not reason or not str(reason).strip():
+            errors['reason'] = ["A common mandatory reason is required for bulk commissioning."]
+
+        if not effective_at:
+            errors['effective_at'] = ["A common effective date and time is required."]
+        else:
+            try:
+                from django.utils.dateparse import parse_datetime
+                if isinstance(effective_at, str):
+                    parsed_dt = parse_datetime(effective_at)
+                    if parsed_dt is None:
+                        parsed_dt = datetime.fromisoformat(effective_at.replace('Z', '+00:00'))
+                else:
+                    parsed_dt = effective_at
+                from django.utils import timezone
+                if timezone.is_naive(parsed_dt):
+                    parsed_dt = timezone.make_aware(parsed_dt)
+                effective_at = parsed_dt
+            except Exception:
+                errors['effective_at'] = ["Invalid datetime format for effective_at."]
+
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # Pre-validate rows and report row-specific errors
+        row_errors = {}
+        for idx, item in enumerate(items):
+            n_id = item.get('nozzle_id')
+            reading = item.get('initial_totalizer')
+            if not n_id:
+                row_errors[f"items[{idx}].nozzle_id"] = ["Nozzle ID is required."]
+            if reading is None or str(reading).strip() == '':
+                row_errors[f"items[{idx}].initial_totalizer"] = ["Initial totalizer is required."]
+            else:
+                try:
+                    dec = Decimal(str(reading))
+                    if dec < Decimal('0.000'):
+                        row_errors[f"items[{idx}].initial_totalizer"] = ["Initial totalizer cannot be negative."]
+                except Exception:
+                    row_errors[f"items[{idx}].initial_totalizer"] = ["Initial totalizer must be numeric decimal."]
+
+        if row_errors:
+            return Response(row_errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            created_records = bulk_commission_nozzles(
+                organisation=outlet.organisation,
+                outlet=outlet,
+                items=items,
+                effective_at=effective_at,
+                common_reason=reason,
+                actor=request.user,
+                activate=activate
+            )
+            readiness = check_outlet_operational_readiness(outlet)
+            return Response({
+                'count': len(created_records),
+                'commissionings': NozzleCommissioningSerializer(created_records, many=True).data,
+                'readiness': readiness
+            }, status=status.HTTP_201_CREATED)
+        except DjangoValidationError as e:
+            return handle_django_validation_error(e)
+

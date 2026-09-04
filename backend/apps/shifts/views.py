@@ -1,5 +1,6 @@
 # apps/shifts/views.py
 from datetime import datetime
+import json
 from django.http import Http404
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction, models
@@ -264,7 +265,9 @@ class ShiftRosterWorkspaceView(APIView):
         else:
             require_permission(request.user, org_id, 'shift_roster.create')
 
-        assignments_data = request.data.get('assignments', [])
+        assignments_data = request.data.get('assignments')
+        if assignments_data is None:
+            assignments_data = request.data.get('staff_assignments') or []
         notes = request.data.get('notes', '')
 
         # Validate duplicate employees in the payload
@@ -279,10 +282,10 @@ class ShiftRosterWorkspaceView(APIView):
         if len(all_nozzle_ids) != len(set(all_nozzle_ids)):
             return Response({'detail': "The same nozzle cannot be assigned to multiple employees in the same roster."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validate single primary cashier constraint in the payload
-        primary_cashiers = [a for a in assignments_data if a.get('is_primary_cashier', False)]
-        if len(primary_cashiers) > 1:
-            return Response({'detail': "Only one primary cashier is allowed per roster."}, status=status.HTTP_400_BAD_REQUEST)
+        # Reject legacy primary cashier field if passed in the payload
+        for a in assignments_data:
+            if 'is_primary_cashier' in a:
+                return Response({'detail': "The field 'is_primary_cashier' has been retired and is not accepted."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             with transaction.atomic():
@@ -303,7 +306,6 @@ class ShiftRosterWorkspaceView(APIView):
                 for assignment_item in assignments_data:
                     emp_id = assignment_item.get('employee_id')
                     desig_id = assignment_item.get('duty_designation_id')
-                    is_primary_cashier = assignment_item.get('is_primary_cashier', False)
                     staff_notes = assignment_item.get('notes', '')
                     nozzle_ids = assignment_item.get('nozzle_ids', [])
 
@@ -327,7 +329,6 @@ class ShiftRosterWorkspaceView(APIView):
                         roster=roster,
                         employee=employee,
                         duty_designation=duty_designation,
-                        is_primary_cashier=is_primary_cashier,
                         notes=staff_notes
                     )
 
@@ -393,16 +394,15 @@ from .serializers import (
     ShiftNozzleMeterSerializer, ShiftTestingRecordSerializer,
     ShiftTankDipObservationSerializer, ShiftActivityLogSerializer,
     OperationalShiftStaffSerializer, OperationalShiftNozzleAssignmentSerializer,
-    OperationalShiftCashierPeriodSerializer,
     ShiftStaffAddInputSerializer, ShiftNozzleHandoverInputSerializer,
-    ShiftNozzleCorrectInputSerializer, ShiftCashierTransferInputSerializer,
+    ShiftNozzleCorrectInputSerializer,
     ShiftNozzleActivateInputSerializer,
     ShiftMeterEventSerializer
 )
 from .services import (
     prepare_shift_opening, open_operational_shift, update_open_shift_assignments,
     add_staff_to_open_shift, transfer_nozzle_assignment, correct_nozzle_assignment,
-    transfer_primary_cashier, activate_nozzle_midshift,
+    activate_nozzle_midshift,
     record_closing_meter_reading, record_meter_event, record_testing,
     update_testing, delete_testing, record_shift_dip,
     apply_product_price_change_during_shift, recalculate_shift_totals,
@@ -529,13 +529,16 @@ class ShiftOpenView(APIView):
 
         shift_def_id = request.data.get('shift_definition_id')
         business_date_str = request.data.get('business_date')
-        import json
         staff_assignments = request.data.get('staff_assignments', [])
         if isinstance(staff_assignments, str):
             try:
                 staff_assignments = json.loads(staff_assignments)
             except Exception:
                 pass
+
+        for a in staff_assignments:
+            if isinstance(a, dict) and 'is_primary_cashier' in a:
+                return Response({'detail': "The field 'is_primary_cashier' has been retired and is not accepted."}, status=status.HTTP_400_BAD_REQUEST)
 
         manual_exceptions = request.data.get('manual_exceptions', {})
         if isinstance(manual_exceptions, str):
@@ -623,6 +626,9 @@ class ShiftAssignmentsUpdateView(APIView):
             raise Http404()
 
         staff_assignments = request.data.get('staff_assignments', [])
+        for a in staff_assignments:
+            if isinstance(a, dict) and 'is_primary_cashier' in a:
+                return Response({'detail': "The field 'is_primary_cashier' has been retired and is not accepted."}, status=status.HTTP_400_BAD_REQUEST)
         try:
             updated_shift = update_open_shift_assignments(shift, staff_assignments, request.user)
             return Response(OperationalShiftDetailSerializer(updated_shift).data, status=status.HTTP_200_OK)
@@ -649,7 +655,6 @@ class OperationalShiftStaffAddView(APIView):
                 shift=shift,
                 employee_id=ser.validated_data['employee_id'],
                 duty_designation_id=ser.validated_data.get('duty_designation_id'),
-                is_primary_cashier=ser.validated_data.get('is_primary_cashier', False),
                 notes=ser.validated_data.get('notes'),
                 assigned_nozzle_ids=ser.validated_data.get('assigned_nozzle_ids'),
                 user=request.user
@@ -716,29 +721,11 @@ class OperationalShiftNozzleCorrectView(APIView):
 
 
 class OperationalShiftCashierTransferView(APIView):
-    permission_classes = [IsAuthenticated, HasGranularPermission]
-    required_permission = 'shift.cashier_transfer'
-
-    def post(self, request, org_id, outlet_id, shift_id):
-        membership = get_organisation_membership(request.user, org_id)
-        shift = _get_operational_shift(shift_id, outlet_id, org_id)
-        if not can_access_outlet(membership, shift.outlet):
-            raise Http404()
-
-        ser = ShiftCashierTransferInputSerializer(data=request.data)
-        if not ser.is_valid():
-            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            period = transfer_primary_cashier(
-                shift=shift,
-                new_staff_id=ser.validated_data['new_staff_id'],
-                reason=ser.validated_data['reason'],
-                user=request.user
-            )
-            return Response(OperationalShiftCashierPeriodSerializer(period).data, status=status.HTTP_200_OK)
-        except DjangoValidationError as e:
-            return handle_django_validation_error(e)
+    def post(self, request, *args, **kwargs):
+        return Response(
+            {'detail': "The primary cashier transfer endpoint has been retired and decommissioned. Shift accountability is now employee-wise."},
+            status=status.HTTP_410_GONE
+        )
 
 
 class OperationalShiftNozzleActivateView(APIView):

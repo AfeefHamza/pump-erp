@@ -21,11 +21,10 @@ import { ManageStaffModal } from '../components/ManageStaffModal';
 import { DiscardShiftModal } from '../components/DiscardShiftModal';
 import { AddStaffModal } from '../components/AddStaffModal';
 import { TransferNozzleModal } from '../components/TransferNozzleModal';
-import { TransferCashierModal } from '../components/TransferCashierModal';
 import {
   Gauge, Fuel, Droplet, Tag, Users, Activity, Lock,
   RotateCcw, RefreshCw, AlertCircle, Plus, Trash2,
-  UserPlus, ArrowRightLeft, Shield, History, ChevronDown, ChevronUp
+  UserPlus, ArrowRightLeft, History, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 export const LiveShiftWorkspace: React.FC = () => {
@@ -44,7 +43,6 @@ export const LiveShiftWorkspace: React.FC = () => {
   const canChangePrice = usePermission('product_price.update');
   const canUpdateOpen = usePermission('shift.update_open');
   const canHandoverNozzle = usePermission('shift.nozzle_handover');
-  const canTransferCashier = usePermission('shift.cashier_transfer');
 
   const [shiftData, setShiftData] = useState<OperationalShiftDetailResponse | null>(null);
   const [activityLogs, setActivityLogs] = useState<ShiftActivityLogItem[]>([]);
@@ -69,7 +67,6 @@ export const LiveShiftWorkspace: React.FC = () => {
   const [isAddStaffModalOpen, setIsAddStaffModalOpen] = useState(false);
   const [isTransferNozzleModalOpen, setIsTransferNozzleModalOpen] = useState(false);
   const [selectedNozzleForTransfer, setSelectedNozzleForTransfer] = useState<string | undefined>(undefined);
-  const [isTransferCashierModalOpen, setIsTransferCashierModalOpen] = useState(false);
 
   // Staff & History State
   const [outletEmployees, setOutletEmployees] = useState<Employee[]>([]);
@@ -840,7 +837,7 @@ export const LiveShiftWorkspace: React.FC = () => {
               <div>
                 <h3 className="h4" style={{ margin: 0 }}>Shift Staff & Duty Attendants (DSM)</h3>
                 <p className="text-muted" style={{ margin: '0.2rem 0 0 0', fontSize: '0.85rem' }}>
-                  Manage duty designations, primary cashier responsibility, and meter totalizer handovers.
+                  Manage duty designations and meter totalizer handovers.
                 </p>
               </div>
               {isShiftOpen && (
@@ -868,16 +865,6 @@ export const LiveShiftWorkspace: React.FC = () => {
                       <ArrowRightLeft size={16} /> Handover Nozzle
                     </button>
                   )}
-                  {canTransferCashier && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => setIsTransferCashierModalOpen(true)}
-                      style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: '#059669' }}
-                    >
-                      <Shield size={16} /> Transfer Cashier
-                    </button>
-                  )}
                   <button
                     type="button"
                     className="btn btn-outline"
@@ -903,7 +890,6 @@ export const LiveShiftWorkspace: React.FC = () => {
                     <th>Duty Designation</th>
                     <th>Effective From</th>
                     <th>Assigned Nozzles</th>
-                    <th>Cashier Status</th>
                     <th>Status</th>
                     <th>Gross (L)</th>
                     <th>Testing (L)</th>
@@ -953,27 +939,6 @@ export const LiveShiftWorkspace: React.FC = () => {
                                 </span>
                               ))}
                             </div>
-                          )}
-                        </td>
-                        <td>
-                          {staffObj?.is_primary_cashier ? (
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.25rem',
-                                padding: '2px 8px',
-                                borderRadius: '6px',
-                                fontSize: '0.75rem',
-                                fontWeight: 600,
-                                backgroundColor: 'rgba(34, 197, 94, 0.12)',
-                                color: '#15803d',
-                              }}
-                            >
-                              <Shield size={12} /> Active Cashier
-                            </span>
-                          ) : (
-                            <span className="text-muted" style={{ fontSize: '0.8125rem' }}>—</span>
                           )}
                         </td>
                         <td>
@@ -1043,73 +1008,9 @@ export const LiveShiftWorkspace: React.FC = () => {
             </div>
           </div>
 
-          {/* Historical Assignment & Cashier Timeline Accordion */}
+          {/* Historical Assignment Timeline Accordion */}
           {showHistoryTimeline && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              {/* Cashier Periods */}
-              <div className="card" style={{ overflow: 'hidden' }}>
-                <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border-color, #334155)' }}>
-                  <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <Shield size={16} color="#059669" /> Cashier Responsibility Periods
-                  </h4>
-                  <p className="text-muted" style={{ margin: '0.2rem 0 0 0', fontSize: '0.8125rem' }}>
-                    Chronological audit trail of primary cashiers and cash handover accountability.
-                  </p>
-                </div>
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="table" style={{ width: '100%', margin: 0 }}>
-                    <thead>
-                      <tr style={{ backgroundColor: 'var(--table-header-bg, #f8fafc)', color: 'var(--table-header-text, #334155)' }}>
-                        <th>Cashier</th>
-                        <th>Effective From</th>
-                        <th>Effective To</th>
-                        <th>Status</th>
-                        <th>Changed By</th>
-                        <th>Handover Reason</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(!staffHistory?.cashier_periods || staffHistory.cashier_periods.length === 0) ? (
-                        <tr>
-                          <td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-secondary, #64748b)', padding: '1.5rem' }}>
-                            {loadingHistory ? 'Loading cashier periods...' : 'No cashier transitions recorded for this shift.'}
-                          </td>
-                        </tr>
-                      ) : (
-                        staffHistory.cashier_periods.map((cp) => (
-                          <tr key={cp.id}>
-                            <td>
-                              <strong>{cp.staff_name}</strong>
-                              <span className="text-muted" style={{ fontSize: '0.78125rem', marginLeft: '0.375rem' }}>({cp.staff_code})</span>
-                            </td>
-                            <td style={{ fontSize: '0.8125rem' }}>{new Date(cp.effective_from).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
-                            <td style={{ fontSize: '0.8125rem' }}>
-                              {cp.effective_to ? new Date(cp.effective_to).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Active (Current)'}
-                            </td>
-                            <td>
-                              <span
-                                style={{
-                                  padding: '2px 8px',
-                                  borderRadius: '4px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 600,
-                                  backgroundColor: cp.is_active ? 'rgba(34, 197, 94, 0.1)' : 'rgba(100, 116, 139, 0.1)',
-                                  color: cp.is_active ? '#15803d' : '#64748b',
-                                }}
-                              >
-                                {cp.is_active ? 'Active' : 'Handed Over'}
-                              </span>
-                            </td>
-                            <td>{cp.changed_by_name || 'System'}</td>
-                            <td style={{ fontSize: '0.8125rem' }}>{cp.reason}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
               {/* Nozzle Assignment & Handover Timeline */}
               <div className="card" style={{ overflow: 'hidden' }}>
                 <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border-color, #334155)' }}>
@@ -1359,28 +1260,6 @@ export const LiveShiftWorkspace: React.FC = () => {
               id: e.id,
               employee_code: e.employee_code,
               display_name: e.display_name,
-            }))}
-          />
-
-          <TransferCashierModal
-            isOpen={isTransferCashierModalOpen}
-            onClose={() => setIsTransferCashierModalOpen(false)}
-            onSuccess={() => {
-              loadShift(true);
-              loadStaffHistory();
-            }}
-            orgId={selectedOrgId}
-            outletId={selectedOutletId}
-            shiftId={shift.id}
-            currentCashierName={
-              (shift.staff_members || []).find((s) => s.is_primary_cashier)?.employee_name_snapshot
-            }
-            shiftStaff={(shift.staff_members || []).map((s) => ({
-              id: s.id,
-              employee_name_snapshot: s.employee_name_snapshot,
-              employee_code_snapshot: s.employee_code_snapshot,
-              designation_snapshot: s.designation_snapshot,
-              is_primary_cashier: s.is_primary_cashier,
             }))}
           />
 
