@@ -161,5 +161,37 @@ Live forecourt operations enforce strict real-time auditability and data integri
    - Collections, payments, and shortages/excesses are reconciled per employee against their attributed fuel sales.
    - A centralized-cashier model may be considered as a future configurable option if required by different petrol pump workflows, but is explicitly not part of the active shift domain.
 
+### 9. Employee Collections, Credit Slips & Shift Financial Reconciliation (Milestone 10)
+1. **Attendant Accountability Formula**:
+   - `Expected Amount = Employee Net Attributed Fuel Sales Amount` (derived from exact meter intervals and price segments).
+   - `Accounted Amount = Cash + Card + UPI + Active Credit Slips + Approved Increase Adjustments − Approved Decrease Adjustments`.
+   - `Difference Amount = Accounted Amount − Expected Amount`.
+   - Interpretation:
+     - `Difference = 0`: Balanced
+     - `Difference < 0`: Shortage (`Shortage = Expected − Accounted`)
+     - `Difference > 0`: Excess (`Excess = Accounted − Expected`)
+2. **Customer Master & Credit Slips as Settlement Instruments**:
+   - `Customer` is organisation-scoped with optional outlet assignments.
+   - `FuelCreditSlip` represents the payment/settlement method for fuel *already recorded and dispensed via meter sales*.
+   - Credit slips **do not** generate new fuel revenue, **do not** duplicate meter sales, and **do not** deplete tank stock again.
+   - Slips require server-side price lookup from applicable immutable shift price segments.
+   - Voiding a credit slip requires mandatory reason and audit logging, and immediately triggers recalculation of settlement accountability.
+3. **Settlement Lifecycle & Shift Status**:
+   - Operational shift statuses remain `open` and `closed`.
+   - Financial reconciliation status is derived at the shift level:
+     - `pending`: no required employee settlements reconciled.
+     - `partial`: some but not all required employee settlements reconciled.
+     - `reconciled`: all required employee settlements confirmed and locked.
+   - Collections and credit slips can be recorded while the operational shift is open or settlement is pending.
+   - Final attendant reconciliation is only permitted once the operational shift is `closed`.
+   - Reconciled settlements store immutable snapshots of calculated totals and lock underlying source records.
+4. **Shift Reopening & Reconciliation Dependencies**:
+   - If any employee settlement is reconciled, operational shift reopening is strictly **blocked** until all affected settlements are explicitly reopened.
+   - Reopening an employee settlement requires permission, mandatory reason, audit trail, and resets the shift's reconciliation status from `reconciled` to `partial` or `pending`.
+5. **Future Day Close Dependency**:
+   - Exposes derived boolean `shift_reconciliation_complete: true/false`.
+   - Future Day Close requires `shift_reconciliation_complete == true` across all shifts for the business date.
+
+
 
 

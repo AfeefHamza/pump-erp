@@ -217,6 +217,11 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'meter_reading.view', 'meter_reading.record', 'meter_reading.correct', 'meter_event.record',
                 'testing.view', 'testing.record', 'testing.update', 'testing.delete',
                 'dip_reading.view', 'dip_reading.record', 'dip_reading.correct',
+                'customer.view', 'customer.create', 'customer.update', 'customer.deactivate',
+                'credit_slip.view', 'credit_slip.create', 'credit_slip.update', 'credit_slip.void',
+                'collection.view', 'collection.create', 'collection.update', 'collection.void',
+                'shift_deduction.view', 'shift_deduction.create', 'shift_deduction.approve', 'shift_deduction.void',
+                'reconciliation.view', 'reconciliation.reconcile', 'reconciliation.reopen',
             ]
         },
         {
@@ -244,6 +249,11 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'meter_reading.view', 'meter_reading.record', 'meter_reading.correct', 'meter_event.record',
                 'testing.view', 'testing.record', 'testing.update', 'testing.delete',
                 'dip_reading.view', 'dip_reading.record', 'dip_reading.correct',
+                'customer.view', 'customer.create', 'customer.update', 'customer.deactivate',
+                'credit_slip.view', 'credit_slip.create', 'credit_slip.update', 'credit_slip.void',
+                'collection.view', 'collection.create', 'collection.update', 'collection.void',
+                'shift_deduction.view', 'shift_deduction.create', 'shift_deduction.approve', 'shift_deduction.void',
+                'reconciliation.view', 'reconciliation.reconcile', 'reconciliation.reopen',
             ]
         },
         {
@@ -268,6 +278,11 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'meter_reading.view',
                 'testing.view',
                 'dip_reading.view',
+                'customer.view', 'customer.create', 'customer.update',
+                'credit_slip.view',
+                'collection.view',
+                'shift_deduction.view',
+                'reconciliation.view', 'reconciliation.reconcile',
             ]
         },
         {
@@ -290,6 +305,10 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'meter_reading.view', 'meter_reading.record',
                 'testing.view', 'testing.record',
                 'dip_reading.view', 'dip_reading.record',
+                'customer.view',
+                'credit_slip.view', 'credit_slip.create', 'credit_slip.update',
+                'collection.view', 'collection.create', 'collection.update',
+                'reconciliation.view',
             ]
         },
         {
@@ -314,6 +333,11 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'meter_reading.view',
                 'testing.view',
                 'dip_reading.view',
+                'customer.view',
+                'credit_slip.view',
+                'collection.view',
+                'shift_deduction.view',
+                'reconciliation.view',
             ]
         }
     ]

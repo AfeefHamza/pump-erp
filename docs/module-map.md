@@ -50,21 +50,32 @@ Live forecourt shift operations, meter totalizers, testing records, in-shift pri
   - Dedicated operational pages at `/app/operations/meter-readings` and `/app/operations/dip-readings`.
   - Guided step-by-step `OpenShiftWizard`, `CloseShiftModal`, `ReopenShiftModal`, `PriceChangeModal`, `MeterEventModal`, and `RecordTestingModal`.
 
+### 5. Collections, Credit Slips & Shift Reconciliation (Milestone 10, Implemented)
+Employee-wise collection accountability, customer-linked credit slips, cash denominations, authorized shift deductions, and shift reconciliation.
+- **Backend**:
+  - Models: `Customer`, `CustomerOutletAssignment`, `FuelCreditSlip`, `EmployeeShiftCollection`, `EmployeeCashDenomination`, `EmployeeShiftDeduction`, `EmployeeShiftSettlement`, `ShiftReconciliation`, `CollectionAuditLog`.
+  - Services: `create_customer()`, `update_customer()`, `deactivate_customer()`, `create_credit_slip()`, `update_credit_slip()`, `void_credit_slip()`, `create_employee_collection()`, `update_employee_collection()`, `void_employee_collection()`, `create_employee_shift_deduction()`, `void_employee_shift_deduction()`, `reconcile_employee_settlement()`, `reopen_employee_settlement()`, `calculate_shift_reconciliation()`, `get_customer_credit_position()`.
+  - Selectors: `get_employee_accountability_summary()`, `preview_employee_reconciliation()`, `check_can_reopen_shift()` (enforces settlement lock).
+  - APIs: 20 tenant-safe REST endpoints under `/api/v1/organisations/<org_id>/` and `/outlets/<outlet_id>/operational-shifts/<shift_id>/`.
+- **Frontend**:
+  - Customer Master at `/app/sales/customers` and `/app/sales/customers/:customerId`.
+  - Credit Slips management at `/app/sales/credit-slips`.
+  - Cash Collections shifts overview at `/app/employees/cash-collections`.
+  - Shift Collections Workspace at `/app/employees/cash-collections/:shiftId`.
+  - Attendant Detail Workspace at `/app/employees/cash-collections/:shiftId/:employeeId`.
+  - Shift Financial Reconciliation at `/app/operations/shifts/:shiftId/reconciliation`.
+
 ---
 
 ## Planned Business Modules (Postponed)
 
 ### 1. Day Close & Cash Reconciliation
-- **Shift Payment Reconciliation**: Cash/card/UPI reconciliation against employee collections and attributed nozzle sales.
-- **Employee Shortages**: Shortage and recovery tracking.
-- **Day Close**: Daily station reconciliation, stock variance confirmation, accounting sync.
+- **Day Close**: Daily station reconciliation across all completed shift reconciliations, stock variance confirmation, accounting sync.
 
 ### 2. Sales
-- **Credit Slips**: Manage sales credit vouchers issued to corporate fleet accounts.
 - **Cash Sales**: Real-time sales transactions paid via cash, credit cards, or digital wallets.
 - **Invoices**: Tax invoices generated for corporate customer bill cycles.
 - **Receipts**: Record incoming customer payments against outstanding invoices.
-- **Customers**: Manage customer account details, billing terms, and credit limits.
 
 ### 3. Purchases
 - **Tanker Receipts**: Record incoming fuel tanker decanting, density checks, and temperature factors.
@@ -85,4 +96,5 @@ Live forecourt shift operations, meter totalizers, testing records, in-shift pri
 ### 6. Employees
 - **Employees**: Manage station workers, roles, and shifts.
 - **Shift Assignments**: Track roster schedules.
-- **Cash Collections**: Reconcile cash and digital payments collected by attendants at shift close.
+- **Employee Accounts**: Ledger postings for salary deductions and permanent employee recovery.
+

@@ -26,9 +26,12 @@ import { OutletReadiness } from '@/features/settings/pages/OutletReadiness';
 import { DipCalibrations } from '@/features/settings/pages/DipCalibrations';
 import { SettingsHub } from '@/features/settings/pages/SettingsHub';
 import { ShiftListPage } from '@/features/operations/pages/ShiftListPage';
-import { LiveShiftWorkspace } from '@/features/operations/pages/LiveShiftWorkspace';
-import { MeterReadingsPage } from '@/features/operations/pages/MeterReadingsPage';
+import { ShiftCardWorkspace } from '@/features/operations/pages/ShiftCardWorkspace';
+import { ShiftCardParentOverview } from '@/features/operations/pages/ShiftCardParentOverview';
 import { DipReadingsPage } from '@/features/operations/pages/DipReadingsPage';
+import { CustomersPage } from '@/features/sales/pages/CustomersPage';
+import { CustomerDetailPage } from '@/features/sales/pages/CustomerDetailPage';
+import { CreditSlipsPage } from '@/features/sales/pages/CreditSlipsPage';
 import { useParams, useLocation } from 'react-router-dom';
 
 const RedirectWithSearchAndHash: React.FC<{ getDest: (params: Record<string, string | undefined>) => string }> = ({ getDest }) => {
@@ -116,18 +119,39 @@ export const router = createBrowserRouter([
         path: 'dashboard',
         element: <Dashboard />,
       },
-      // Operations
+      // Operations: Shift Cards Workflow
       {
-        path: 'operations/shifts',
+        path: 'operations/shift-cards',
         element: <ShiftListPage />,
       },
       {
+        path: 'operations/shift-cards/entry',
+        element: <ShiftCardWorkspace />,
+      },
+      {
+        path: 'operations/shift-cards/entry/:cardId',
+        element: <ShiftCardWorkspace />,
+      },
+      {
+        path: 'operations/shift-cards/parent/:shiftId',
+        element: <ShiftCardParentOverview />,
+      },
+      // Retired live routes redirects (Requirement 5)
+      {
+        path: 'operations/shifts',
+        element: <Navigate to="/app/operations/shift-cards" replace />,
+      },
+      {
         path: 'operations/shifts/:shiftId',
-        element: <LiveShiftWorkspace />,
+        element: <RedirectWithSearchAndHash getDest={(p) => `/app/operations/shift-cards/parent/${p.shiftId}`} />,
+      },
+      {
+        path: 'operations/shifts/:shiftId/reconciliation',
+        element: <RedirectWithSearchAndHash getDest={(p) => `/app/operations/shift-cards/parent/${p.shiftId}`} />,
       },
       {
         path: 'operations/meter-readings',
-        element: <MeterReadingsPage />,
+        element: <Navigate to="/app/operations/shift-cards" replace />,
       },
       {
         path: 'operations/dip-readings',
@@ -140,7 +164,11 @@ export const router = createBrowserRouter([
       // Sales
       {
         path: 'sales/credit-slips',
-        element: <ComingSoonPage title="Credit Slips" />,
+        element: <CreditSlipsPage />,
+      },
+      {
+        path: 'sales/credit-slips/:creditSlipId',
+        element: <CreditSlipsPage />,
       },
       {
         path: 'sales/cash-sales',
@@ -156,7 +184,11 @@ export const router = createBrowserRouter([
       },
       {
         path: 'sales/customers',
-        element: <ComingSoonPage title="Customers" />,
+        element: <CustomersPage />,
+      },
+      {
+        path: 'sales/customers/:customerId',
+        element: <CustomerDetailPage />,
       },
       // Purchases
       {
@@ -256,7 +288,15 @@ export const router = createBrowserRouter([
       },
       {
         path: 'employees/cash-collections',
-        element: <ComingSoonPage title="Cash Collections" />,
+        element: <Navigate to="/app/operations/shift-cards" replace />,
+      },
+      {
+        path: 'employees/cash-collections/:shiftId',
+        element: <RedirectWithSearchAndHash getDest={(p) => `/app/operations/shift-cards/parent/${p.shiftId}`} />,
+      },
+      {
+        path: 'employees/cash-collections/:shiftId/:employeeId',
+        element: <Navigate to="/app/operations/shift-cards" replace />,
       },
       {
         path: 'employees/accounts',

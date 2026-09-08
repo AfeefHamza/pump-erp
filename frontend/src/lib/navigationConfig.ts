@@ -1,7 +1,6 @@
 import {
   LayoutDashboard,
   Clock,
-  Gauge,
   Droplet,
   CalendarDays,
   FileText,
@@ -39,8 +38,7 @@ export const navigationMenu: MenuSection[] = [
   {
     title: 'OPERATIONS',
     items: [
-      { name: 'Shifts', path: '/app/operations/shifts', icon: Clock },
-      { name: 'Meter Readings', path: '/app/operations/meter-readings', icon: Gauge },
+      { name: 'Shift Cards', path: '/app/operations/shift-cards', icon: Clock },
       { name: 'Dip Readings', path: '/app/operations/dip-readings', icon: Droplet },
       { name: 'Day Close', path: '/app/operations/day-close', icon: CalendarDays },
     ],

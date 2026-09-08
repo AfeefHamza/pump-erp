@@ -111,7 +111,14 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    const message = errorData.detail || errorData.non_field_errors?.[0] || 'An API error occurred';
+    let fieldMsg: string | null = null;
+    if (typeof errorData === 'object' && errorData !== null) {
+      const vals = Object.values(errorData).flat();
+      if (vals.length > 0 && typeof vals[0] === 'string') {
+        fieldMsg = vals[0];
+      }
+    }
+    const message = errorData.detail || errorData.non_field_errors?.[0] || fieldMsg || 'An API error occurred';
     throw new ApiError(message, response.status, errorData);
   }
 
@@ -1427,6 +1434,8 @@ export interface OperationalShiftListItem {
     total_sale_quantity: string;
     total_fuel_sale_amount: string;
   };
+  reconciliation_status?: 'pending' | 'partial' | 'reconciled';
+  shift_reconciliation_complete?: boolean;
   version: number;
   created_at: string;
   updated_at: string;
@@ -2177,5 +2186,941 @@ export async function fetchShiftTotals(
     `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/totals/`
   );
 }
+
+// ==========================================
+// Milestone 10: Customer Master & Credit Slips
+// ==========================================
+
+export interface Customer {
+  id: string;
+  organisation: string;
+  customer_code: string;
+  display_name: string;
+  customer_type: 'individual' | 'business' | 'government' | 'other';
+  phone_number?: string | null;
+  alternate_phone_number?: string | null;
+  email?: string | null;
+  billing_address?: string | null;
+  GSTIN?: string | null;
+  credit_limit?: number | string | null;
+  credit_days?: number | null;
+  status: 'active' | 'inactive';
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  assigned_outlets?: Array<{ id: string; name: string; code: string }>;
+}
+
+export interface CustomerCreditPosition {
+  customer_id: string;
+  customer_code: string;
+  display_name: string;
+  customer_type: string;
+  status: string;
+  credit_limit: number | string;
+  credit_days: number;
+  total_active_slips: number;
+  total_void_slips: number;
+  outstanding_credit_amount: number | string;
+  outstanding_operational_credit: number | string;
+  oldest_credit_date: string | null;
+  credit_limit_usage_percent: number | string;
+  is_credit_limit_exceeded: boolean;
+}
+
+export interface FuelCreditSlip {
+  id: string;
+  organisation: string;
+  outlet: string;
+  operational_shift: string;
+  shift_business_date?: string;
+  employee: string;
+  employee_name?: string;
+  employee_code?: string;
+  customer: string;
+  customer_code?: string;
+  customer_name?: string;
+  slip_number: string;
+  occurred_at: string;
+  nozzle?: string | null;
+  nozzle_code?: string | null;
+  product: string;
+  product_name?: string;
+  product_code?: string;
+  quantity: number | string;
+  unit_price: number | string;
+  amount: number | string;
+  vehicle_number?: string | null;
+  driver_name?: string | null;
+  customer_reference?: string | null;
+  physical_slip_number?: string | null;
+  notes?: string | null;
+  status: 'active' | 'void';
+  void_reason?: string | null;
+  voided_by?: string | null;
+  voided_by_name?: string | null;
+  voided_at?: string | null;
+  created_at?: string;
+}
+
+export interface CashDenominationItem {
+  denomination_value: number | string;
+  quantity: number;
+  calculated_amount?: number | string;
+}
+
+export interface EmployeeShiftCollection {
+  id: string;
+  organisation: string;
+  outlet: string;
+  operational_shift: string;
+  employee: string;
+  employee_name?: string;
+  employee_code?: string;
+  collection_method: 'cash' | 'card' | 'upi';
+  amount: number | string;
+  occurred_at: string;
+  reference_number?: string | null;
+  provider_name?: string | null;
+  terminal_or_account_reference?: string | null;
+  notes?: string | null;
+  status: 'active' | 'void';
+  void_reason?: string | null;
+  voided_by?: string | null;
+  voided_by_name?: string | null;
+  voided_at?: string | null;
+  denominations?: CashDenominationItem[];
+  created_at?: string;
+}
+
+export interface EmployeeShiftDeduction {
+  id: string;
+  organisation: string;
+  outlet: string;
+  operational_shift: string;
+  employee: string;
+  employee_name?: string;
+  employee_code?: string;
+  deduction_type: 'cash_expense' | 'approved_deduction' | 'other_adjustment';
+  direction: 'increases_accounted' | 'decreases_accounted';
+  amount: number | string;
+  occurred_at: string;
+  description: string;
+  payee?: string | null;
+  reference_number?: string | null;
+  approval_reason: string;
+  approved_by: string;
+  approved_by_name?: string;
+  status: 'active' | 'void';
+  void_reason?: string | null;
+  voided_by?: string | null;
+  voided_by_name?: string | null;
+  voided_at?: string | null;
+  created_at?: string;
+}
+
+export interface EmployeeAccountabilityItem {
+  employee_id: string;
+  employee_code: string;
+  employee_name: string;
+  nozzle_codes: string[];
+  assigned_nozzles?: string[];
+  expected_sale_amount: number | string;
+  cash_amount: number | string;
+  card_amount: number | string;
+  upi_amount: number | string;
+  credit_slip_amount: number | string;
+  approved_increase_adjustments: number | string;
+  approved_decrease_adjustments: number | string;
+  total_accounted_amount: number | string;
+  difference_amount: number | string;
+  shortage_amount: number | string;
+  excess_amount: number | string;
+  result: 'balanced' | 'shortage' | 'excess';
+  settlement_status: 'not_started' | 'preparing' | 'reconciled';
+  settlement_id: string | null;
+  reconciled_at: string | null;
+  reconciled_by_name: string | null;
+}
+
+export interface ShiftReconciliationSummary {
+  id: string;
+  organisation: string;
+  outlet: string;
+  operational_shift: string;
+  expected_sale_amount: number | string;
+  total_accounted_amount: number | string;
+  shortage_amount: number | string;
+  excess_amount: number | string;
+  net_difference_amount: number | string;
+  required_employee_count: number;
+  reconciled_employee_count: number;
+  status: 'pending' | 'partial' | 'reconciled';
+  completed_by?: string | null;
+  completed_at?: string | null;
+}
+
+export interface EmployeeReconciliationPreview {
+  shift_id: string;
+  employee_id: string;
+  employee_name: string;
+  employee_code: string;
+  shift_status: string;
+  can_reconcile: boolean;
+  blocking_reasons: string[];
+  blocking_errors?: string[];
+  expected_sale_amount: number | string;
+  nozzle_breakdown: Array<{
+    nozzle_id: string;
+    nozzle_code: string;
+    product_name: string;
+    unit_price: number | string;
+    quantity: number | string;
+    amount: number | string;
+  }>;
+  cash_amount: number | string;
+  card_amount: number | string;
+  upi_amount: number | string;
+  credit_slip_amount: number | string;
+  approved_increase_adjustments: number | string;
+  approved_decrease_adjustments: number | string;
+  total_accounted_amount: number | string;
+  difference_amount: number | string;
+  shortage_amount: number | string;
+  excess_amount: number | string;
+  result: 'balanced' | 'shortage' | 'excess';
+  requires_acknowledgement: boolean;
+  settlement_status: string;
+  reconciled_at?: string | null;
+  reconciled_by_name?: string | null;
+  reconciliation_notes?: string | null;
+}
+
+export interface CollectionAuditLogItem {
+  id: string;
+  shift: string;
+  employee_id?: string | null;
+  employee_name?: string | null;
+  customer_id?: string | null;
+  customer_name?: string | null;
+  actor_id?: string | null;
+  actor_name?: string | null;
+  event_type: string;
+  occurred_at: string;
+  reason?: string | null;
+  metadata?: Record<string, any>;
+}
+
+// Customers API
+export async function fetchCustomers(
+  orgId: string,
+  params?: { search?: string; status?: string; customer_type?: string }
+): Promise<Customer[]> {
+  const query = new URLSearchParams();
+  if (params?.search) query.set('search', params.search);
+  if (params?.status) query.set('status', params.status);
+  if (params?.customer_type) query.set('customer_type', params.customer_type);
+  const qs = query.toString() ? `?${query.toString()}` : '';
+  return apiRequest<Customer[]>(`/organisations/${orgId}/customers/${qs}`);
+}
+
+export async function fetchCustomer(orgId: string, customerId: string): Promise<Customer> {
+  return apiRequest<Customer>(`/organisations/${orgId}/customers/${customerId}/`);
+}
+
+export async function createCustomer(orgId: string, payload: Partial<Customer>): Promise<Customer> {
+  return apiRequest<Customer>(`/organisations/${orgId}/customers/`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateCustomer(
+  orgId: string,
+  customerId: string,
+  payload: Partial<Customer>
+): Promise<Customer> {
+  return apiRequest<Customer>(`/organisations/${orgId}/customers/${customerId}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deactivateCustomer(orgId: string, customerId: string): Promise<Customer> {
+  return apiRequest<Customer>(`/organisations/${orgId}/customers/${customerId}/deactivate/`, {
+    method: 'POST',
+  });
+}
+
+export async function fetchCustomerCreditPosition(
+  orgId: string,
+  customerId: string,
+  outletId?: string
+): Promise<CustomerCreditPosition> {
+  const qs = outletId ? `?outlet_id=${outletId}` : '';
+  return apiRequest<CustomerCreditPosition>(
+    `/organisations/${orgId}/customers/${customerId}/credit-position/${qs}`
+  );
+}
+
+export async function fetchCustomerCreditSlips(
+  orgId: string,
+  customerId: string
+): Promise<FuelCreditSlip[]> {
+  return apiRequest<FuelCreditSlip[]>(
+    `/organisations/${orgId}/customers/${customerId}/credit-slips/`
+  );
+}
+
+// Credit Slips API
+export async function fetchOutletCreditSlips(
+  orgId: string,
+  outletId: string,
+  params?: { shift_id?: string; customer_id?: string; employee_id?: string; status?: string }
+): Promise<FuelCreditSlip[]> {
+  const query = new URLSearchParams();
+  if (params?.shift_id) query.set('shift_id', params.shift_id);
+  if (params?.customer_id) query.set('customer_id', params.customer_id);
+  if (params?.employee_id) query.set('employee_id', params.employee_id);
+  if (params?.status) query.set('status', params.status);
+  const qs = query.toString() ? `?${query.toString()}` : '';
+  return apiRequest<FuelCreditSlip[]>(`/organisations/${orgId}/outlets/${outletId}/credit-slips/${qs}`);
+}
+
+export async function fetchShiftCreditSlips(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  employeeId?: string
+): Promise<FuelCreditSlip[]> {
+  const qs = employeeId ? `?employee_id=${employeeId}` : '';
+  return apiRequest<FuelCreditSlip[]>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/credit-slips/${qs}`
+  );
+}
+
+export async function fetchCreditSlip(
+  orgId: string,
+  outletId: string,
+  slipId: string
+): Promise<FuelCreditSlip> {
+  return apiRequest<FuelCreditSlip>(
+    `/organisations/${orgId}/outlets/${outletId}/credit-slips/${slipId}/`
+  );
+}
+
+export async function createShiftCreditSlip(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  payload: {
+    customer_id: string;
+    employee_id: string;
+    product_id: string;
+    quantity: number | string;
+    nozzle_id?: string | null;
+    occurred_at?: string;
+    slip_number?: string;
+    vehicle_number?: string;
+    driver_name?: string;
+    customer_reference?: string;
+    physical_slip_number?: string;
+    notes?: string;
+  }
+): Promise<FuelCreditSlip> {
+  return apiRequest<FuelCreditSlip>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/credit-slips/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function updateCreditSlip(
+  orgId: string,
+  outletId: string,
+  slipId: string,
+  payload: Partial<FuelCreditSlip>
+): Promise<FuelCreditSlip> {
+  return apiRequest<FuelCreditSlip>(
+    `/organisations/${orgId}/outlets/${outletId}/credit-slips/${slipId}/`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function voidCreditSlip(
+  orgId: string,
+  outletId: string,
+  slipId: string,
+  reason: string
+): Promise<FuelCreditSlip> {
+  return apiRequest<FuelCreditSlip>(
+    `/organisations/${orgId}/outlets/${outletId}/credit-slips/${slipId}/void/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }
+  );
+}
+
+// Collections API
+export async function fetchShiftCollections(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  params?: { employee_id?: string; collection_method?: string }
+): Promise<EmployeeShiftCollection[]> {
+  const query = new URLSearchParams();
+  if (params?.employee_id) query.set('employee_id', params.employee_id);
+  if (params?.collection_method) query.set('collection_method', params.collection_method);
+  const qs = query.toString() ? `?${query.toString()}` : '';
+  return apiRequest<EmployeeShiftCollection[]>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/collections/${qs}`
+  );
+}
+
+export async function fetchCollection(
+  orgId: string,
+  outletId: string,
+  collectionId: string
+): Promise<EmployeeShiftCollection> {
+  return apiRequest<EmployeeShiftCollection>(
+    `/organisations/${orgId}/outlets/${outletId}/collections/${collectionId}/`
+  );
+}
+
+export async function createShiftCollection(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  payload: {
+    employee_id: string;
+    collection_method: 'cash' | 'card' | 'upi';
+    amount: number | string;
+    occurred_at?: string;
+    denominations?: CashDenominationItem[];
+    reference_number?: string;
+    provider_name?: string;
+    terminal_or_account_reference?: string;
+    notes?: string;
+    allow_duplicate_reference?: boolean;
+    override_reason?: string;
+  }
+): Promise<EmployeeShiftCollection> {
+  return apiRequest<EmployeeShiftCollection>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/collections/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function updateCollection(
+  orgId: string,
+  outletId: string,
+  collectionId: string,
+  payload: Partial<EmployeeShiftCollection>
+): Promise<EmployeeShiftCollection> {
+  return apiRequest<EmployeeShiftCollection>(
+    `/organisations/${orgId}/outlets/${outletId}/collections/${collectionId}/`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function voidCollection(
+  orgId: string,
+  outletId: string,
+  collectionId: string,
+  reason: string
+): Promise<EmployeeShiftCollection> {
+  return apiRequest<EmployeeShiftCollection>(
+    `/organisations/${orgId}/outlets/${outletId}/collections/${collectionId}/void/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }
+  );
+}
+
+// Deductions / Adjustments API
+export async function fetchShiftDeductions(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  employeeId?: string
+): Promise<EmployeeShiftDeduction[]> {
+  const qs = employeeId ? `?employee_id=${employeeId}` : '';
+  return apiRequest<EmployeeShiftDeduction[]>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/deductions/${qs}`
+  );
+}
+
+export async function createShiftDeduction(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  payload: {
+    employee_id: string;
+    deduction_type: 'cash_expense' | 'approved_deduction' | 'other_adjustment';
+    direction: 'increases_accounted' | 'decreases_accounted';
+    amount: number | string;
+    occurred_at?: string;
+    description: string;
+    approval_reason: string;
+    payee?: string;
+    reference_number?: string;
+  }
+): Promise<EmployeeShiftDeduction> {
+  return apiRequest<EmployeeShiftDeduction>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/deductions/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function voidShiftDeduction(
+  orgId: string,
+  outletId: string,
+  deductionId: string,
+  reason: string
+): Promise<EmployeeShiftDeduction> {
+  return apiRequest<EmployeeShiftDeduction>(
+    `/organisations/${orgId}/outlets/${outletId}/deductions/${deductionId}/void/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }
+  );
+}
+
+// Accountability & Reconciliation API
+export async function fetchEmployeeAccountabilitySummary(
+  orgId: string,
+  outletId: string,
+  shiftId: string
+): Promise<{
+  shift_id: string;
+  business_date: string;
+  operational_status: string;
+  reconciliation_status: string;
+  shift_reconciliation_complete: boolean;
+  employees: EmployeeAccountabilityItem[];
+  reconciliation: ShiftReconciliationSummary;
+}> {
+  return apiRequest<any>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/accountability/`
+  );
+}
+
+export async function fetchEmployeeReconciliationPreview(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  employeeId: string
+): Promise<EmployeeReconciliationPreview> {
+  return apiRequest<EmployeeReconciliationPreview>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/accountability/${employeeId}/preview/`
+  );
+}
+
+export async function reconcileEmployeeSettlement(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  employeeId: string,
+  payload: { notes?: string; acknowledge_difference?: boolean }
+): Promise<any> {
+  return apiRequest<any>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/accountability/${employeeId}/reconcile/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function reopenEmployeeSettlement(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  settlementId: string,
+  reason: string
+): Promise<any> {
+  return apiRequest<any>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/settlements/${settlementId}/reopen/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }
+  );
+}
+
+export async function fetchShiftReconciliationSummary(
+  orgId: string,
+  outletId: string,
+  shiftId: string
+): Promise<ShiftReconciliationSummary> {
+  return apiRequest<ShiftReconciliationSummary>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/reconciliation/`
+  );
+}
+
+export async function fetchCollectionActivityTimeline(
+  orgId: string,
+  outletId: string,
+  shiftId: string
+): Promise<CollectionAuditLogItem[]> {
+  return apiRequest<CollectionAuditLogItem[]>(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/collection-activity/`
+  );
+}
+
+// ==========================================
+// Shift Cards API & Interfaces
+// ==========================================
+
+export interface ShiftCardMeterInput {
+  nozzle_id: string;
+  opening_reading: number | string;
+  closing_reading?: number | string | null;
+  expected_opening_reading?: number | string | null;
+  opening_source?: string;
+  opening_source_reference?: string | null;
+  continuity_status?: string;
+  continuity_difference?: number | string;
+  continuity_reason?: string | null;
+  is_conflict_acknowledged?: boolean;
+  manual_exception_type?: string | null;
+  manual_exception_reason?: string | null;
+  testing_quantity?: number | string;
+  returned_to_tank?: boolean;
+  destination_tank_id?: string | null;
+  price_segments?: Array<{
+    opening_reading: number | string;
+    closing_reading?: number | string | null;
+    unit_price: number | string;
+    testing_quantity?: number | string;
+    starts_at?: string;
+    ends_at?: string;
+  }>;
+}
+
+export interface ShiftCardCollectionInput {
+  amount: number | string;
+  provider_name?: string | null;
+  reference_number?: string | null;
+  terminal_or_account_reference?: string | null;
+  occurred_at?: string | null;
+  notes?: string | null;
+}
+
+export interface ShiftCardDenominationInput {
+  denomination_value: number;
+  quantity: number;
+}
+
+export interface ShiftCardCreditSlipInput {
+  customer_id: string;
+  nozzle_id?: string | null;
+  product_id: string;
+  quantity: number | string;
+  unit_price: number | string;
+  slip_number?: string;
+  physical_slip_number?: string | null;
+  vehicle_number?: string | null;
+  driver_name?: string | null;
+  customer_reference?: string | null;
+  occurred_at?: string | null;
+  notes?: string | null;
+}
+
+export interface ShiftCardDeductionInput {
+  id?: string;
+  deduction_type?: 'cash_expense' | 'approved_deduction' | 'other_adjustment';
+  direction?: 'increases_accounted' | 'decreases_accounted';
+  amount: number | string;
+  description: string;
+  payee?: string | null;
+  reference_number?: string | null;
+  occurred_at?: string | null;
+}
+
+export interface ShiftCardSavePayload {
+  shift_card_id?: string;
+  shift_definition_id: string;
+  business_date: string;
+  employee_id: string;
+  sequence?: number;
+  actual_starts_at?: string;
+  actual_ends_at?: string;
+  mpd_slip_number?: string;
+  notes?: string;
+  operator_notes?: string;
+  is_shortage_excess_acknowledged?: boolean;
+  shortage_acknowledged?: boolean;
+  shortage_excess_acknowledgement_note?: string;
+  shortage_notes?: string;
+  meters?: ShiftCardMeterInput[];
+  nozzle_meters: ShiftCardMeterInput[];
+  cash_amount?: number | string;
+  cash?: {
+    amount: number | string;
+    occurred_at?: string;
+    notes?: string;
+    denominations?: ShiftCardDenominationInput[];
+  };
+  cards?: ShiftCardCollectionInput[];
+  upi?: ShiftCardCollectionInput[];
+  fleet?: ShiftCardCollectionInput[];
+  credit_slips?: ShiftCardCreditSlipInput[];
+  deductions?: ShiftCardDeductionInput[];
+}
+
+export interface EmployeeShiftCardItem {
+  id: string;
+  sequence: number;
+  parent_shift: {
+    id: string;
+    business_date: string;
+    shift_definition: {
+      id: string;
+      code: string;
+      name: string;
+      starts_at: string;
+      ends_at: string;
+    };
+    is_locked: boolean;
+    locked_at: string | null;
+    locked_by_name: string | null;
+    lock_source: string | null;
+    status: string;
+  };
+  employee: {
+    id: string;
+    display_name: string;
+    employee_code: string;
+  };
+  status: 'active' | 'void';
+  actual_starts_at: string | null;
+  actual_ends_at: string | null;
+  mpd_slip_number: string | null;
+  mpd_slip_attachment: string | null;
+  is_shortage_excess_acknowledged: boolean;
+  shortage_excess_acknowledgement_note: string | null;
+  notes: string | null;
+  void_reason: string | null;
+  voided_at: string | null;
+  voided_by_name: string | null;
+  total_litres_sold: number;
+  total_sale_amount: number;
+  total_collected_amount: number;
+  difference_amount: number;
+  meters: any[];
+  collections: any[];
+  credit_slips: any[];
+  deductions: any[];
+  settlement: any | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShiftCardPreparationResponse {
+  business_date: string;
+  shift_definition_id: string | null;
+  shift_definitions: Array<{
+    id: string;
+    code: string;
+    name: string;
+    starts_at: string;
+    ends_at: string;
+  }>;
+  historical_employees: Array<{
+    id: string;
+    name: string;
+    code: string;
+  }>;
+  historical_nozzles: Array<{
+    id: string;
+    code: string;
+    name: string;
+    dispenser_name: string;
+    product_id: string;
+    product_name: string;
+    current_selling_price: number;
+    opening_info: {
+      reading: number | null;
+      source: string;
+      reference: string | null;
+      source_description: string;
+      continuity_status: string;
+      requires_commissioning: boolean;
+    };
+  }>;
+  customers: Array<{
+    id: string;
+    name: string;
+    code: string;
+    vehicle_numbers?: string[];
+  }>;
+  parent_shift: any | null;
+  existing_cards: EmployeeShiftCardItem[];
+  missing_nozzle_ids: string[];
+}
+
+export async function fetchShiftCardPreparation(
+  orgId: string,
+  outletId: string,
+  businessDate?: string,
+  shiftDefinitionId?: string
+): Promise<ShiftCardPreparationResponse> {
+  const params = new URLSearchParams();
+  if (businessDate) params.append('business_date', businessDate);
+  if (shiftDefinitionId) params.append('shift_definition_id', shiftDefinitionId);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return apiRequest<ShiftCardPreparationResponse>(
+    `/organisations/${orgId}/outlets/${outletId}/shift-cards/preparation/${qs}`
+  );
+}
+
+export async function fetchShiftCardsList(
+  orgId: string,
+  outletId: string,
+  filters?: {
+    business_date?: string;
+    shift_definition_id?: string;
+    employee_id?: string;
+    status?: string;
+  }
+): Promise<EmployeeShiftCardItem[]> {
+  const params = new URLSearchParams();
+  if (filters?.business_date) params.append('business_date', filters.business_date);
+  if (filters?.shift_definition_id) params.append('shift_definition_id', filters.shift_definition_id);
+  if (filters?.employee_id) params.append('employee_id', filters.employee_id);
+  if (filters?.status) params.append('status', filters.status);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return apiRequest<EmployeeShiftCardItem[]>(
+    `/organisations/${orgId}/outlets/${outletId}/shift-cards/${qs}`
+  );
+}
+
+export async function saveShiftCard(
+  orgId: string,
+  outletId: string,
+  payload: ShiftCardSavePayload
+): Promise<EmployeeShiftCardItem> {
+  return apiRequest<EmployeeShiftCardItem>(
+    `/organisations/${orgId}/outlets/${outletId}/shift-cards/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function fetchShiftCardDetail(
+  orgId: string,
+  outletId: string,
+  cardId: string
+): Promise<EmployeeShiftCardItem> {
+  return apiRequest<EmployeeShiftCardItem>(
+    `/organisations/${orgId}/outlets/${outletId}/shift-cards/${cardId}/`
+  );
+}
+
+export async function voidShiftCard(
+  orgId: string,
+  outletId: string,
+  cardId: string,
+  reason: string
+): Promise<EmployeeShiftCardItem> {
+  return apiRequest<EmployeeShiftCardItem>(
+    `/organisations/${orgId}/outlets/${outletId}/shift-cards/${cardId}/void/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }
+  );
+}
+
+export async function lockShift(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  reason?: string
+): Promise<{ id: string; is_locked: boolean; locked_at: string; lock_source: string }> {
+  return apiRequest(
+    `/organisations/${orgId}/outlets/${outletId}/shifts/${shiftId}/lock/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || 'Manual shift lock' }),
+    }
+  );
+}
+
+export async function unlockShift(
+  orgId: string,
+  outletId: string,
+  shiftId: string,
+  reason: string
+): Promise<{ id: string; is_locked: boolean; unlocked_at: string }> {
+  return apiRequest(
+    `/organisations/${orgId}/outlets/${outletId}/shifts/${shiftId}/unlock/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }
+  );
+}
+
+export async function approveShiftDeduction(
+  orgId: string,
+  outletId: string,
+  deductionId: string,
+  reason?: string
+): Promise<EmployeeShiftDeduction> {
+  return apiRequest<EmployeeShiftDeduction>(
+    `/organisations/${orgId}/outlets/${outletId}/deductions/${deductionId}/approve/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || 'Approved by manager' }),
+    }
+  );
+}
+
+export async function rejectShiftDeduction(
+  orgId: string,
+  outletId: string,
+  deductionId: string,
+  reason: string
+): Promise<EmployeeShiftDeduction> {
+  return apiRequest<EmployeeShiftDeduction>(
+    `/organisations/${orgId}/outlets/${outletId}/deductions/${deductionId}/reject/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }
+  );
+}
+
+export async function fetchParentShiftSummary(
+  orgId: string,
+  outletId: string,
+  shiftId: string
+): Promise<any> {
+  return apiRequest(
+    `/organisations/${orgId}/outlets/${outletId}/operational-shifts/${shiftId}/summary/`
+  );
+}
+
 
 

@@ -24,7 +24,7 @@ import { TransferNozzleModal } from '../components/TransferNozzleModal';
 import {
   Gauge, Fuel, Droplet, Tag, Users, Activity, Lock,
   RotateCcw, RefreshCw, AlertCircle, Plus, Trash2,
-  UserPlus, ArrowRightLeft, History, ChevronDown, ChevronUp
+  UserPlus, ArrowRightLeft, History, ChevronDown, ChevronUp, Coins
 } from 'lucide-react';
 
 export const LiveShiftWorkspace: React.FC = () => {
@@ -224,6 +224,15 @@ export const LiveShiftWorkspace: React.FC = () => {
           >
             <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
             {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={() => navigate(`/app/operations/shifts/${shiftId}/reconciliation`)}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#38bdf8', borderColor: '#38bdf8' }}
+          >
+            <Coins size={16} /> Reconciliation
           </button>
 
           {isShiftOpen ? (
@@ -489,6 +498,15 @@ export const LiveShiftWorkspace: React.FC = () => {
           style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderRadius: '8px 8px 0 0' }}
         >
           <Activity size={16} /> Audit Trail ({activityLogs.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigate(`/app/operations/shifts/${shiftId}/reconciliation`)}
+          className="btn btn-ghost"
+          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderRadius: '8px 8px 0 0', color: '#38bdf8' }}
+        >
+          <Coins size={16} /> Financial Reconciliation
         </button>
       </div>
 

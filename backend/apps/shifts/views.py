@@ -1,7 +1,9 @@
 # apps/shifts/views.py
-from datetime import datetime
+import os
+from datetime import datetime, date
+from decimal import Decimal
 import json
-from django.http import Http404
+from django.http import Http404, FileResponse
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction, models
 from rest_framework import status
@@ -387,7 +389,11 @@ from apps.forecourt.models import Tank, FuelProduct
 from .models import (
     OperationalShift, OperationalShiftStaff, OperationalShiftNozzleAssignment,
     ShiftNozzleMeter, ShiftNozzlePriceSegment, ShiftMeterEvent,
-    ShiftTestingRecord, ShiftTankDipObservation, ShiftActivityLog
+    ShiftTestingRecord, ShiftTankDipObservation, ShiftActivityLog,
+    Customer, CustomerOutletAssignment, FuelCreditSlip,
+    EmployeeShiftCollection, EmployeeCashDenomination,
+    EmployeeShiftDeduction, EmployeeShiftSettlement,
+    ShiftReconciliation, CollectionAuditLog, EmployeeShiftCard
 )
 from .serializers import (
     OperationalShiftListSerializer, OperationalShiftDetailSerializer,
@@ -397,7 +403,14 @@ from .serializers import (
     ShiftStaffAddInputSerializer, ShiftNozzleHandoverInputSerializer,
     ShiftNozzleCorrectInputSerializer,
     ShiftNozzleActivateInputSerializer,
-    ShiftMeterEventSerializer
+    ShiftMeterEventSerializer,
+    CustomerSerializer, FuelCreditSlipSerializer,
+    EmployeeShiftCollectionSerializer, EmployeeCashDenominationSerializer,
+    EmployeeShiftDeductionSerializer, EmployeeShiftSettlementSerializer,
+    ShiftReconciliationSerializer, CollectionAuditLogSerializer,
+    ShiftCardAtomicSaveSerializer, EmployeeShiftCardSerializer,
+    ShiftCardVoidSerializer, ShiftLockActionSerializer,
+    ShiftUnlockActionSerializer, ShiftDeductionRejectActionSerializer
 )
 from .services import (
     prepare_shift_opening, open_operational_shift, update_open_shift_assignments,
@@ -406,12 +419,22 @@ from .services import (
     record_closing_meter_reading, record_meter_event, record_testing,
     update_testing, delete_testing, record_shift_dip,
     apply_product_price_change_during_shift, recalculate_shift_totals,
-    close_operational_shift, reopen_operational_shift, discard_open_operational_shift
+    close_operational_shift, reopen_operational_shift, discard_open_operational_shift,
+    create_customer, update_customer, deactivate_customer, get_customer_credit_position,
+    create_credit_slip, update_credit_slip, void_credit_slip,
+    create_employee_collection, update_employee_collection, void_employee_collection,
+    create_employee_shift_deduction, void_employee_shift_deduction,
+    calculate_employee_settlement, preview_employee_reconciliation,
+    reconcile_employee_settlement, reopen_employee_settlement,
+    calculate_shift_reconciliation, get_employee_accountability_summary,
+    atomic_save_shift_card, void_shift_card, lock_shift, unlock_shift,
+    approve_shift_deduction, reject_shift_deduction
 )
 from .selectors import (
     get_open_shift_for_outlet, derive_nozzle_opening_reading,
     calculate_shift_totals, preview_shift_closing_data, check_can_reopen_shift,
-    get_shift_staff_history
+    get_shift_staff_history, get_shift_card_preparation_data,
+    get_last_entered_business_date, get_parent_shift_summary
 )
 
 
@@ -419,6 +442,18 @@ def _get_operational_shift(shift_id, outlet_id, org_id):
     try:
         return OperationalShift.objects.get(id=shift_id, outlet_id=outlet_id, organisation_id=org_id)
     except OperationalShift.DoesNotExist:
+        raise Http404()
+
+
+def _get_shift_card(card_id, outlet_id, org_id):
+    try:
+        return EmployeeShiftCard.objects.select_related(
+            'parent_shift', 'parent_shift__shift_definition', 'parent_shift__locked_by',
+            'employee', 'voided_by', 'created_by'
+        ).prefetch_related(
+            'meters', 'collections', 'credit_slips', 'deductions'
+        ).get(id=card_id, outlet_id=outlet_id, organisation_id=org_id)
+    except EmployeeShiftCard.DoesNotExist:
         raise Http404()
 
 
@@ -519,63 +554,13 @@ class ShiftOpenView(APIView):
     required_permission = 'shift.open'
 
     def post(self, request, org_id, outlet_id):
-        membership = get_organisation_membership(request.user, org_id)
-        try:
-            outlet = Outlet.objects.get(organisation_id=org_id, id=outlet_id)
-            if not can_access_outlet(membership, outlet):
-                raise Http404()
-        except Outlet.DoesNotExist:
-            raise Http404()
-
-        shift_def_id = request.data.get('shift_definition_id')
-        business_date_str = request.data.get('business_date')
-        staff_assignments = request.data.get('staff_assignments', [])
-        if isinstance(staff_assignments, str):
-            try:
-                staff_assignments = json.loads(staff_assignments)
-            except Exception:
-                pass
-
-        for a in staff_assignments:
-            if isinstance(a, dict) and 'is_primary_cashier' in a:
-                return Response({'detail': "The field 'is_primary_cashier' has been retired and is not accepted."}, status=status.HTTP_400_BAD_REQUEST)
-
-        manual_exceptions = request.data.get('manual_exceptions', {})
-        if isinstance(manual_exceptions, str):
-            try:
-                manual_exceptions = json.loads(manual_exceptions)
-            except Exception:
-                pass
-
-        notes = request.data.get('notes', '')
-
-        if not shift_def_id or not business_date_str:
-            return Response({'detail': "shift_definition_id and business_date are required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            shift_def = ShiftDefinition.objects.get(id=shift_def_id, outlet=outlet)
-        except ShiftDefinition.DoesNotExist:
-            raise Http404()
-
-        try:
-            b_date = datetime.strptime(business_date_str, '%Y-%m-%d').date()
-        except ValueError:
-            return Response({'detail': "Invalid business_date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            shift = open_operational_shift(
-                organisation=membership.organisation,
-                outlet=outlet,
-                shift_definition=shift_def,
-                business_date=b_date,
-                staff_assignments_data=staff_assignments,
-                manual_exceptions_data=manual_exceptions,
-                notes=notes,
-                user=request.user
-            )
-            return Response(OperationalShiftDetailSerializer(shift).data, status=status.HTTP_201_CREATED)
-        except DjangoValidationError as e:
-            return handle_django_validation_error(e)
+        return Response(
+            {
+                "detail": "This live operational shift opening endpoint has been retired. Please use the document-based Shift Card workflow.",
+                "code": "ENDPOINT_RETIRED"
+            },
+            status=status.HTTP_410_GONE
+        )
 
 
 class OperationalShiftDetailView(APIView):
@@ -620,20 +605,10 @@ class ShiftAssignmentsUpdateView(APIView):
     required_permission = 'shift.update_open'
 
     def post(self, request, org_id, outlet_id, shift_id):
-        membership = get_organisation_membership(request.user, org_id)
-        shift = _get_operational_shift(shift_id, outlet_id, org_id)
-        if not can_access_outlet(membership, shift.outlet):
-            raise Http404()
-
-        staff_assignments = request.data.get('staff_assignments', [])
-        for a in staff_assignments:
-            if isinstance(a, dict) and 'is_primary_cashier' in a:
-                return Response({'detail': "The field 'is_primary_cashier' has been retired and is not accepted."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            updated_shift = update_open_shift_assignments(shift, staff_assignments, request.user)
-            return Response(OperationalShiftDetailSerializer(updated_shift).data, status=status.HTTP_200_OK)
-        except DjangoValidationError as e:
-            return handle_django_validation_error(e)
+        return Response(
+            {"detail": "This live assignment update endpoint has been retired. Please use the document-based Shift Card workflow.", "code": "ENDPOINT_RETIRED"},
+            status=status.HTTP_410_GONE
+        )
 
 
 class OperationalShiftStaffAddView(APIView):
@@ -641,27 +616,10 @@ class OperationalShiftStaffAddView(APIView):
     required_permission = 'shift.update_open'
 
     def post(self, request, org_id, outlet_id, shift_id):
-        membership = get_organisation_membership(request.user, org_id)
-        shift = _get_operational_shift(shift_id, outlet_id, org_id)
-        if not can_access_outlet(membership, shift.outlet):
-            raise Http404()
-
-        ser = ShiftStaffAddInputSerializer(data=request.data)
-        if not ser.is_valid():
-            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            staff_member = add_staff_to_open_shift(
-                shift=shift,
-                employee_id=ser.validated_data['employee_id'],
-                duty_designation_id=ser.validated_data.get('duty_designation_id'),
-                notes=ser.validated_data.get('notes'),
-                assigned_nozzle_ids=ser.validated_data.get('assigned_nozzle_ids'),
-                user=request.user
-            )
-            return Response(OperationalShiftStaffSerializer(staff_member).data, status=status.HTTP_201_CREATED)
-        except DjangoValidationError as e:
-            return handle_django_validation_error(e)
+        return Response(
+            {"detail": "This live staff add endpoint has been retired. Please use the document-based Shift Card workflow.", "code": "ENDPOINT_RETIRED"},
+            status=status.HTTP_410_GONE
+        )
 
 
 class OperationalShiftNozzleHandoverView(APIView):
@@ -669,28 +627,10 @@ class OperationalShiftNozzleHandoverView(APIView):
     required_permission = 'shift.nozzle_handover'
 
     def post(self, request, org_id, outlet_id, shift_id):
-        membership = get_organisation_membership(request.user, org_id)
-        shift = _get_operational_shift(shift_id, outlet_id, org_id)
-        if not can_access_outlet(membership, shift.outlet):
-            raise Http404()
-
-        ser = ShiftNozzleHandoverInputSerializer(data=request.data)
-        if not ser.is_valid():
-            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            assignment = transfer_nozzle_assignment(
-                shift=shift,
-                nozzle_id=ser.validated_data['nozzle_id'],
-                new_employee_id=ser.validated_data['new_employee_id'],
-                handover_reading=ser.validated_data['handover_reading'],
-                handover_time=ser.validated_data.get('handover_time'),
-                reason=ser.validated_data['reason'],
-                user=request.user
-            )
-            return Response(OperationalShiftNozzleAssignmentSerializer(assignment).data, status=status.HTTP_200_OK)
-        except DjangoValidationError as e:
-            return handle_django_validation_error(e)
+        return Response(
+            {"detail": "This live nozzle handover endpoint has been retired. Please use the document-based Shift Card workflow.", "code": "ENDPOINT_RETIRED"},
+            status=status.HTTP_410_GONE
+        )
 
 
 class OperationalShiftNozzleCorrectView(APIView):
@@ -698,32 +638,16 @@ class OperationalShiftNozzleCorrectView(APIView):
     required_permission = 'shift.update_open'
 
     def post(self, request, org_id, outlet_id, shift_id):
-        membership = get_organisation_membership(request.user, org_id)
-        shift = _get_operational_shift(shift_id, outlet_id, org_id)
-        if not can_access_outlet(membership, shift.outlet):
-            raise Http404()
-
-        ser = ShiftNozzleCorrectInputSerializer(data=request.data)
-        if not ser.is_valid():
-            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            assignment = correct_nozzle_assignment(
-                shift=shift,
-                nozzle_id=ser.validated_data['nozzle_id'],
-                new_employee_id=ser.validated_data['new_employee_id'],
-                reason=ser.validated_data['reason'],
-                user=request.user
-            )
-            return Response(OperationalShiftNozzleAssignmentSerializer(assignment).data, status=status.HTTP_200_OK)
-        except DjangoValidationError as e:
-            return handle_django_validation_error(e)
+        return Response(
+            {"detail": "This live assignment correction endpoint has been retired. Please use the document-based Shift Card workflow.", "code": "ENDPOINT_RETIRED"},
+            status=status.HTTP_410_GONE
+        )
 
 
 class OperationalShiftCashierTransferView(APIView):
     def post(self, request, *args, **kwargs):
         return Response(
-            {'detail': "The primary cashier transfer endpoint has been retired and decommissioned. Shift accountability is now employee-wise."},
+            {'detail': "The primary cashier transfer endpoint has been retired and decommissioned. Shift accountability is now employee-wise.", "code": "ENDPOINT_RETIRED"},
             status=status.HTTP_410_GONE
         )
 
@@ -733,27 +657,10 @@ class OperationalShiftNozzleActivateView(APIView):
     required_permission = 'shift.update_open'
 
     def post(self, request, org_id, outlet_id, shift_id):
-        membership = get_organisation_membership(request.user, org_id)
-        shift = _get_operational_shift(shift_id, outlet_id, org_id)
-        if not can_access_outlet(membership, shift.outlet):
-            raise Http404()
-
-        ser = ShiftNozzleActivateInputSerializer(data=request.data)
-        if not ser.is_valid():
-            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            meter = activate_nozzle_midshift(
-                shift=shift,
-                nozzle_id=ser.validated_data['nozzle_id'],
-                employee_id=ser.validated_data['employee_id'],
-                starting_reading=ser.validated_data['starting_reading'],
-                reason=ser.validated_data['reason'],
-                user=request.user
-            )
-            return Response(ShiftNozzleMeterSerializer(meter).data, status=status.HTTP_201_CREATED)
-        except DjangoValidationError as e:
-            return handle_django_validation_error(e)
+        return Response(
+            {"detail": "This live nozzle activation endpoint has been retired. Please use the document-based Shift Card workflow.", "code": "ENDPOINT_RETIRED"},
+            status=status.HTTP_410_GONE
+        )
 
 
 class OperationalShiftStaffHistoryView(APIView):
@@ -776,42 +683,10 @@ class ShiftMeterReadingView(APIView):
     required_permission = 'meter_reading.record'
 
     def post(self, request, org_id, outlet_id, shift_id, nozzle_id):
-        membership = get_organisation_membership(request.user, org_id)
-        shift = _get_operational_shift(shift_id, outlet_id, org_id)
-        if not can_access_outlet(membership, shift.outlet):
-            raise Http404()
-
-        try:
-            nozzle = Nozzle.objects.get(id=nozzle_id, outlet=shift.outlet)
-        except Nozzle.DoesNotExist:
-            raise Http404()
-
-        closing_reading = request.data.get('closing_reading')
-        reason = request.data.get('reason')
-
-        if closing_reading is None:
-            return Response({'detail': "closing_reading is required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Check if meter already has closing reading and requires correction permission
-        meter = ShiftNozzleMeter.objects.filter(shift=shift, nozzle=nozzle).first()
-        if meter and meter.closing_reading is not None:
-            require_permission(request.user, org_id, 'meter_reading.correct')
-
-        try:
-            updated_meter = record_closing_meter_reading(
-                shift=shift,
-                nozzle=nozzle,
-                closing_reading=Decimal(str(closing_reading)),
-                user=request.user,
-                reason=reason
-            )
-            totals = calculate_shift_totals(shift)
-            return Response({
-                'meter': ShiftNozzleMeterSerializer(updated_meter).data,
-                'totals': totals
-            }, status=status.HTTP_200_OK)
-        except DjangoValidationError as e:
-            return handle_django_validation_error(e)
+        return Response(
+            {"detail": "This live meter reading endpoint has been retired. Please use the document-based Shift Card workflow.", "code": "ENDPOINT_RETIRED"},
+            status=status.HTTP_410_GONE
+        )
 
 
 class ShiftMeterEventView(APIView):
@@ -819,46 +694,10 @@ class ShiftMeterEventView(APIView):
     required_permission = 'meter_event.record'
 
     def post(self, request, org_id, outlet_id, shift_id, nozzle_id):
-        membership = get_organisation_membership(request.user, org_id)
-        shift = _get_operational_shift(shift_id, outlet_id, org_id)
-        if not can_access_outlet(membership, shift.outlet):
-            raise Http404()
-
-        try:
-            nozzle = Nozzle.objects.get(id=nozzle_id, outlet=shift.outlet)
-        except Nozzle.DoesNotExist:
-            raise Http404()
-
-        event_type = request.data.get('event_type')
-        reading_before = request.data.get('reading_before')
-        reading_after = request.data.get('reading_after')
-        reason = request.data.get('reason')
-
-        if not event_type or reading_before is None or reading_after is None or not reason:
-            return Response(
-                {'detail': "event_type, reading_before, reading_after, and reason are required."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            event = record_meter_event(
-                shift=shift,
-                nozzle=nozzle,
-                event_type=event_type,
-                reading_before=Decimal(str(reading_before)),
-                reading_after=Decimal(str(reading_after)),
-                reason=reason,
-                user=request.user
-            )
-            meter = ShiftNozzleMeter.objects.get(shift=shift, nozzle=nozzle)
-            totals = calculate_shift_totals(shift)
-            return Response({
-                'event': ShiftMeterEventSerializer(event).data,
-                'meter': ShiftNozzleMeterSerializer(meter).data,
-                'totals': totals
-            }, status=status.HTTP_201_CREATED)
-        except DjangoValidationError as e:
-            return handle_django_validation_error(e)
+        return Response(
+            {"detail": "This live meter event endpoint has been retired. Please use the document-based Shift Card workflow.", "code": "ENDPOINT_RETIRED"},
+            status=status.HTTP_410_GONE
+        )
 
 
 class ShiftTestingListCreateView(APIView):
@@ -1221,16 +1060,10 @@ class ShiftCloseView(APIView):
     required_permission = 'shift.close'
 
     def post(self, request, org_id, outlet_id, shift_id):
-        membership = get_organisation_membership(request.user, org_id)
-        shift = _get_operational_shift(shift_id, outlet_id, org_id)
-        if not can_access_outlet(membership, shift.outlet):
-            raise Http404()
-
-        try:
-            closed_shift = close_operational_shift(shift, request.user)
-            return Response(OperationalShiftDetailSerializer(closed_shift).data, status=status.HTTP_200_OK)
-        except DjangoValidationError as e:
-            return handle_django_validation_error(e)
+        return Response(
+            {"detail": "This live shift closing endpoint has been retired. Please use the document-based Shift Card workflow.", "code": "ENDPOINT_RETIRED"},
+            status=status.HTTP_410_GONE
+        )
 
 
 class ShiftReopenView(APIView):
@@ -1238,20 +1071,10 @@ class ShiftReopenView(APIView):
     required_permission = 'shift.reopen'
 
     def post(self, request, org_id, outlet_id, shift_id):
-        membership = get_organisation_membership(request.user, org_id)
-        shift = _get_operational_shift(shift_id, outlet_id, org_id)
-        if not can_access_outlet(membership, shift.outlet):
-            raise Http404()
-
-        reason = request.data.get('reason')
-        if not reason or not reason.strip():
-            return Response({'detail': "A mandatory reason is required to reopen a shift."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            reopened_shift = reopen_operational_shift(shift, request.user, reason)
-            return Response(OperationalShiftDetailSerializer(reopened_shift).data, status=status.HTTP_200_OK)
-        except DjangoValidationError as e:
-            return handle_django_validation_error(e)
+        return Response(
+            {"detail": "This live shift reopening endpoint has been retired. Please use the document-based Shift Card workflow.", "code": "ENDPOINT_RETIRED"},
+            status=status.HTTP_410_GONE
+        )
 
 
 class ShiftActivityLogView(APIView):
@@ -1281,3 +1104,1051 @@ class ShiftTotalsView(APIView):
 
         totals = calculate_shift_totals(shift)
         return Response(totals, status=status.HTTP_200_OK)
+
+
+# =====================================================================
+# MILESTONE 10: CUSTOMERS, CREDIT SLIPS, COLLECTIONS & RECONCILIATION
+# =====================================================================
+
+def _get_customer(customer_id, org_id):
+    try:
+        return Customer.objects.get(id=customer_id, organisation_id=org_id)
+    except Customer.DoesNotExist:
+        raise Http404()
+
+
+class CustomerListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id):
+        require_permission(request.user, org_id, 'customer.view')
+        membership = get_organisation_membership(request.user, org_id)
+
+        queryset = Customer.objects.filter(organisation_id=org_id).prefetch_related('outlet_assignments')
+
+        search = request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(
+                models.Q(display_name__icontains=search) |
+                models.Q(customer_code__icontains=search) |
+                models.Q(phone_number__icontains=search) |
+                models.Q(GSTIN__icontains=search)
+            )
+
+        status_param = request.query_params.get('status')
+        if status_param and status_param != 'all':
+            queryset = queryset.filter(status=status_param)
+
+        ctype = request.query_params.get('customer_type')
+        if ctype and ctype != 'all':
+            queryset = queryset.filter(customer_type=ctype)
+
+        outlet_id = request.query_params.get('outlet_id')
+        if outlet_id:
+            queryset = queryset.filter(
+                models.Q(outlet_assignments__outlet_id=outlet_id) |
+                models.Q(outlet_assignments__isnull=True)
+            ).distinct()
+
+        serializer = CustomerSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request, org_id):
+        require_permission(request.user, org_id, 'customer.create')
+        membership = get_organisation_membership(request.user, org_id)
+        org = membership.organisation
+
+        data = request.data.copy()
+        customer_code = data.get('customer_code', '')
+        display_name = data.get('display_name', '')
+        customer_type = data.get('customer_type', Customer.TYPE_BUSINESS)
+        outlet_ids = data.get('outlet_ids')
+
+        try:
+            customer = create_customer(
+                organisation=org,
+                customer_code=customer_code,
+                display_name=display_name,
+                customer_type=customer_type,
+                user=request.user,
+                outlet_ids=outlet_ids,
+                phone_number=data.get('phone_number'),
+                alternate_phone_number=data.get('alternate_phone_number'),
+                email=data.get('email'),
+                billing_address=data.get('billing_address'),
+                GSTIN=data.get('GSTIN'),
+                credit_limit=data.get('credit_limit'),
+                credit_days=data.get('credit_days'),
+                status=data.get('status', Customer.STATUS_ACTIVE),
+                notes=data.get('notes')
+            )
+            return Response(CustomerSerializer(customer).data, status=status.HTTP_201_CREATED)
+        except DjangoValidationError as e:
+            return handle_django_validation_error(e)
+
+
+class CustomerDetailUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, customer_id):
+        require_permission(request.user, org_id, 'customer.view')
+        customer = _get_customer(customer_id, org_id)
+        return Response(CustomerSerializer(customer).data, status=status.HTTP_200_OK)
+
+    def patch(self, request, org_id, customer_id):
+        require_permission(request.user, org_id, 'customer.update')
+        customer = _get_customer(customer_id, org_id)
+        try:
+            updated = update_customer(customer, user=request.user, **request.data)
+            return Response(CustomerSerializer(updated).data, status=status.HTTP_200_OK)
+        except DjangoValidationError as e:
+            return handle_django_validation_error(e)
+
+
+class CustomerDeactivateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, customer_id):
+        require_permission(request.user, org_id, 'customer.deactivate')
+        customer = _get_customer(customer_id, org_id)
+        deactivated = deactivate_customer(customer, user=request.user)
+        return Response(CustomerSerializer(deactivated).data, status=status.HTTP_200_OK)
+
+
+class CustomerCreditPositionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, customer_id):
+        require_permission(request.user, org_id, 'customer.view')
+        customer = _get_customer(customer_id, org_id)
+        outlet_id = request.query_params.get('outlet_id')
+        outlet = None
+        if outlet_id:
+            try:
+                outlet = Outlet.objects.get(id=outlet_id, organisation_id=org_id)
+            except Outlet.DoesNotExist:
+                raise Http404()
+        position = get_customer_credit_position(customer, outlet=outlet)
+        return Response(position, status=status.HTTP_200_OK)
+
+
+class CustomerCreditSlipsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, customer_id):
+        require_permission(request.user, org_id, 'credit_slip.view')
+        customer = _get_customer(customer_id, org_id)
+        slips = customer.credit_slips.all().select_related(
+            'product', 'nozzle', 'employee', 'operational_shift', 'voided_by'
+        ).order_by('-occurred_at')
+        serializer = FuelCreditSlipSerializer(slips, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class OutletCreditSlipListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id):
+        require_permission(request.user, org_id, 'credit_slip.view', outlet=Outlet.objects.filter(id=outlet_id).first())
+        membership = get_organisation_membership(request.user, org_id)
+        try:
+            outlet = Outlet.objects.get(id=outlet_id, organisation_id=org_id)
+            if not can_access_outlet(membership, outlet):
+                raise Http404()
+        except Outlet.DoesNotExist:
+            raise Http404()
+
+        queryset = FuelCreditSlip.objects.filter(outlet=outlet).select_related(
+            'customer', 'employee', 'nozzle', 'product', 'operational_shift', 'voided_by'
+        ).order_by('-occurred_at')
+
+        shift_id = request.query_params.get('shift_id')
+        if shift_id:
+            queryset = queryset.filter(operational_shift_id=shift_id)
+
+        customer_id = request.query_params.get('customer_id')
+        if customer_id:
+            queryset = queryset.filter(customer_id=customer_id)
+
+        employee_id = request.query_params.get('employee_id')
+        if employee_id:
+            queryset = queryset.filter(employee_id=employee_id)
+
+        status_param = request.query_params.get('status')
+        if status_param and status_param != 'all':
+            queryset = queryset.filter(status=status_param)
+
+        serializer = FuelCreditSlipSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class ShiftCreditSlipListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, shift_id):
+        shift = _get_operational_shift(shift_id, outlet_id, org_id)
+        require_permission(request.user, org_id, 'credit_slip.view', outlet=shift.outlet)
+
+        queryset = shift.credit_slips.all().select_related(
+            'customer', 'employee', 'nozzle', 'product', 'voided_by'
+        ).order_by('-occurred_at')
+
+        employee_id = request.query_params.get('employee_id')
+        if employee_id:
+            queryset = queryset.filter(employee_id=employee_id)
+
+        serializer = FuelCreditSlipSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request, org_id, outlet_id, shift_id):
+        shift = _get_operational_shift(shift_id, outlet_id, org_id)
+        require_permission(request.user, org_id, 'credit_slip.create', outlet=shift.outlet)
+
+        data = request.data
+        try:
+            customer = Customer.objects.get(id=data['customer_id'], organisation_id=org_id)
+            employee = Employee.objects.get(id=data['employee_id'], organisation_id=org_id)
+            product = FuelProduct.objects.get(id=data['product_id'], organisation_id=org_id)
+            nozzle = None
+            if data.get('nozzle_id'):
+                nozzle = Nozzle.objects.get(id=data['nozzle_id'], outlet=shift.outlet)
+
+            slip = create_credit_slip(
+                organisation=shift.organisation,
+                outlet=shift.outlet,
+                shift=shift,
+                employee=employee,
+                customer=customer,
+                product=product,
+                quantity=Decimal(str(data['quantity'])),
+                user=request.user,
+                nozzle=nozzle,
+                occurred_at=data.get('occurred_at'),
+                slip_number=data.get('slip_number'),
+                vehicle_number=data.get('vehicle_number'),
+                driver_name=data.get('driver_name'),
+                customer_reference=data.get('customer_reference'),
+                physical_slip_number=data.get('physical_slip_number'),
+                notes=data.get('notes')
+            )
+            return Response(FuelCreditSlipSerializer(slip).data, status=status.HTTP_201_CREATED)
+        except (Customer.DoesNotExist, Employee.DoesNotExist, FuelProduct.DoesNotExist, Nozzle.DoesNotExist):
+            return Response({'detail': "Referenced entity does not exist."}, status=status.HTTP_400_BAD_REQUEST)
+        except DjangoValidationError as e:
+            return handle_django_validation_error(e)
+
+
+class CreditSlipDetailUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, slip_id):
+        require_permission(request.user, org_id, 'credit_slip.view')
+        try:
+            slip = FuelCreditSlip.objects.select_related(
+                'customer', 'employee', 'nozzle', 'product', 'voided_by'
+            ).get(id=slip_id, outlet_id=outlet_id, organisation_id=org_id)
+        except FuelCreditSlip.DoesNotExist:
+            raise Http404()
+        return Response(FuelCreditSlipSerializer(slip).data, status=status.HTTP_200_OK)
+
+    def patch(self, request, org_id, outlet_id, slip_id):
+        require_permission(request.user, org_id, 'credit_slip.update')
+        try:
+            slip = FuelCreditSlip.objects.get(id=slip_id, outlet_id=outlet_id, organisation_id=org_id)
+        except FuelCreditSlip.DoesNotExist:
+            raise Http404()
+        try:
+            updated = update_credit_slip(slip, request.user, **request.data)
+            return Response(FuelCreditSlipSerializer(updated).data, status=status.HTTP_200_OK)
+        except DjangoValidationError as e:
+            return handle_django_validation_error(e)
+
+
+class CreditSlipVoidView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, outlet_id, slip_id):
+        require_permission(request.user, org_id, 'credit_slip.void')
+        try:
+            slip = FuelCreditSlip.objects.get(id=slip_id, outlet_id=outlet_id, organisation_id=org_id)
+        except FuelCreditSlip.DoesNotExist:
+            raise Http404()
+
+        reason = request.data.get('reason', '')
+        if not reason or not reason.strip():
+            return Response({'reason': ["A mandatory reason is required to void a credit slip."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            voided = void_credit_slip(slip, request.user, reason)
+            return Response(FuelCreditSlipSerializer(voided).data, status=status.HTTP_200_OK)
+        except DjangoValidationError as e:
+            return handle_django_validation_error(e)
+
+
+class ShiftCollectionListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, shift_id):
+        shift = _get_operational_shift(shift_id, outlet_id, org_id)
+        require_permission(request.user, org_id, 'collection.view', outlet=shift.outlet)
+
+        queryset = shift.collections.all().select_related(
+            'employee', 'voided_by'
+        ).prefetch_related('denominations').order_by('-occurred_at')
+
+        emp_id = request.query_params.get('employee_id')
+        if emp_id:
+            queryset = queryset.filter(employee_id=emp_id)
+
+        method = request.query_params.get('collection_method')
+        if method:
+            queryset = queryset.filter(collection_method=method)
+
+        serializer = EmployeeShiftCollectionSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request, org_id, outlet_id, shift_id):
+        return Response(
+            {
+                "detail": "This live collection entry endpoint has been retired. Please record collections directly within the atomic Shift Card workflow.",
+                "code": "ENDPOINT_RETIRED"
+            },
+            status=status.HTTP_410_GONE
+        )
+
+
+class CollectionDetailUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, collection_id):
+        require_permission(request.user, org_id, 'collection.view')
+        try:
+            col = EmployeeShiftCollection.objects.select_related('employee', 'voided_by').prefetch_related('denominations').get(
+                id=collection_id, outlet_id=outlet_id, organisation_id=org_id
+            )
+        except EmployeeShiftCollection.DoesNotExist:
+            raise Http404()
+        return Response(EmployeeShiftCollectionSerializer(col).data, status=status.HTTP_200_OK)
+
+    def patch(self, request, org_id, outlet_id, collection_id):
+        return Response(
+            {
+                "detail": "This collection update endpoint has been retired. Collections are managed atomically through Shift Cards.",
+                "code": "ENDPOINT_RETIRED"
+            },
+            status=status.HTTP_410_GONE
+        )
+
+
+class CollectionVoidView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, outlet_id, collection_id):
+        require_permission(request.user, org_id, 'collection.void')
+        try:
+            col = EmployeeShiftCollection.objects.get(id=collection_id, outlet_id=outlet_id, organisation_id=org_id)
+        except EmployeeShiftCollection.DoesNotExist:
+            raise Http404()
+
+        reason = request.data.get('reason', '')
+        if not reason or not reason.strip():
+            return Response({'reason': ["A mandatory reason is required to void a collection."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            voided = void_employee_collection(col, request.user, reason)
+            return Response(EmployeeShiftCollectionSerializer(voided).data, status=status.HTTP_200_OK)
+        except DjangoValidationError as e:
+            return handle_django_validation_error(e)
+
+
+class ShiftDeductionListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, shift_id):
+        shift = _get_operational_shift(shift_id, outlet_id, org_id)
+        require_permission(request.user, org_id, 'shift_deduction.view', outlet=shift.outlet)
+
+        queryset = shift.deductions.all().select_related('employee', 'approved_by', 'voided_by').order_by('-occurred_at')
+        emp_id = request.query_params.get('employee_id')
+        if emp_id:
+            queryset = queryset.filter(employee_id=emp_id)
+
+        serializer = EmployeeShiftDeductionSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request, org_id, outlet_id, shift_id):
+        shift = _get_operational_shift(shift_id, outlet_id, org_id)
+        require_permission(request.user, org_id, 'shift_deduction.approve', outlet=shift.outlet)
+
+        data = request.data
+        try:
+            employee = Employee.objects.get(id=data['employee_id'], organisation_id=org_id)
+            amount = Decimal(str(data['amount']))
+
+            deduction = create_employee_shift_deduction(
+                organisation=shift.organisation,
+                outlet=shift.outlet,
+                shift=shift,
+                employee=employee,
+                deduction_type=data['deduction_type'],
+                direction=data['direction'],
+                amount=amount,
+                occurred_at=data.get('occurred_at'),
+                description=data.get('description', ''),
+                approval_reason=data.get('approval_reason', ''),
+                approved_by=request.user,
+                user=request.user,
+                payee=data.get('payee'),
+                reference_number=data.get('reference_number')
+            )
+            return Response(EmployeeShiftDeductionSerializer(deduction).data, status=status.HTTP_201_CREATED)
+        except Employee.DoesNotExist:
+            return Response({'employee_id': ["Employee does not exist."]}, status=status.HTTP_400_BAD_REQUEST)
+        except DjangoValidationError as e:
+            return handle_django_validation_error(e)
+
+
+class DeductionVoidView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, outlet_id, deduction_id):
+        require_permission(request.user, org_id, 'shift_deduction.void')
+        try:
+            ded = EmployeeShiftDeduction.objects.get(id=deduction_id, outlet_id=outlet_id, organisation_id=org_id)
+        except EmployeeShiftDeduction.DoesNotExist:
+            raise Http404()
+
+        reason = request.data.get('reason', '')
+        if not reason or not reason.strip():
+            return Response({'reason': ["A mandatory reason is required to void a deduction."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            voided = void_employee_shift_deduction(ded, request.user, reason)
+            return Response(EmployeeShiftDeductionSerializer(voided).data, status=status.HTTP_200_OK)
+        except DjangoValidationError as e:
+            return handle_django_validation_error(e)
+
+
+class EmployeeAccountabilitySummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, shift_id):
+        shift = _get_operational_shift(shift_id, outlet_id, org_id)
+        require_permission(request.user, org_id, 'reconciliation.view', outlet=shift.outlet)
+
+        summaries = get_employee_accountability_summary(shift)
+        recon = calculate_shift_reconciliation(shift)
+
+        return Response({
+            'shift_id': str(shift.id),
+            'business_date': shift.business_date,
+            'operational_status': shift.status,
+            'reconciliation_status': recon.status,
+            'shift_reconciliation_complete': recon.status == ShiftReconciliation.STATUS_RECONCILED,
+            'employees': summaries,
+            'reconciliation': ShiftReconciliationSerializer(recon).data
+        }, status=status.HTTP_200_OK)
+
+
+class EmployeeReconciliationPreviewView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, shift_id, employee_id):
+        shift = _get_operational_shift(shift_id, outlet_id, org_id)
+        require_permission(request.user, org_id, 'reconciliation.view', outlet=shift.outlet)
+
+        try:
+            employee = Employee.objects.get(id=employee_id, organisation_id=org_id)
+        except Employee.DoesNotExist:
+            raise Http404()
+
+        preview = preview_employee_reconciliation(shift, employee)
+        return Response(preview, status=status.HTTP_200_OK)
+
+
+class EmployeeReconcileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, outlet_id, shift_id, employee_id):
+        return Response(
+            {"detail": "This live reconciliation endpoint has been retired. Please use the document-based Shift Card workflow.", "code": "ENDPOINT_RETIRED"},
+            status=status.HTTP_410_GONE
+        )
+
+
+class EmployeeSettlementReopenView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, outlet_id, shift_id, settlement_id):
+        return Response(
+            {"detail": "This live settlement reopen endpoint has been retired. Please use the document-based Shift Card workflow.", "code": "ENDPOINT_RETIRED"},
+            status=status.HTTP_410_GONE
+        )
+
+
+class ShiftReconciliationSummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, shift_id):
+        shift = _get_operational_shift(shift_id, outlet_id, org_id)
+        require_permission(request.user, org_id, 'reconciliation.view', outlet=shift.outlet)
+
+        recon = calculate_shift_reconciliation(shift)
+        return Response(ShiftReconciliationSerializer(recon).data, status=status.HTTP_200_OK)
+
+
+class CollectionActivityTimelineView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, shift_id):
+        shift = _get_operational_shift(shift_id, outlet_id, org_id)
+        require_permission(request.user, org_id, 'reconciliation.view', outlet=shift.outlet)
+
+        logs = CollectionAuditLog.objects.filter(shift=shift).select_related('employee', 'customer', 'actor').order_by('-occurred_at')
+        serializer = CollectionAuditLogSerializer(logs, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# =====================================================================
+# SHIFT CARD DOCUMENT-BASED WORKFLOW VIEWS
+# =====================================================================
+
+class ShiftCardPreparationView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id):
+        membership = get_organisation_membership(request.user, org_id)
+        try:
+            outlet = Outlet.objects.get(organisation_id=org_id, id=outlet_id)
+            if not can_access_outlet(membership, outlet):
+                raise Http404()
+        except Outlet.DoesNotExist:
+            raise Http404()
+
+        require_permission(request.user, org_id, 'shift.view', outlet=outlet)
+
+        business_date_str = request.query_params.get('business_date')
+        shift_definition_id = request.query_params.get('shift_definition_id')
+        employee_id = request.query_params.get('employee_id')
+
+        last_business_date_str = get_last_entered_business_date(outlet, request.user)
+        if isinstance(last_business_date_str, (date, datetime)):
+            last_business_date_str = last_business_date_str.strftime('%Y-%m-%d')
+        elif last_business_date_str:
+            last_business_date_str = str(last_business_date_str)
+        else:
+            last_business_date_str = date.today().strftime('%Y-%m-%d')
+
+        if business_date_str:
+            try:
+                b_date = datetime.strptime(business_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({'detail': "Invalid business_date format. Expected YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            try:
+                b_date = datetime.strptime(last_business_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                b_date = date.today()
+
+        shift_defs = list(ShiftDefinition.objects.filter(outlet=outlet, is_active=True).order_by('display_order', 'starts_at'))
+        shift_defs_data = [{
+            'id': str(s.id),
+            'code': s.code,
+            'name': s.name,
+            'starts_at': str(s.starts_at),
+            'ends_at': str(s.ends_at),
+            'crosses_midnight': s.crosses_midnight
+        } for s in shift_defs]
+
+        selected_shift_def = None
+        if shift_definition_id:
+            try:
+                selected_shift_def = ShiftDefinition.objects.get(id=shift_definition_id, outlet=outlet)
+            except ShiftDefinition.DoesNotExist:
+                return Response({'detail': "Shift definition not found for this outlet."}, status=status.HTTP_400_BAD_REQUEST)
+        elif shift_defs:
+            selected_shift_def = shift_defs[0]
+
+        if not selected_shift_def:
+            return Response({
+                'business_date': b_date.strftime('%Y-%m-%d'),
+                'last_entered_business_date': last_business_date_str,
+                'shift_definition_id': None,
+                'shift_definitions': [],
+                'historical_employees': [],
+                'historical_nozzles': [],
+                'parent_shift': None,
+                'existing_cards': [],
+                'missing_nozzle_ids': [],
+                'is_ready': False
+            }, status=status.HTTP_200_OK)
+
+        prep_data = get_shift_card_preparation_data(
+            organisation=membership.organisation,
+            outlet=outlet,
+            shift_definition=selected_shift_def,
+            business_date=b_date,
+            employee_id=employee_id
+        )
+
+        parent_shift_obj = OperationalShift.objects.filter(
+            outlet=outlet,
+            shift_definition=selected_shift_def,
+            business_date=b_date
+        ).first()
+
+        parent_shift_data = None
+        existing_cards_data = []
+        covered_nozzle_ids = set()
+        if parent_shift_obj:
+            from .serializers import ShiftCardParentShiftSerializer, EmployeeShiftCardSerializer
+            parent_shift_data = ShiftCardParentShiftSerializer(parent_shift_obj).data
+            active_cards = list(
+                parent_shift_obj.employee_cards.filter(status=EmployeeShiftCard.STATUS_ACTIVE)
+                .select_related('employee', 'parent_shift', 'parent_shift__shift_definition', 'parent_shift__locked_by', 'voided_by', 'created_by')
+                .prefetch_related('meters', 'collections', 'credit_slips', 'deductions')
+            )
+            existing_cards_data = EmployeeShiftCardSerializer(active_cards, many=True).data
+            for c in active_cards:
+                for m in c.meters.all():
+                    covered_nozzle_ids.add(str(m.nozzle_id))
+
+        historical_nozzles = []
+        missing_nozzle_ids = []
+        for n in prep_data.get('nozzles', []):
+            nz_id = n['nozzle_id']
+            if nz_id not in covered_nozzle_ids:
+                missing_nozzle_ids.append(nz_id)
+            reading_val = Decimal(n['derived_opening_reading']) if n['derived_opening_reading'] is not None else None
+            price_val = Decimal(n['current_rate']) if n.get('current_rate') else Decimal('0.00')
+            historical_nozzles.append({
+                'id': nz_id,
+                'code': n['nozzle_code'],
+                'name': n['nozzle_name'],
+                'dispenser_name': n['dispenser_name'],
+                'product_id': n['product_id'],
+                'product_name': n['product_name'],
+                'current_selling_price': float(price_val),
+                'opening_info': {
+                    'reading': float(reading_val) if reading_val is not None else None,
+                    'source': n['opening_source'],
+                    'source_description': n['opening_source_description'],
+                    'continuity_status': n['continuity_status'],
+                    'requires_commissioning': n['requires_commissioning'],
+                }
+            })
+
+        response_data = {
+            'business_date': b_date.strftime('%Y-%m-%d'),
+            'last_entered_business_date': last_business_date_str,
+            'shift_definition_id': str(selected_shift_def.id),
+            'shift_definitions': shift_defs_data,
+            'historical_employees': prep_data.get('employees', []),
+            'historical_nozzles': historical_nozzles,
+            'parent_shift': parent_shift_data,
+            'existing_cards': existing_cards_data,
+            'missing_nozzle_ids': missing_nozzle_ids,
+            'is_ready': True,
+            **prep_data
+        }
+        return Response(response_data, status=status.HTTP_200_OK)
+
+
+class ShiftCardListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id):
+        membership = get_organisation_membership(request.user, org_id)
+        try:
+            outlet = Outlet.objects.get(organisation_id=org_id, id=outlet_id)
+            if not can_access_outlet(membership, outlet):
+                raise Http404()
+        except Outlet.DoesNotExist:
+            raise Http404()
+
+        require_permission(request.user, org_id, 'shift.view', outlet=outlet)
+
+        queryset = EmployeeShiftCard.objects.filter(
+            organisation_id=org_id,
+            outlet=outlet
+        ).select_related(
+            'employee', 'parent_shift', 'parent_shift__shift_definition',
+            'parent_shift__locked_by', 'voided_by', 'created_by'
+        ).prefetch_related(
+            'meters', 'collections', 'credit_slips', 'deductions'
+        ).order_by('-parent_shift__business_date', 'sequence', '-created_at')
+
+        b_date = request.query_params.get('business_date')
+        if b_date:
+            queryset = queryset.filter(parent_shift__business_date=b_date)
+
+        shift_def_id = request.query_params.get('shift_definition_id')
+        if shift_def_id:
+            queryset = queryset.filter(parent_shift__shift_definition_id=shift_def_id)
+
+        emp_id = request.query_params.get('employee_id')
+        if emp_id:
+            queryset = queryset.filter(employee_id=emp_id)
+
+        parent_shift_id = request.query_params.get('parent_shift_id')
+        if parent_shift_id:
+            queryset = queryset.filter(parent_shift_id=parent_shift_id)
+
+        status_param = request.query_params.get('status', 'all')
+        if status_param and status_param != 'all':
+            queryset = queryset.filter(status=status_param)
+
+        serializer = EmployeeShiftCardSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request, org_id, outlet_id):
+        membership = get_organisation_membership(request.user, org_id)
+        try:
+            outlet = Outlet.objects.get(organisation_id=org_id, id=outlet_id)
+            if not can_access_outlet(membership, outlet):
+                raise Http404()
+        except Outlet.DoesNotExist:
+            raise Http404()
+
+        raw_data = request.data
+        if 'payload' in raw_data and isinstance(raw_data['payload'], str):
+            try:
+                parsed_data = json.loads(raw_data['payload'])
+            except Exception:
+                return Response({'detail': "Invalid JSON payload string in multipart request."}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            parsed_data = raw_data.copy() if hasattr(raw_data, 'copy') else dict(raw_data)
+
+        if 'mpd_slip_attachment' in request.FILES:
+            parsed_data['mpd_slip_attachment'] = request.FILES['mpd_slip_attachment']
+
+        card_id = parsed_data.get('card_id')
+        if card_id:
+            require_permission(request.user, org_id, 'shift.update_open', outlet=outlet)
+        else:
+            require_permission(request.user, org_id, 'shift.open', outlet=outlet)
+
+        serializer = ShiftCardAtomicSaveSerializer(data=parsed_data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        v_data = serializer.validated_data
+
+        try:
+            shift_def = ShiftDefinition.objects.get(id=v_data['shift_definition_id'], outlet=outlet)
+            emp = Employee.objects.get(id=v_data['employee_id'], organisation_id=org_id)
+        except (ShiftDefinition.DoesNotExist, Employee.DoesNotExist):
+            return Response({'detail': "Shift definition or employee not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        meters_input = (
+            v_data.get('meters')
+            or v_data.get('nozzle_meters')
+            or parsed_data.get('nozzle_meters')
+            or parsed_data.get('meters')
+            or []
+        )
+        meters_data = []
+        for m in meters_input:
+            meters_data.append({
+                'nozzle_id': m['nozzle_id'],
+                'opening_reading': m['opening_reading'],
+                'closing_reading': m.get('closing_reading'),
+                'testing_quantity': m.get('testing_litres') or m.get('testing_quantity') or Decimal('0.000'),
+                'returned_to_tank': m.get('returned_to_tank', True),
+                'destination_tank_id': m.get('destination_tank_id'),
+                'opening_source': m.get('opening_source') or None,
+                'opening_source_reference': m.get('opening_source_reference') or None,
+                'expected_opening_reading': m.get('expected_opening_reading'),
+                'continuity_status': m.get('continuity_status') or None,
+                'continuity_difference': m.get('continuity_difference'),
+                'continuity_reason': m.get('continuity_reason'),
+                'is_conflict_acknowledged': m.get('is_conflict_acknowledged', False),
+                'price_segments': m.get('price_segments', [])
+            })
+
+        cash_amount = Decimal('0.00')
+        denominations = []
+
+        if 'cash' in parsed_data and isinstance(parsed_data['cash'], dict):
+            cash_amount = Decimal(str(parsed_data['cash'].get('amount') or '0.00'))
+            if 'denominations' in parsed_data['cash']:
+                for d in parsed_data['cash']['denominations']:
+                    denominations.append({
+                        'denomination_value': d['denomination_value'],
+                        'quantity': d.get('quantity', d.get('count', 0))
+                    })
+        elif 'cash_amount' in parsed_data and parsed_data['cash_amount'] is not None:
+            cash_amount = Decimal(str(parsed_data.get('cash_amount') or '0.00'))
+        elif 'cash_amount' in v_data and v_data['cash_amount'] is not None:
+            cash_amount = Decimal(str(v_data.get('cash_amount') or '0.00'))
+
+        for d in v_data.get('denominations', []):
+            denominations.append({
+                'denomination_value': d['denomination_value'],
+                'quantity': d.get('count', d.get('quantity', 0))
+            })
+
+        cards_data = list(parsed_data.get('cards') or v_data.get('cards') or [])
+        upi_data = list(parsed_data.get('upi') or v_data.get('upi') or [])
+        fleet_data = list(parsed_data.get('fleet') or v_data.get('fleet') or [])
+
+        for c in v_data.get('collections', []):
+            m_type = c['collection_method']
+            c_amt = c['amount']
+            if m_type == 'cash':
+                cash_amount += c_amt
+            elif m_type == 'pos_card':
+                cards_data.append({
+                    'amount': c_amt,
+                    'reference_number': c.get('reference_number'),
+                    'provider_name': c.get('card_network'),
+                    'terminal_or_account_reference': c.get('batch_number'),
+                    'occurred_at': c.get('occurred_at'),
+                    'notes': c.get('notes')
+                })
+            elif m_type == 'upi':
+                upi_data.append({
+                    'amount': c_amt,
+                    'reference_number': c.get('reference_number'),
+                    'provider_name': 'UPI',
+                    'occurred_at': c.get('occurred_at'),
+                    'notes': c.get('notes')
+                })
+            elif m_type == 'fleet_card':
+                fleet_data.append({
+                    'amount': c_amt,
+                    'reference_number': c.get('reference_number'),
+                    'provider_name': 'Fleet',
+                    'occurred_at': c.get('occurred_at'),
+                    'notes': c.get('notes')
+                })
+
+        cash_dict = {
+            'amount': cash_amount,
+            'denominations': denominations
+        } if (cash_amount > Decimal('0.00') or denominations) else None
+
+        credit_slips_data = list(parsed_data.get('credit_slips') or v_data.get('credit_slips', []))
+        deductions_data = list(parsed_data.get('deductions') or v_data.get('deductions', []))
+
+        is_shortage_ack = (
+            v_data.get('is_shortage_excess_acknowledged')
+            or v_data.get('shortage_acknowledged')
+            or parsed_data.get('is_shortage_excess_acknowledged')
+            or parsed_data.get('shortage_acknowledged')
+            or False
+        )
+        shortage_note = (
+            v_data.get('shortage_excess_acknowledgement_note')
+            or v_data.get('shortage_notes')
+            or parsed_data.get('shortage_excess_acknowledgement_note')
+            or parsed_data.get('shortage_notes')
+            or None
+        )
+        notes_val = (
+            v_data.get('notes')
+            or v_data.get('operator_notes')
+            or parsed_data.get('notes')
+            or parsed_data.get('operator_notes')
+            or None
+        )
+
+        try:
+            card = atomic_save_shift_card(
+                organisation=membership.organisation,
+                outlet=outlet,
+                user=request.user,
+                shift_definition=shift_def,
+                business_date=v_data['business_date'],
+                employee=emp,
+                nozzle_meters_data=meters_data,
+                cash_data=cash_dict,
+                cards_data=cards_data,
+                upi_data=upi_data,
+                fleet_data=fleet_data,
+                credit_slips_data=credit_slips_data,
+                deductions_data=deductions_data,
+                card_id=card_id,
+                mpd_slip_number=v_data.get('mpd_slip_number'),
+                mpd_slip_attachment=v_data.get('mpd_slip_attachment'),
+                notes=notes_val,
+                is_shortage_excess_acknowledged=is_shortage_ack,
+                shortage_excess_acknowledgement_note=shortage_note
+            )
+            return Response(EmployeeShiftCardSerializer(card).data, status=status.HTTP_201_CREATED if not card_id else status.HTTP_200_OK)
+        except DjangoValidationError as e:
+            return handle_django_validation_error(e)
+
+
+class ShiftCardDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, card_id):
+        require_permission(request.user, org_id, 'shift.view')
+        card = _get_shift_card(card_id, outlet_id, org_id)
+        return Response(EmployeeShiftCardSerializer(card).data, status=status.HTTP_200_OK)
+
+    def put(self, request, org_id, outlet_id, card_id):
+        return ShiftCardListCreateView.as_view()(request._request, org_id=org_id, outlet_id=outlet_id)
+
+    def patch(self, request, org_id, outlet_id, card_id):
+        return ShiftCardListCreateView.as_view()(request._request, org_id=org_id, outlet_id=outlet_id)
+
+
+class ShiftCardVoidView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, outlet_id, card_id):
+        require_permission(request.user, org_id, 'shift.void')
+        card = _get_shift_card(card_id, outlet_id, org_id)
+
+        serializer = ShiftCardVoidSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            voided_card = void_shift_card(
+                card=card,
+                user=request.user,
+                reason=serializer.validated_data['reason']
+            )
+            return Response(EmployeeShiftCardSerializer(voided_card).data, status=status.HTTP_200_OK)
+        except DjangoValidationError as e:
+            return handle_django_validation_error(e)
+
+
+class ShiftLockView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, outlet_id, shift_id):
+        shift = _get_operational_shift(shift_id, outlet_id, org_id)
+        require_permission(request.user, org_id, 'shift.lock', outlet=shift.outlet)
+
+        serializer = ShiftLockActionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            locked = lock_shift(
+                shift=shift,
+                user=request.user,
+                reason=serializer.validated_data.get('reason', ''),
+                lock_source=serializer.validated_data.get('lock_source', 'manual')
+            )
+            return Response({
+                'detail': "Shift locked successfully.",
+                'is_locked': True,
+                'locked_at': locked.locked_at.isoformat() if locked.locked_at else None
+            }, status=status.HTTP_200_OK)
+        except DjangoValidationError as e:
+            return handle_django_validation_error(e)
+
+
+class ShiftUnlockView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, outlet_id, shift_id):
+        shift = _get_operational_shift(shift_id, outlet_id, org_id)
+        require_permission(request.user, org_id, 'shift.unlock', outlet=shift.outlet)
+
+        serializer = ShiftUnlockActionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            unlocked = unlock_shift(
+                shift=shift,
+                user=request.user,
+                reason=serializer.validated_data['reason']
+            )
+            return Response({
+                'detail': "Shift unlocked successfully.",
+                'is_locked': False
+            }, status=status.HTTP_200_OK)
+        except DjangoValidationError as e:
+            return handle_django_validation_error(e)
+
+
+class ShiftDeductionApproveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, outlet_id, deduction_id):
+        require_permission(request.user, org_id, 'shift_deduction.approve')
+        try:
+            deduction = EmployeeShiftDeduction.objects.get(
+                id=deduction_id,
+                organisation_id=org_id,
+                outlet_id=outlet_id
+            )
+        except EmployeeShiftDeduction.DoesNotExist:
+            raise Http404()
+
+        try:
+            deduction = approve_shift_deduction(
+                deduction=deduction,
+                user=request.user
+            )
+            return Response(EmployeeShiftDeductionSerializer(deduction).data, status=status.HTTP_200_OK)
+        except DjangoValidationError as e:
+            return handle_django_validation_error(e)
+
+
+class ShiftDeductionRejectView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, outlet_id, deduction_id):
+        require_permission(request.user, org_id, 'shift_deduction.approve')
+        try:
+            deduction = EmployeeShiftDeduction.objects.get(
+                id=deduction_id,
+                organisation_id=org_id,
+                outlet_id=outlet_id
+            )
+        except EmployeeShiftDeduction.DoesNotExist:
+            raise Http404()
+
+        serializer = ShiftDeductionRejectActionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            deduction = reject_shift_deduction(
+                deduction=deduction,
+                user=request.user,
+                reason=serializer.validated_data['reason']
+            )
+            return Response(EmployeeShiftDeductionSerializer(deduction).data, status=status.HTTP_200_OK)
+        except DjangoValidationError as e:
+            return handle_django_validation_error(e)
+
+
+class ShiftCardAttachmentDownloadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, card_id):
+        require_permission(request.user, org_id, 'shift.view')
+        card = _get_shift_card(card_id, outlet_id, org_id)
+        if not card.mpd_slip_attachment:
+            raise Http404("No attachment found for this Shift Card.")
+
+        file_handle = card.mpd_slip_attachment.open('rb')
+        filename = os.path.basename(card.mpd_slip_attachment.name)
+        ext = os.path.splitext(filename)[1].lower()
+        content_type = 'application/pdf' if ext == '.pdf' else ('image/png' if ext == '.png' else 'image/jpeg')
+
+        response = FileResponse(file_handle, content_type=content_type)
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
+
+
+class ParentShiftSummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, shift_id):
+        shift = _get_operational_shift(shift_id, outlet_id, org_id)
+        require_permission(request.user, org_id, 'shift.view', outlet=shift.outlet)
+
+        summary = get_parent_shift_summary(shift)
+        return Response(summary, status=status.HTTP_200_OK)
+
+

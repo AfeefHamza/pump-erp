@@ -327,14 +327,9 @@ export const ShiftAssignments: React.FC = () => {
       return;
     }
 
-    let employeeName = '';
-    if (editingEmployeeId) {
-      const match = localAssignments.find((la) => la.employee_id === drawerEmployeeId);
-      employeeName = match ? match.display_name : '';
-    } else {
-      const match = availableStaff.find((e) => e.id === drawerEmployeeId);
-      employeeName = match ? match.display_name : '';
-    }
+    const employeeName = editingEmployeeId
+      ? localAssignments.find((la) => la.employee_id === drawerEmployeeId)?.display_name || ''
+      : availableStaff.find((e) => e.id === drawerEmployeeId)?.display_name || '';
 
     const designationObj = designations.find((d) => d.id === drawerDesignationId);
     const designationName = designationObj ? designationObj.name : '';
