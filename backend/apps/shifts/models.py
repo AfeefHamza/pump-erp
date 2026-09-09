@@ -736,6 +736,20 @@ class ShiftNozzleMeter(models.Model):
         on_delete=models.PROTECT,
         related_name='shift_meters'
     )
+    tank = models.ForeignKey(
+        'forecourt.Tank',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='shift_nozzle_meters'
+    )
+    product = models.ForeignKey(
+        'forecourt.FuelProduct',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='shift_nozzle_meters'
+    )
     staff_assignment = models.ForeignKey(
         OperationalShiftStaff,
         on_delete=models.PROTECT,
@@ -808,6 +822,10 @@ class ShiftNozzleMeter(models.Model):
             raise ValidationError({'manual_exception_reason': "Reason is required for manual opening readings."})
 
     def save(self, *args, **kwargs):
+        if not self.tank_id and self.nozzle_id:
+            self.tank = self.nozzle.tank
+        if not self.product_id and self.tank_id:
+            self.product = self.tank.product
         self.full_clean()
         super().save(*args, **kwargs)
 

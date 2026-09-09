@@ -67,6 +67,30 @@ Employee-wise collection accountability, customer-linked credit slips, cash deno
 
 ---
 
+### 6. Purchases & Fuel Stock Ledger (Milestone 11, Implemented)
+Document-based backdated tanker receipts, fuel stock ledger, append-only movement journal, balance projections, and dip variance acknowledgements.
+- **Backend**:
+  - **Purchases (`apps/purchases/`)**:
+    - Models: `Supplier`, `TankerReceipt`, `TankerReceiptProductLine`, `TankerReceiptTankAllocation`, `TankerReceiptAttachment`.
+    - Services: `create_supplier()`, `update_supplier()`, `create_tanker_receipt()`, `update_tanker_receipt()`, `confirm_tanker_receipt()`, `void_tanker_receipt()`, `acknowledge_receipt_variance()`, `upload_receipt_attachment()`, `preview_dip_volume_for_tank()`.
+    - Selectors: `get_tanker_receipt_detail()`, `list_tanker_receipts_for_outlet()`, `list_suppliers_for_org()`.
+    - APIs: 12 REST endpoints under `/api/v1/organisations/<org_id>/suppliers/` and `/outlets/<outlet_id>/tanker-receipts/`.
+  - **Inventory (`apps/inventory/`)**:
+    - Models: `TankStockMovement` (append-only, immutable, idempotency key), `TankStockBalanceProjection` (mutable balance projection), `StockAdjustment`, `StockAdjustmentAttachment`.
+    - Services: `recalculate_tank_projection()`, `post_tank_stock_movement()`, `post_opening_balance_movements()`, `post_tanker_receipt_movements()`, `reverse_tanker_receipt_movements()`, `sync_shift_card_stock_movements()`, `reverse_shift_card_stock_movements()`, `record_stock_adjustment()`, `reverse_stock_adjustment()`, `backfill_operational_stock_data()`.
+    - Selectors: `get_latest_physical_dip_for_tank()`, `get_tank_stock_summary()`, `get_tank_movement_ledger()`, `get_day_close_inventory_readiness()`.
+    - Management command: `python manage.py backfill_fuel_stock`.
+    - APIs: 8 REST endpoints under `/api/v1/organisations/<org_id>/outlets/<outlet_id>/fuel-stock/`.
+- **Frontend**:
+  - Suppliers Master at `/app/purchases/suppliers`.
+  - Tanker Receipts list at `/app/purchases/tanker-receipts`.
+  - Tanker Receipt Workspace at `/app/purchases/tanker-receipts/new` and `/app/purchases/tanker-receipts/:receiptId`.
+  - Fuel Stock Dashboard at `/app/inventory/fuel-stock`.
+  - Tank Movement Ledger at `/app/inventory/fuel-stock/:tankId`.
+  - Stock Adjustment Drawer (`StockAdjustmentDrawer`) for recording authorised offsets.
+
+---
+
 ## Planned Business Modules (Postponed)
 
 ### 1. Day Close & Cash Reconciliation
@@ -77,16 +101,12 @@ Employee-wise collection accountability, customer-linked credit slips, cash deno
 - **Invoices**: Tax invoices generated for corporate customer bill cycles.
 - **Receipts**: Record incoming customer payments against outstanding invoices.
 
-### 3. Purchases
-- **Tanker Receipts**: Record incoming fuel tanker decanting, density checks, and temperature factors.
-- **Purchase Bills**: Track vendor invoices for fuel shipments and retail items.
-- **Suppliers**: Manage supplier contracts and payment schedules.
+### 3. Purchases (Remaining)
+- **Purchase Bills**: Track vendor invoices for fuel shipments and retail items, AP ledger postings.
 
-### 4. Inventory
-- **Fuel Stock & Tanks**: Track fuel stock levels inside underground storage tanks.
-- **Dispensers & Nozzles**: Map fuel dispensers and individual nozzles to physical fuel tanks.
+### 4. Inventory (Remaining)
 - **Lubricants**: Manage retail items, lubricants, inventory levels, and sales margins.
-- **Stock Transfers & Adjustments**: Move inventory between stations and adjust variances.
+- **Stock Transfers**: Move inventory between stations and bulk depots.
 
 ### 5. Finance
 - **Cash & Banking**: Manage cash safe vaults, bank deposits, and credit card settlements.
@@ -94,7 +114,6 @@ Employee-wise collection accountability, customer-linked credit slips, cash deno
 - **Chart of Accounts**: Double-entry ledger core accounts setup.
 
 ### 6. Employees
-- **Employees**: Manage station workers, roles, and shifts.
 - **Shift Assignments**: Track roster schedules.
 - **Employee Accounts**: Ledger postings for salary deductions and permanent employee recovery.
 

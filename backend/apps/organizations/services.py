@@ -222,6 +222,9 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'collection.view', 'collection.create', 'collection.update', 'collection.void',
                 'shift_deduction.view', 'shift_deduction.create', 'shift_deduction.approve', 'shift_deduction.void',
                 'reconciliation.view', 'reconciliation.reconcile', 'reconciliation.reopen',
+                'shift.void', 'shift.lock', 'shift.unlock',
+                'tanker_receipt.view', 'tanker_receipt.create', 'tanker_receipt.update', 'tanker_receipt.confirm', 'tanker_receipt.void',
+                'fuel_stock.view', 'fuel_stock.adjust', 'fuel_stock.override_book_quantity',
             ]
         },
         {
@@ -254,6 +257,9 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'collection.view', 'collection.create', 'collection.update', 'collection.void',
                 'shift_deduction.view', 'shift_deduction.create', 'shift_deduction.approve', 'shift_deduction.void',
                 'reconciliation.view', 'reconciliation.reconcile', 'reconciliation.reopen',
+                'shift.void', 'shift.lock',
+                'tanker_receipt.view', 'tanker_receipt.create', 'tanker_receipt.update', 'tanker_receipt.confirm',
+                'fuel_stock.view',
             ]
         },
         {

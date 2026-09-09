@@ -501,6 +501,11 @@ def confirm_opening_balance_batch(batch: OpeningBalanceBatch, user) -> OpeningBa
     batch.confirmed_by = user
     batch.confirmed_at = timezone.now()
     batch.save()
+
+    # Post stock movements (Milestone 11)
+    from apps.inventory.services import post_opening_balance_movements
+    post_opening_balance_movements(batch, user)
+
     return batch
 
 

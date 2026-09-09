@@ -1094,12 +1094,67 @@ table tbody tr:hover, .table tbody tr:hover {
   background-color: #bbf7d0;
 }
 
+.btn-outline-danger {
+  background-color: transparent;
+  color: var(--color-danger-text);
+  border-color: rgba(185, 28, 28, 0.3);
+}
+
+.btn-outline-danger:hover {
+  background-color: var(--color-danger-bg);
+  border-color: var(--color-danger-text);
+}
+
+.btn-outline-primary {
+  background-color: transparent;
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.btn-outline-primary:hover {
+  background-color: var(--color-accent-light);
+}
+
+.btn-icon {
+  background: transparent;
+  border: none;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.15s ease;
+}
+
+.btn-icon:hover {
+  background-color: var(--bg-main);
+  color: var(--text-main);
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--color-accent);
+  cursor: pointer;
+  padding: 0;
+  font-weight: 600;
+  text-decoration: underline;
+  transition: color 0.15s ease;
+}
+
+.btn-link:hover {
+  color: var(--color-accent-hover);
+}
+
 /* Forms */
 .form-group {
   margin-bottom: var(--space-md);
 }
 
-.form-label {
+.form-label,
+.label {
   display: block;
   font-weight: 600;
   font-size: 0.85rem;
@@ -1107,7 +1162,8 @@ table tbody tr:hover, .table tbody tr:hover {
   margin-bottom: 6px;
 }
 
-.form-control {
+.form-control,
+.input {
   display: block;
   width: 100%;
   height: 40px;
@@ -1122,12 +1178,21 @@ table tbody tr:hover, .table tbody tr:hover {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.form-control:focus {
+textarea.form-control,
+textarea.input {
+  height: auto;
+  min-height: 80px;
+  resize: vertical;
+}
+
+.form-control:focus,
+.input:focus {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.15);
 }
 
-.form-control:disabled {
+.form-control:disabled,
+.input:disabled {
   background-color: var(--bg-main);
   color: var(--text-muted);
   cursor: not-allowed;
@@ -1164,6 +1229,49 @@ table tbody tr:hover, .table tbody tr:hover {
 .badge-danger {
   background-color: var(--color-danger-bg);
   color: var(--color-danger-text);
+}
+
+.badge-warning {
+  background-color: var(--color-warning-bg);
+  color: var(--color-warning-text);
+}
+
+.badge-pending {
+  background-color: var(--color-pending-bg);
+  color: var(--color-pending-text);
+}
+
+.badge-info {
+  background-color: var(--color-info-bg);
+  color: var(--color-info-text);
+}
+
+/* Spin animation */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin,
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Modal Backdrop */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
 }
 
 /* Slide-over Slider drawer overlay & panel */

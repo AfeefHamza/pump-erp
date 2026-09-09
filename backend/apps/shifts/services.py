@@ -3355,6 +3355,8 @@ def atomic_save_shift_card(
             nozzle=sm['nozzle'],
             defaults={
                 'shift_card': card,
+                'tank': sm['nozzle'].tank,
+                'product': sm['nozzle'].tank.product,
                 'opening_reading': sm['opening_reading'],
                 'expected_opening_reading': sm['expected_opening_reading'],
                 'closing_reading': sm['closing_reading'],
@@ -3403,7 +3405,8 @@ def atomic_save_shift_card(
                 returned_to_tank=sm['returned_to_tank'],
                 destination_tank=sm['destination_tank'],
                 occurred_at=end_aware,
-                created_by=user
+                created_by=user,
+                updated_by=user
             )
 
     # 9. Save Collections
@@ -3589,6 +3592,10 @@ def atomic_save_shift_card(
         }
     )
 
+    # 15. Sync inventory ledger movements (Milestone 11)
+    from apps.inventory.services import sync_shift_card_stock_movements
+    sync_shift_card_stock_movements(card, user)
+
     return card
 
 
@@ -3630,6 +3637,10 @@ def void_shift_card(card: EmployeeShiftCard, user, reason: str) -> EmployeeShift
         voided_at=timezone.now(),
         void_reason=f"Shift Card voided: {reason.strip()}"
     )
+
+    # Reverse inventory ledger movements (Milestone 11)
+    from apps.inventory.services import reverse_shift_card_stock_movements
+    reverse_shift_card_stock_movements(card, user, reason.strip())
 
     # Recheck continuity chain for nozzles covered by this card
     for m in card.meters.all():

@@ -32,6 +32,11 @@ import { DipReadingsPage } from '@/features/operations/pages/DipReadingsPage';
 import { CustomersPage } from '@/features/sales/pages/CustomersPage';
 import { CustomerDetailPage } from '@/features/sales/pages/CustomerDetailPage';
 import { CreditSlipsPage } from '@/features/sales/pages/CreditSlipsPage';
+import { TankerReceiptListPage } from '@/features/purchases/pages/TankerReceiptListPage';
+import { TankerReceiptWorkspace } from '@/features/purchases/pages/TankerReceiptWorkspace';
+import { SuppliersPage } from '@/features/purchases/pages/SuppliersPage';
+import { FuelStockDashboardPage } from '@/features/inventory/pages/FuelStockDashboardPage';
+import { TankLedgerPage } from '@/features/inventory/pages/TankLedgerPage';
 import { useParams, useLocation } from 'react-router-dom';
 
 const RedirectWithSearchAndHash: React.FC<{ getDest: (params: Record<string, string | undefined>) => string }> = ({ getDest }) => {
@@ -193,7 +198,15 @@ export const router = createBrowserRouter([
       // Purchases
       {
         path: 'purchases/tanker-receipts',
-        element: <ComingSoonPage title="Tanker Receipts" />,
+        element: <TankerReceiptListPage />,
+      },
+      {
+        path: 'purchases/tanker-receipts/new',
+        element: <TankerReceiptWorkspace />,
+      },
+      {
+        path: 'purchases/tanker-receipts/:receiptId',
+        element: <TankerReceiptWorkspace />,
       },
       {
         path: 'purchases/purchase-bills',
@@ -201,12 +214,16 @@ export const router = createBrowserRouter([
       },
       {
         path: 'purchases/suppliers',
-        element: <ComingSoonPage title="Suppliers" />,
+        element: <SuppliersPage />,
       },
       // Inventory
       {
         path: 'inventory/fuel-stock',
-        element: <ComingSoonPage title="Fuel Stock" />,
+        element: <FuelStockDashboardPage />,
+      },
+      {
+        path: 'inventory/fuel-stock/:tankId',
+        element: <TankLedgerPage />,
       },
       {
         path: 'inventory/tanks',
@@ -238,7 +255,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'inventory/stock-adjustments',
-        element: <ComingSoonPage title="Stock Adjustments" />,
+        element: <Navigate to="/app/inventory/fuel-stock" replace />,
       },
       // Finance
       {

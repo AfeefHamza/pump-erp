@@ -3122,5 +3122,296 @@ export async function fetchParentShiftSummary(
   );
 }
 
+// ==========================================
+// Milestone 11: Purchases & Tanker Receipts
+// ==========================================
+import type {
+  Supplier,
+  TankerReceiptListItem,
+  TankerReceiptDetail,
+  TankerReceiptInput,
+  TankerReceiptAttachment
+} from '@/features/purchases/types';
 
+export async function fetchSuppliers(orgId: string): Promise<Supplier[]> {
+  return apiRequest<Supplier[]>(`/organisations/${orgId}/suppliers/`);
+}
 
+export async function createSupplier(orgId: string, data: Partial<Supplier>): Promise<Supplier> {
+  return apiRequest<Supplier>(`/organisations/${orgId}/suppliers/`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateSupplier(orgId: string, supplierId: string, data: Partial<Supplier>): Promise<Supplier> {
+  return apiRequest<Supplier>(`/organisations/${orgId}/suppliers/${supplierId}/`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchTankerReceipts(
+  orgId: string,
+  outletId: string,
+  params?: Record<string, string>
+): Promise<TankerReceiptListItem[]> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<TankerReceiptListItem[]>(
+    `/organisations/${orgId}/outlets/${outletId}/tanker-receipts/${query}`
+  );
+}
+
+export async function fetchTankerReceiptDetail(
+  orgId: string,
+  outletId: string,
+  receiptId: string
+): Promise<TankerReceiptDetail> {
+  return apiRequest<TankerReceiptDetail>(
+    `/organisations/${orgId}/outlets/${outletId}/tanker-receipts/${receiptId}/`
+  );
+}
+
+export async function createTankerReceipt(
+  orgId: string,
+  outletId: string,
+  data: TankerReceiptInput
+): Promise<TankerReceiptDetail> {
+  return apiRequest<TankerReceiptDetail>(
+    `/organisations/${orgId}/outlets/${outletId}/tanker-receipts/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+export async function updateTankerReceipt(
+  orgId: string,
+  outletId: string,
+  receiptId: string,
+  data: TankerReceiptInput
+): Promise<TankerReceiptDetail> {
+  return apiRequest<TankerReceiptDetail>(
+    `/organisations/${orgId}/outlets/${outletId}/tanker-receipts/${receiptId}/`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+export async function confirmTankerReceipt(
+  orgId: string,
+  outletId: string,
+  receiptId: string
+): Promise<TankerReceiptDetail> {
+  return apiRequest<TankerReceiptDetail>(
+    `/organisations/${orgId}/outlets/${outletId}/tanker-receipts/${receiptId}/confirm/`,
+    {
+      method: 'POST',
+    }
+  );
+}
+
+export async function voidTankerReceipt(
+  orgId: string,
+  outletId: string,
+  receiptId: string,
+  void_reason: string
+): Promise<TankerReceiptDetail> {
+  return apiRequest<TankerReceiptDetail>(
+    `/organisations/${orgId}/outlets/${outletId}/tanker-receipts/${receiptId}/void/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ void_reason }),
+    }
+  );
+}
+
+export async function uploadTankerReceiptAttachment(
+  orgId: string,
+  outletId: string,
+  receiptId: string,
+  file: File,
+  attachment_type: string = 'invoice'
+): Promise<TankerReceiptAttachment> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('attachment_type', attachment_type);
+
+  return apiRequest<TankerReceiptAttachment>(
+    `/organisations/${orgId}/outlets/${outletId}/tanker-receipts/${receiptId}/attachments/`,
+    {
+      method: 'POST',
+      body: formData,
+    }
+  );
+}
+
+export function getTankerReceiptAttachmentDownloadUrl(
+  orgId: string,
+  outletId: string,
+  receiptId: string,
+  attId: string
+): string {
+  return `${BASE_URL}/organisations/${orgId}/outlets/${outletId}/tanker-receipts/${receiptId}/attachments/${attId}/download/`;
+}
+
+export async function acknowledgeReceiptVariance(
+  orgId: string,
+  outletId: string,
+  allocId: string,
+  reason: string
+): Promise<{ message: string; variance_status: string }> {
+  return apiRequest<{ message: string; variance_status: string }>(
+    `/organisations/${orgId}/outlets/${outletId}/tanker-receipts/allocations/${allocId}/acknowledge-variance/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }
+  );
+}
+
+export async function previewTankDipConversion(
+  orgId: string,
+  outletId: string,
+  tankId: string,
+  measuredHeight: string,
+  inputUnit: string = 'millimetre',
+  measuredAt?: string
+): Promise<{ volume: string; chart_name: string; method: string }> {
+  return apiRequest<{ volume: string; chart_name: string; method: string }>(
+    `/organisations/${orgId}/outlets/${outletId}/tanker-receipts/preview-dip/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        tank_id: tankId,
+        measured_height: measuredHeight,
+        input_unit: inputUnit,
+        measured_at: measuredAt,
+      }),
+    }
+  );
+}
+
+// ==========================================
+// Milestone 11: Inventory & Fuel Stock
+// ==========================================
+import type {
+  TankStockSummaryResponse,
+  TankMovementLedgerResponse,
+  StockAdjustmentItem,
+  StockAdjustmentInput,
+  DayCloseInventoryReadiness
+} from '@/features/inventory/types';
+
+export async function fetchFuelStockSummary(
+  orgId: string,
+  outletId: string
+): Promise<TankStockSummaryResponse> {
+  return apiRequest<TankStockSummaryResponse>(
+    `/organisations/${orgId}/outlets/${outletId}/fuel-stock/summary/`
+  );
+}
+
+export async function fetchTankMovementLedger(
+  orgId: string,
+  outletId: string,
+  tankId: string,
+  params?: Record<string, string>
+): Promise<TankMovementLedgerResponse> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<TankMovementLedgerResponse>(
+    `/organisations/${orgId}/outlets/${outletId}/fuel-stock/tanks/${tankId}/ledger/${query}`
+  );
+}
+
+export async function fetchStockAdjustments(
+  orgId: string,
+  outletId: string
+): Promise<StockAdjustmentItem[]> {
+  return apiRequest<StockAdjustmentItem[]>(
+    `/organisations/${orgId}/outlets/${outletId}/fuel-stock/adjustments/`
+  );
+}
+
+export async function createStockAdjustment(
+  orgId: string,
+  outletId: string,
+  data: StockAdjustmentInput
+): Promise<StockAdjustmentItem> {
+  if (data.attachment) {
+    const formData = new FormData();
+    formData.append('tank_id', data.tank_id);
+    formData.append('adjustment_type', data.adjustment_type);
+    formData.append('quantity', data.quantity);
+    formData.append('effective_at', data.effective_at);
+    formData.append('reason_category', data.reason_category);
+    formData.append('explanation', data.explanation);
+    formData.append('attachment', data.attachment);
+
+    return apiRequest<StockAdjustmentItem>(
+      `/organisations/${orgId}/outlets/${outletId}/fuel-stock/adjustments/`,
+      {
+        method: 'POST',
+        body: formData,
+      }
+    );
+  }
+
+  return apiRequest<StockAdjustmentItem>(
+    `/organisations/${orgId}/outlets/${outletId}/fuel-stock/adjustments/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+export async function reverseStockAdjustment(
+  orgId: string,
+  outletId: string,
+  adjId: string,
+  reversal_reason: string
+): Promise<StockAdjustmentItem> {
+  return apiRequest<StockAdjustmentItem>(
+    `/organisations/${orgId}/outlets/${outletId}/fuel-stock/adjustments/${adjId}/reverse/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reversal_reason }),
+    }
+  );
+}
+
+export function getStockAdjustmentAttachmentDownloadUrl(
+  orgId: string,
+  outletId: string,
+  adjId: string
+): string {
+  return `${BASE_URL}/organisations/${orgId}/outlets/${outletId}/fuel-stock/adjustments/${adjId}/attachment/`;
+}
+
+export async function recalculateTankChronology(
+  orgId: string,
+  outletId: string,
+  tankId: string
+): Promise<{ message: string; current_book_stock: string; has_chronology_conflict: boolean }> {
+  return apiRequest<{ message: string; current_book_stock: string; has_chronology_conflict: boolean }>(
+    `/organisations/${orgId}/outlets/${outletId}/fuel-stock/tanks/${tankId}/recalculate/`,
+    {
+      method: 'POST',
+    }
+  );
+}
+
+export async function fetchDayCloseInventoryReadiness(
+  orgId: string,
+  outletId: string,
+  businessDate?: string
+): Promise<DayCloseInventoryReadiness> {
+  const query = businessDate ? `?business_date=${businessDate}` : '';
+  return apiRequest<DayCloseInventoryReadiness>(
+    `/organisations/${orgId}/outlets/${outletId}/fuel-stock/day-close-readiness/${query}`
+  );
+}

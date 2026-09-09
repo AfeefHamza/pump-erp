@@ -192,6 +192,45 @@ Live forecourt operations enforce strict real-time auditability and data integri
    - Exposes derived boolean `shift_reconciliation_complete: true/false`.
    - Future Day Close requires `shift_reconciliation_complete == true` across all shifts for the business date.
 
+---
+
+## Milestone 11: Fuel Stock Ledger & Tanker Receipts Architecture
+
+### 1. Document-Based Backdated Entry Model
+Fuel stock tracking follows the same document-based backdated paradigm established by Shift Cards. Head office staff may enter operational documents days after physical occurrence:
+- No physical real-time requirement: receipts and dips can be posted at any time with accurate historical `received_at` / `effective_at` timestamps.
+- System accommodates backdated transactions by inserting immutable movements chronologically and recalculating projection balances.
+
+### 2. The Core Fuel Stock Equation
+Operational fuel book stock adheres to:
+$$\text{Calculated Book Stock} = \text{Opening Book Stock} + \text{Confirmed Tanker Receipts} - \text{Nozzle Gross Dispensing} + \text{Returned Testing Fuel} \pm \text{Stock Adjustments}$$
+
+- **Opening Book Stock**: Posted upon confirming the outlet's opening balance batch (`OPENING_BALANCE` movement, direction `IN`).
+- **Confirmed Tanker Receipts**: Posted upon receipt confirmation (`TANKER_RECEIPT` movement, direction `IN`). Uses *accepted quantity* (or invoice quantity when override is absent).
+- **Nozzle Gross Dispensing**: Posted upon saving active Shift Cards (`DISPENSING` movement, direction `OUT`). Resolves historical nozzle-to-tank snapshots from the Shift Card's meter readings.
+- **Returned Testing**: Dispensed fuel returned back into storage tanks (`TESTING_RETURN` movement, direction `IN`).
+- **Stock Adjustments**: Authorized operational offsets (`STOCK_ADJUSTMENT`, direction `IN` for gains, `OUT` for losses).
+
+### 3. Append-Only Ledger & Projection Design
+To resolve the append-only ledger contradiction:
+- `TankStockMovement` is strictly immutable. Movements are never updated or deleted.
+- Running balances are **not** stored on movement rows to prevent updating historical records during recalculations.
+- Running balances are dynamically computed in ledger queries via window functions or chronological iteration.
+- `TankStockBalanceProjection` stores mutable operational balances (`current_book_stock`), `has_chronology_conflict`, `has_negative_balance_history`, and projection timestamps.
+- Unique conditional constraint / `idempotency_key` guarantees database-level deduplication across concurrent requests.
+- Corrections to posted movements are executed solely via explicit compensating reversal movements.
+
+### 4. Physical Stock, Dip Conversion & Variance
+- **Calibrated Dip Conversion**: Tank dips convert measured liquid height (mm/cm) to physical volume (litres) via calibration charts.
+- **Physical Dip Gain vs Receipt Variance**:
+  $$\text{Physical Dip Gain} = \text{Post-Unloading Volume} - \text{Pre-Unloading Volume}$$
+  $$\text{Receipt Variance} = \text{Physical Dip Gain} - \text{Allocated Book Quantity}$$
+- **Unified Physical Dip Selector**: Queries latest valid dip observations chronologically across Shift Card dips, Tanker Receipt post-dips, and Standalone Dip observations.
+- **Variance Acknowledgement**: Variances require manager acknowledgement (`variance_status`, `variance_acknowledged_at`, `variance_acknowledged_by`, `variance_acknowledgement_reason`) prior to Day Close, without altering the calculated variance.
+
+### 5. Secure Protected Attachments
+Both tanker receipts and stock adjustments utilize private file storage models with permission-gated, streaming download endpoints (`/attachments/:id/download/` and `/adjustments/:id/attachment/`), preventing unauthorized direct media exposure.
+
 
 
 
