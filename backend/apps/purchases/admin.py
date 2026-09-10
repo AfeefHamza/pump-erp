@@ -2,7 +2,9 @@
 from django.contrib import admin
 from .models import (
     Supplier, TankerReceipt, TankerReceiptProductLine,
-    TankerReceiptTankAllocation, TankerReceiptAttachment
+    TankerReceiptTankAllocation, TankerReceiptAttachment,
+    PurchaseBill, PurchaseBillLine, PurchaseBillAdjustmentComponent,
+    PurchaseBillAttachment
 )
 
 @admin.register(Supplier)
@@ -28,3 +30,27 @@ class TankerReceiptAdmin(admin.ModelAdmin):
 @admin.register(TankerReceiptAttachment)
 class TankerReceiptAttachmentAdmin(admin.ModelAdmin):
     list_display = ['file_name', 'receipt', 'attachment_type', 'file_size', 'uploaded_at']
+
+
+class PurchaseBillLineInline(admin.TabularInline):
+    model = PurchaseBillLine
+    extra = 0
+
+
+class PurchaseBillAdjustmentInline(admin.TabularInline):
+    model = PurchaseBillAdjustmentComponent
+    extra = 0
+
+
+@admin.register(PurchaseBill)
+class PurchaseBillAdmin(admin.ModelAdmin):
+    list_display = ['bill_number', 'supplier_name_snapshot', 'supplier_invoice_number', 'invoice_date', 'due_date', 'grand_total', 'outstanding_amount', 'status']
+    list_filter = ['status', 'invoice_date', 'due_date']
+    search_fields = ['bill_number', 'supplier_invoice_number', 'supplier_name_snapshot']
+    inlines = [PurchaseBillLineInline, PurchaseBillAdjustmentInline]
+
+
+@admin.register(PurchaseBillAttachment)
+class PurchaseBillAttachmentAdmin(admin.ModelAdmin):
+    list_display = ['file_name', 'purchase_bill', 'attachment_type', 'file_size', 'uploaded_at']
+

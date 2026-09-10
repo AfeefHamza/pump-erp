@@ -56,7 +56,10 @@ export const navigationMenu: MenuSection[] = [
     items: [
       { name: 'Tanker Receipts', path: '/app/purchases/tanker-receipts', icon: Truck },
       { name: 'Purchase Bills', path: '/app/purchases/purchase-bills', icon: ShoppingBag },
+      { name: 'Supplier Outstanding', path: '/app/purchases/supplier-outstanding', icon: DollarSign },
       { name: 'Suppliers', path: '/app/purchases/suppliers', icon: Briefcase },
+      { name: 'Purchase Items', path: '/app/purchases/items', icon: Tags },
+      { name: 'Tax Codes', path: '/app/purchases/tax-codes', icon: FileText },
     ],
   },
   {

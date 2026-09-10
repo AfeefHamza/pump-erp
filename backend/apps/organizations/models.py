@@ -43,6 +43,7 @@ class Organisation(models.Model):
     city = models.CharField(max_length=100, blank=True, null=True)
     district = models.CharField(max_length=100, blank=True, null=True)
     state = models.CharField(max_length=100, blank=True, null=True)
+    state_code = models.CharField(max_length=2, blank=True, null=True)
     postal_code = models.CharField(max_length=20, blank=True, null=True)
     
     onboarding_status = models.CharField(
@@ -64,7 +65,7 @@ class Organisation(models.Model):
         # Normalize blank optional values consistently to None
         optional_fields = [
             'legal_name', 'trade_name', 'phone_number', 'email', 'gstin', 'pan',
-            'address_line_1', 'address_line_2', 'city', 'district', 'state', 'postal_code'
+            'address_line_1', 'address_line_2', 'city', 'district', 'state', 'state_code', 'postal_code'
         ]
         for field in optional_fields:
             val = getattr(self, field, None)
@@ -108,6 +109,8 @@ class Outlet(models.Model):
     city = models.CharField(max_length=100, blank=True, null=True)
     district = models.CharField(max_length=100, blank=True, null=True)
     state = models.CharField(max_length=100, blank=True, null=True)
+    state_code = models.CharField(max_length=2, blank=True, null=True)
+    gstin = models.CharField(max_length=15, blank=True, null=True)
     postal_code = models.CharField(max_length=20, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
 
@@ -147,7 +150,7 @@ class Outlet(models.Model):
         super().clean()
         # Normalize blank optional values consistently to None
         optional_fields = [
-            'address_line_1', 'address_line_2', 'city', 'district', 'state', 'postal_code',
+            'address_line_1', 'address_line_2', 'city', 'district', 'state', 'state_code', 'gstin', 'postal_code',
             'phone_number', 'operating_brand_code', 'operating_brand_name', 'dealer_code', 'email'
         ]
         for field in optional_fields:

@@ -231,6 +231,38 @@ To resolve the append-only ledger contradiction:
 ### 5. Secure Protected Attachments
 Both tanker receipts and stock adjustments utilize private file storage models with permission-gated, streaming download endpoints (`/attachments/:id/download/` and `/adjustments/:id/attachment/`), preventing unauthorized direct media exposure.
 
+---
+
+## Milestone 12: Purchase Bills & Supplier Outstanding Architecture
+
+### 1. Physical Stock vs Financial Invoicing Separation
+- **Physical Stream (Tanker Receipts)**: Records physical arrival, unloading, tank allocations, and tank ledger movements.
+- **Financial Stream (Purchase Bills)**: Records supplier invoices, payable amounts, tax/charge components, and supplier outstanding.
+- **Zero Inventory Impact**: A Purchase Bill strictly **never** alters fuel stock or creates inventory movements because the linked Tanker Receipt has already created the physical movements.
+
+### 2. Single Receipt-Link Source of Truth & Atomic Release
+- `PurchaseBillReceiptLink` is the single source of truth connecting purchase bills to tanker receipts.
+- Link state is governed strictly by timestamp:
+  - `released_at IS NULL` $\rightarrow$ Active linkage.
+  - `released_at` populated $\rightarrow$ Released linkage.
+- Partial unique constraint on `(receipt_product_line) WHERE released_at IS NULL` guarantees database-level isolation against double-billing a receipt.
+- Voiding a bill atomically populates `released_at = timezone.now()`, instantly releasing the tanker receipt lines so they can be re-billed.
+- Guard prevents voiding a tanker receipt while it is linked to an active purchase bill.
+
+### 3. Server-Authoritative Financial Totals
+- Financial totals (`subtotal`, `discount_total`, `additional_charges_total`, `tax_total`, `round_off_amount`, `grand_total`, `amount_paid`, `outstanding_amount`) are server-managed. Serializers mark them `read_only=True` to prevent direct manipulation.
+- In Milestone 12, `amount_paid = 0` and `outstanding_amount = grand_total`. Direct payments and settlement allocation will be introduced in the upcoming Payments milestone.
+
+### 4. Percentage Adjustment Calculation Base
+- For all percentage-based adjustments (such as freight, taxes, or discounts), the calculation base is strictly:
+  $$\text{Percentage Base} = \text{Gross Line Total} - \text{Line Discounts}$$
+- Sequential compounding to other charges or taxes is prohibited.
+
+### 5. Document Numbering & Duplicate Invoice Safety
+- **Atomic Sequences**: `PurchaseBillSequence` uses `select_for_update()` inside database transactions to safely generate contiguous `PB-YYYY-XXXX` identifiers under high concurrency.
+- **Duplicate Prevention**: Invoices are normalized (stripping whitespace, hyphens, slashes) and checked against active bills for that supplier. Duplicate override requires permission, existing conflicting bill ID, mandatory reason ($\ge 5$ chars), and produces an audit entry.
+
+
 
 
 

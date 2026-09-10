@@ -3130,7 +3130,19 @@ import type {
   TankerReceiptListItem,
   TankerReceiptDetail,
   TankerReceiptInput,
-  TankerReceiptAttachment
+  TankerReceiptAttachment,
+  PurchaseBillListItem,
+  PurchaseBillDetail,
+  PurchaseBillInput,
+  PurchaseBillAttachment,
+  AvailableTankerReceipt,
+  SupplierOutstandingSummary,
+  SupplierStatement,
+  PurchaseTaxCode,
+  PurchaseTaxCodeRate,
+  PurchaseItem,
+  ProductPurchaseTaxMapping,
+  PurchaseBillCalculationPreview
 } from '@/features/purchases/types';
 
 export async function fetchSuppliers(orgId: string): Promise<Supplier[]> {
@@ -3294,6 +3306,222 @@ export async function previewTankDipConversion(
     }
   );
 }
+
+// ==========================================
+// Milestone 12: Purchase Bills & Supplier Outstanding
+// ==========================================
+
+export async function fetchPurchaseBills(
+  orgId: string,
+  outletId: string,
+  params?: Record<string, string>
+): Promise<PurchaseBillListItem[]> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<PurchaseBillListItem[]>(
+    `/organisations/${orgId}/outlets/${outletId}/purchase-bills/${query}`
+  );
+}
+
+export async function fetchPurchaseBillDetail(
+  orgId: string,
+  outletId: string,
+  billId: string
+): Promise<PurchaseBillDetail> {
+  return apiRequest<PurchaseBillDetail>(
+    `/organisations/${orgId}/outlets/${outletId}/purchase-bills/${billId}/`
+  );
+}
+
+export async function createPurchaseBill(
+  orgId: string,
+  outletId: string,
+  data: PurchaseBillInput
+): Promise<PurchaseBillDetail> {
+  return apiRequest<PurchaseBillDetail>(
+    `/organisations/${orgId}/outlets/${outletId}/purchase-bills/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+export async function updatePurchaseBill(
+  orgId: string,
+  outletId: string,
+  billId: string,
+  data: Partial<PurchaseBillInput>
+): Promise<PurchaseBillDetail> {
+  return apiRequest<PurchaseBillDetail>(
+    `/organisations/${orgId}/outlets/${outletId}/purchase-bills/${billId}/`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+export async function voidPurchaseBill(
+  orgId: string,
+  outletId: string,
+  billId: string,
+  void_reason: string
+): Promise<PurchaseBillDetail> {
+  return apiRequest<PurchaseBillDetail>(
+    `/organisations/${orgId}/outlets/${outletId}/purchase-bills/${billId}/void/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ void_reason }),
+    }
+  );
+}
+
+export async function fetchAvailableTankerReceipts(
+  orgId: string,
+  outletId: string,
+  supplierId?: string
+): Promise<AvailableTankerReceipt[]> {
+  const query = supplierId ? `?supplier=${encodeURIComponent(supplierId)}` : '';
+  return apiRequest<AvailableTankerReceipt[]>(
+    `/organisations/${orgId}/outlets/${outletId}/purchase-bills/available-tanker-receipts/${query}`
+  );
+}
+
+export async function uploadPurchaseBillAttachment(
+  orgId: string,
+  outletId: string,
+  billId: string,
+  file: File,
+  attachment_type: string = 'supplier_invoice'
+): Promise<PurchaseBillAttachment> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('attachment_type', attachment_type);
+
+  return apiRequest<PurchaseBillAttachment>(
+    `/organisations/${orgId}/outlets/${outletId}/purchase-bills/${billId}/attachments/`,
+    {
+      method: 'POST',
+      body: formData,
+    }
+  );
+}
+
+export function getPurchaseBillAttachmentDownloadUrl(
+  orgId: string,
+  outletId: string,
+  billId: string,
+  attId: string
+): string {
+  return `${BASE_URL}/organisations/${orgId}/outlets/${outletId}/purchase-bills/${billId}/attachments/${attId}/download/`;
+}
+
+export async function previewPurchaseBillCalculation(
+  orgId: string,
+  outletId: string,
+  data: Partial<PurchaseBillInput>
+): Promise<PurchaseBillCalculationPreview> {
+  return apiRequest<PurchaseBillCalculationPreview>(
+    `/organisations/${orgId}/outlets/${outletId}/purchase-bills/calculate-preview/`,
+    {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+// Purchase Tax Codes (Organisation-scoped)
+export async function fetchPurchaseTaxCodes(orgId: string): Promise<PurchaseTaxCode[]> {
+  return apiRequest<PurchaseTaxCode[]>(`/organisations/${orgId}/purchase-tax-codes/`);
+}
+
+export async function fetchPurchaseTaxCodeDetail(orgId: string, codeId: string): Promise<PurchaseTaxCode> {
+  return apiRequest<PurchaseTaxCode>(`/organisations/${orgId}/purchase-tax-codes/${codeId}/`);
+}
+
+export async function createPurchaseTaxCode(orgId: string, data: Partial<PurchaseTaxCode>): Promise<PurchaseTaxCode> {
+  return apiRequest<PurchaseTaxCode>(`/organisations/${orgId}/purchase-tax-codes/`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updatePurchaseTaxCode(orgId: string, codeId: string, data: Partial<PurchaseTaxCode>): Promise<PurchaseTaxCode> {
+  return apiRequest<PurchaseTaxCode>(`/organisations/${orgId}/purchase-tax-codes/${codeId}/`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function createPurchaseTaxCodeRate(orgId: string, codeId: string, data: any): Promise<PurchaseTaxCodeRate> {
+  return apiRequest<PurchaseTaxCodeRate>(`/organisations/${orgId}/purchase-tax-codes/${codeId}/rates/`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updatePurchaseTaxCodeRate(orgId: string, codeId: string, rateId: string, data: any): Promise<PurchaseTaxCodeRate> {
+  return apiRequest<PurchaseTaxCodeRate>(`/organisations/${orgId}/purchase-tax-codes/${codeId}/rates/${rateId}/`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+// Purchase Items Master (Organisation-scoped)
+export async function fetchPurchaseItems(orgId: string, params?: Record<string, string>): Promise<PurchaseItem[]> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<PurchaseItem[]>(`/organisations/${orgId}/purchase-items/${query}`);
+}
+
+export async function fetchPurchaseItemDetail(orgId: string, itemId: string): Promise<PurchaseItem> {
+  return apiRequest<PurchaseItem>(`/organisations/${orgId}/purchase-items/${itemId}/`);
+}
+
+export async function createPurchaseItem(orgId: string, data: Partial<PurchaseItem>): Promise<PurchaseItem> {
+  return apiRequest<PurchaseItem>(`/organisations/${orgId}/purchase-items/`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updatePurchaseItem(orgId: string, itemId: string, data: Partial<PurchaseItem>): Promise<PurchaseItem> {
+  return apiRequest<PurchaseItem>(`/organisations/${orgId}/purchase-items/${itemId}/`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+// Product Purchase Tax Mappings (Organisation-scoped)
+export async function fetchProductTaxMappings(orgId: string): Promise<ProductPurchaseTaxMapping[]> {
+  return apiRequest<ProductPurchaseTaxMapping[]>(`/organisations/${orgId}/product-tax-mappings/`);
+}
+
+export async function createOrUpdateProductTaxMapping(orgId: string, data: Partial<ProductPurchaseTaxMapping>): Promise<ProductPurchaseTaxMapping> {
+  return apiRequest<ProductPurchaseTaxMapping>(`/organisations/${orgId}/product-tax-mappings/`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchSupplierOutstandingSummary(
+  orgId: string,
+  outletId: string
+): Promise<SupplierOutstandingSummary> {
+  return apiRequest<SupplierOutstandingSummary>(
+    `/organisations/${orgId}/outlets/${outletId}/supplier-outstanding/summary/`
+  );
+}
+
+export async function fetchSupplierStatement(
+  orgId: string,
+  outletId: string,
+  supplierId: string
+): Promise<SupplierStatement> {
+  return apiRequest<SupplierStatement>(
+    `/organisations/${orgId}/outlets/${outletId}/supplier-outstanding/suppliers/${supplierId}/`
+  );
+}
+
 
 // ==========================================
 // Milestone 11: Inventory & Fuel Stock

@@ -34,7 +34,12 @@ import { CustomerDetailPage } from '@/features/sales/pages/CustomerDetailPage';
 import { CreditSlipsPage } from '@/features/sales/pages/CreditSlipsPage';
 import { TankerReceiptListPage } from '@/features/purchases/pages/TankerReceiptListPage';
 import { TankerReceiptWorkspace } from '@/features/purchases/pages/TankerReceiptWorkspace';
+import { PurchaseBillListPage } from '@/features/purchases/pages/PurchaseBillListPage';
+import { PurchaseBillWorkspace } from '@/features/purchases/pages/PurchaseBillWorkspace';
+import { SupplierOutstandingPage } from '@/features/purchases/pages/SupplierOutstandingPage';
 import { SuppliersPage } from '@/features/purchases/pages/SuppliersPage';
+import { PurchaseTaxCodesPage } from '@/features/purchases/pages/PurchaseTaxCodesPage';
+import { PurchaseItemsPage } from '@/features/purchases/pages/PurchaseItemsPage';
 import { FuelStockDashboardPage } from '@/features/inventory/pages/FuelStockDashboardPage';
 import { TankLedgerPage } from '@/features/inventory/pages/TankLedgerPage';
 import { useParams, useLocation } from 'react-router-dom';
@@ -206,11 +211,31 @@ export const router = createBrowserRouter([
       },
       {
         path: 'purchases/purchase-bills',
-        element: <ComingSoonPage title="Purchase Bills" />,
+        element: <PurchaseBillListPage />,
+      },
+      {
+        path: 'purchases/purchase-bills/new',
+        element: <PurchaseBillWorkspace />,
+      },
+      {
+        path: 'purchases/purchase-bills/:billId',
+        element: <PurchaseBillWorkspace />,
+      },
+      {
+        path: 'purchases/supplier-outstanding',
+        element: <SupplierOutstandingPage />,
       },
       {
         path: 'purchases/suppliers',
         element: <SuppliersPage />,
+      },
+      {
+        path: 'purchases/items',
+        element: <PurchaseItemsPage />,
+      },
+      {
+        path: 'purchases/tax-codes',
+        element: <PurchaseTaxCodesPage />,
       },
       // Inventory
       {

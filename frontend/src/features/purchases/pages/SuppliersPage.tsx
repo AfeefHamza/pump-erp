@@ -35,6 +35,10 @@ export const SuppliersPage: React.FC = () => {
     phone: '',
     email: '',
     tax_number: '',
+    gstin: '',
+    gst_registration_type: 'pending_review' as any,
+    state: '',
+    state_code: '',
     address: '',
     is_active: true,
   });
@@ -67,6 +71,7 @@ export const SuppliersPage: React.FC = () => {
       (s) =>
         s.name.toLowerCase().includes(q) ||
         s.code.toLowerCase().includes(q) ||
+        (s.gstin && s.gstin.toLowerCase().includes(q)) ||
         (s.contact_person && s.contact_person.toLowerCase().includes(q)) ||
         (s.phone && s.phone.toLowerCase().includes(q))
     );
@@ -81,6 +86,10 @@ export const SuppliersPage: React.FC = () => {
       phone: '',
       email: '',
       tax_number: '',
+      gstin: '',
+      gst_registration_type: 'pending_review',
+      state: '',
+      state_code: '',
       address: '',
       is_active: true,
     });
@@ -97,6 +106,10 @@ export const SuppliersPage: React.FC = () => {
       phone: supplier.phone || '',
       email: supplier.email || '',
       tax_number: supplier.tax_number || '',
+      gstin: supplier.gstin || '',
+      gst_registration_type: supplier.gst_registration_type || 'pending_review',
+      state: supplier.state || '',
+      state_code: supplier.state_code || '',
       address: supplier.address || '',
       is_active: supplier.is_active,
     });
@@ -456,6 +469,68 @@ export const SuppliersPage: React.FC = () => {
                     placeholder="300123456700003"
                     value={formData.tax_number}
                     onChange={(e) => setFormData({ ...formData, tax_number: e.target.value })}
+                    style={{ fontFamily: 'monospace' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">GSTIN (15 Digits)</label>
+                  <input
+                    type="text"
+                    maxLength={15}
+                    className="form-control"
+                    placeholder="e.g. 27AAAAA0000A1Z5"
+                    value={formData.gstin}
+                    onChange={(e) => {
+                      const val = e.target.value.toUpperCase();
+                      const prefix = val.slice(0, 2);
+                      setFormData({
+                        ...formData,
+                        gstin: val,
+                        state_code: prefix.length === 2 && /^\d+$/.test(prefix) ? prefix : formData.state_code
+                      });
+                    }}
+                    style={{ fontFamily: 'monospace', textTransform: 'uppercase' }}
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">GST Registration Type</label>
+                  <select
+                    className="form-control"
+                    value={formData.gst_registration_type}
+                    onChange={(e: any) => setFormData({ ...formData, gst_registration_type: e.target.value })}
+                  >
+                    <option value="pending_review">Pending Review</option>
+                    <option value="registered">Registered Regular</option>
+                    <option value="composition">Composition Scheme</option>
+                    <option value="unregistered">Unregistered</option>
+                    <option value="overseas">Overseas / Import</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">State / Region</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. Maharashtra, Karnataka"
+                    value={formData.state}
+                    onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">State Code</label>
+                  <input
+                    type="text"
+                    maxLength={2}
+                    className="form-control"
+                    placeholder="e.g. 27"
+                    value={formData.state_code}
+                    onChange={(e) => setFormData({ ...formData, state_code: e.target.value })}
                     style={{ fontFamily: 'monospace' }}
                   />
                 </div>

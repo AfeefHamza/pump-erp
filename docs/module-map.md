@@ -91,6 +91,20 @@ Document-based backdated tanker receipts, fuel stock ledger, append-only movemen
 
 ---
 
+### 7. Purchase Bills & Supplier Outstanding (Milestone 12, Implemented)
+Financial invoice tracking for fuel deliveries and goods, strictly isolated from physical inventory movements. Tracks accounts payable, supplier ageing buckets, and chronological ledger statements.
+- **Backend (`apps/purchases/`)**:
+  - Models: `PurchaseBillSequence` (concurrency-locked document numbering), `PurchaseBill`, `PurchaseBillReceiptLink` (single source of truth for receipt links; active when `released_at IS NULL`), `PurchaseBillLine`, `PurchaseBillAdjustmentComponent` (charges, discounts, taxes, round-off with base = gross lines minus line discounts), `PurchaseBillAttachment`, `PurchaseBillAuditLog`. Direct deletion blocked with `on_delete=PROTECT` on audit records.
+  - Services: `normalize_invoice_number()`, `generate_next_bill_number()`, `calculate_bill_totals()`, `create_purchase_bill()`, `update_purchase_bill()`, `void_purchase_bill()`, `upload_bill_attachment()`. Guard prevents voiding tanker receipts linked to active purchase bills.
+  - Selectors: `list_purchase_bills()`, `get_purchase_bill_detail()`, `get_available_tanker_receipts_for_billing()`, `get_supplier_outstanding_summary()` (5 ageing buckets: Not Due, 1–30, 31–60, 61–90, >90), `get_supplier_statement()`.
+  - APIs: 8 REST endpoints under `/api/v1/organisations/<org_id>/outlets/<outlet_id>/purchase-bills/` and `/supplier-outstanding/`.
+- **Frontend**:
+  - Purchase Bills List at `/app/purchases/purchase-bills` with KPI cards, multi-criteria filters, and atomic void modal.
+  - Purchase Bill Workspace at `/app/purchases/purchase-bills/new` and `/app/purchases/purchase-bills/:billId` with 9 sections (Supplier/Invoice, Link Receipts, Product Lines, Adjustments, Server-Managed Totals, Due Date, Attachments, Notes, Audit Timeline).
+  - Supplier Outstanding & Ageing at `/app/purchases/supplier-outstanding` with 5-bucket ageing breakdown and chronological statement drawer.
+
+---
+
 ## Planned Business Modules (Postponed)
 
 ### 1. Sales
@@ -99,7 +113,7 @@ Document-based backdated tanker receipts, fuel stock ledger, append-only movemen
 - **Receipts**: Record incoming customer payments against outstanding invoices.
 
 ### 3. Purchases (Remaining)
-- **Purchase Bills**: Track vendor invoices for fuel shipments and retail items, AP ledger postings.
+- **Supplier Payments & Allocations**: Disburse vendor payments, allocate credits against outstanding purchase bills, and debit note reconciliations.
 
 ### 4. Inventory (Remaining)
 - **Lubricants**: Manage retail items, lubricants, inventory levels, and sales margins.
