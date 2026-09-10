@@ -78,7 +78,7 @@ Document-based backdated tanker receipts, fuel stock ledger, append-only movemen
   - **Inventory (`apps/inventory/`)**:
     - Models: `TankStockMovement` (append-only, immutable, idempotency key), `TankStockBalanceProjection` (mutable balance projection), `StockAdjustment`, `StockAdjustmentAttachment`.
     - Services: `recalculate_tank_projection()`, `post_tank_stock_movement()`, `post_opening_balance_movements()`, `post_tanker_receipt_movements()`, `reverse_tanker_receipt_movements()`, `sync_shift_card_stock_movements()`, `reverse_shift_card_stock_movements()`, `record_stock_adjustment()`, `reverse_stock_adjustment()`, `backfill_operational_stock_data()`.
-    - Selectors: `get_latest_physical_dip_for_tank()`, `get_tank_stock_summary()`, `get_tank_movement_ledger()`, `get_day_close_inventory_readiness()`.
+    - Selectors: `get_latest_physical_dip_for_tank()`, `get_tank_stock_summary()`, `get_tank_movement_ledger()`.
     - Management command: `python manage.py backfill_fuel_stock`.
     - APIs: 8 REST endpoints under `/api/v1/organisations/<org_id>/outlets/<outlet_id>/fuel-stock/`.
 - **Frontend**:
@@ -93,10 +93,7 @@ Document-based backdated tanker receipts, fuel stock ledger, append-only movemen
 
 ## Planned Business Modules (Postponed)
 
-### 1. Day Close & Cash Reconciliation
-- **Day Close**: Daily station reconciliation across all completed shift reconciliations, stock variance confirmation, accounting sync.
-
-### 2. Sales
+### 1. Sales
 - **Cash Sales**: Real-time sales transactions paid via cash, credit cards, or digital wallets.
 - **Invoices**: Tax invoices generated for corporate customer bill cycles.
 - **Receipts**: Record incoming customer payments against outstanding invoices.

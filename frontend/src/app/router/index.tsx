@@ -162,10 +162,6 @@ export const router = createBrowserRouter([
         path: 'operations/dip-readings',
         element: <DipReadingsPage />,
       },
-      {
-        path: 'operations/day-close',
-        element: <ComingSoonPage title="Day Close" />,
-      },
       // Sales
       {
         path: 'sales/credit-slips',

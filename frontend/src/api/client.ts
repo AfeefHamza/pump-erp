@@ -3302,8 +3302,7 @@ import type {
   TankStockSummaryResponse,
   TankMovementLedgerResponse,
   StockAdjustmentItem,
-  StockAdjustmentInput,
-  DayCloseInventoryReadiness
+  StockAdjustmentInput
 } from '@/features/inventory/types';
 
 export async function fetchFuelStockSummary(
@@ -3402,16 +3401,5 @@ export async function recalculateTankChronology(
     {
       method: 'POST',
     }
-  );
-}
-
-export async function fetchDayCloseInventoryReadiness(
-  orgId: string,
-  outletId: string,
-  businessDate?: string
-): Promise<DayCloseInventoryReadiness> {
-  const query = businessDate ? `?business_date=${businessDate}` : '';
-  return apiRequest<DayCloseInventoryReadiness>(
-    `/organisations/${orgId}/outlets/${outletId}/fuel-stock/day-close-readiness/${query}`
   );
 }

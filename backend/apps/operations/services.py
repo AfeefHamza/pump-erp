@@ -248,6 +248,7 @@ def assign_calibration_chart_to_tank(organisation, outlet, tank: Tank, chart: Di
     if chart.status != DipCalibrationChart.STATUS_ACTIVE:
         raise ValidationError("Only active calibration charts can be assigned to a tank.")
 
+
     # Find the current active assignment and close it
     active_assignments = TankCalibrationAssignment.objects.filter(
         tank=tank,
@@ -497,6 +498,7 @@ def confirm_opening_balance_batch(batch: OpeningBalanceBatch, user) -> OpeningBa
         )
 
     # Perform confirmation
+
     batch.status = OpeningBalanceBatch.STATUS_CONFIRMED
     batch.confirmed_by = user
     batch.confirmed_at = timezone.now()
@@ -673,6 +675,7 @@ def bulk_commission_nozzles(
     Atomically commissions multiple nozzles together.
     Validates all rows; if one row fails, none are saved.
     """
+
     if not items:
         raise ValidationError("At least one nozzle must be provided for bulk commissioning.")
 

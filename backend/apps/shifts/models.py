@@ -1,5 +1,6 @@
 # apps/shifts/models.py
 import uuid
+from datetime import date
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
@@ -29,6 +30,8 @@ class ShiftDefinition(models.Model):
     crosses_midnight = models.BooleanField(default=False)
     display_order = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
+    effective_from = models.DateField(default=date(2020, 1, 1))
+    effective_to = models.DateField(blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -312,6 +315,7 @@ class OperationalShift(models.Model):
         related_name='recorded_shifts'
     )
     notes = models.TextField(blank=True, null=True)
+
     opened_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -1093,6 +1097,7 @@ class ShiftTankDipObservation(models.Model):
         null=True,
         related_name='recorded_shift_dip_observations'
     )
+    business_date = models.DateField(db_index=True, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1121,6 +1126,8 @@ class ShiftTankDipObservation(models.Model):
             self.manual_quantity_reason = None
 
     def save(self, *args, **kwargs):
+        if not self.business_date and self.shift_id:
+            self.business_date = self.shift.business_date
         self.full_clean()
         super().save(*args, **kwargs)
 
@@ -1379,6 +1386,8 @@ class FuelCreditSlip(models.Model):
     driver_name = models.CharField(max_length=255, blank=True, null=True)
     customer_reference = models.CharField(max_length=100, blank=True, null=True)
     physical_slip_number = models.CharField(max_length=100, blank=True, null=True)
+    is_credit_limit_overridden = models.BooleanField(default=False)
+    override_reason = models.CharField(max_length=255, blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
     status = models.CharField(
         max_length=20,

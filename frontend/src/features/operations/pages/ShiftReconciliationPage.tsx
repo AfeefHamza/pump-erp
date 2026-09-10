@@ -229,7 +229,7 @@ export const ShiftReconciliationPage: React.FC = () => {
         </div>
       )}
 
-      {/* Day Close Status Hero Banner */}
+      {/* Shift Reconciliation Status Hero Banner */}
       <div
         className="card"
         style={{
@@ -259,13 +259,13 @@ export const ShiftReconciliationPage: React.FC = () => {
           <div>
             <div style={{ fontWeight: 700, fontSize: '1.05rem', color: shift_reconciliation_complete ? '#4ade80' : '#f8fafc' }}>
               {shift_reconciliation_complete
-                ? 'Day-Close Readiness: READY (Shift Fully Reconciled)'
-                : `Day-Close Readiness: BLOCKED (${pendingCount} Attendant Settlement${pendingCount === 1 ? '' : 's'} Pending)`}
+                ? 'Shift Reconciliation: Complete (Shift Fully Reconciled)'
+                : `Shift Reconciliation: In Progress (${pendingCount} Attendant Settlement${pendingCount === 1 ? '' : 's'} Pending)`}
             </div>
             <div className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.2rem' }}>
               {shift_reconciliation_complete
                 ? 'All required attendant collections and credit slips have been reviewed, differences acknowledged, and settlements locked.'
-                : 'Day Close requires all operational shifts on this date to have their financial reconciliations completed.'}
+                : 'All attendant settlements for this shift must have their financial reconciliations completed.'}
             </div>
           </div>
         </div>

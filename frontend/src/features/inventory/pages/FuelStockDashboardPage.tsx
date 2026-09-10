@@ -4,12 +4,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAppSelector } from '@/app/store';
 import {
   fetchFuelStockSummary,
-  fetchDayCloseInventoryReadiness,
   recalculateTankChronology
 } from '@/api/client';
 import type {
-  TankStockSummaryResponse,
-  DayCloseInventoryReadiness
+  TankStockSummaryResponse
 } from '@/features/inventory/types';
 import { PageHeader } from '@/components/navigation/PageHeader';
 import { StockAdjustmentDrawer } from '../components/StockAdjustmentDrawer';
@@ -18,7 +16,6 @@ import {
   Sliders,
   RefreshCw,
   AlertCircle,
-  CheckCircle2,
   AlertTriangle,
   ArrowRight,
   TrendingDown,
@@ -34,7 +31,6 @@ export const FuelStockDashboardPage: React.FC = () => {
   const selectedOutletId = useAppSelector((state) => state.ui.selectedOutletId);
 
   const [summaryData, setSummaryData] = useState<TankStockSummaryResponse | null>(null);
-  const [readiness, setReadiness] = useState<DayCloseInventoryReadiness | null>(null);
   const [loading, setLoading] = useState(true);
   const [recalculatingId, setRecalculatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,13 +44,8 @@ export const FuelStockDashboardPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const today = new Date().toISOString().slice(0, 10);
-      const [sumRes, readyRes] = await Promise.all([
-        fetchFuelStockSummary(selectedOrgId, selectedOutletId),
-        fetchDayCloseInventoryReadiness(selectedOrgId, selectedOutletId, today).catch(() => null),
-      ]);
+      const sumRes = await fetchFuelStockSummary(selectedOrgId, selectedOutletId);
       setSummaryData(sumRes);
-      setReadiness(readyRes);
     } catch (err: any) {
       console.error(err);
       setError('Failed to load fuel stock data.');
@@ -156,68 +147,6 @@ export const FuelStockDashboardPage: React.FC = () => {
         >
           <AlertCircle size={18} />
           <span>{error}</span>
-        </div>
-      )}
-
-      {/* Day Close Inventory Readiness Banner */}
-      {readiness && (
-        <div
-          className="card"
-          style={{
-            padding: '1.25rem 1.5rem',
-            marginBottom: '1.5rem',
-            display: 'flex',
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '1rem',
-            backgroundColor: readiness.ready ? 'var(--color-success-bg, #dcfce7)' : 'var(--color-warning-bg, #ffedd5)',
-            border: `1px solid ${readiness.ready ? 'rgba(21, 128, 61, 0.25)' : 'rgba(194, 65, 12, 0.25)'}`,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-            {readiness.ready ? (
-              <CheckCircle2 size={22} style={{ color: 'var(--color-success-text, #15803d)', flexShrink: 0, marginTop: '2px' }} />
-            ) : (
-              <AlertTriangle size={22} style={{ color: 'var(--color-warning-text, #c2410c)', flexShrink: 0, marginTop: '2px' }} />
-            )}
-            <div>
-              <h4
-                style={{
-                  margin: 0,
-                  fontSize: '0.95rem',
-                  fontWeight: 600,
-                  color: readiness.ready ? 'var(--color-success-text, #15803d)' : 'var(--color-warning-text, #c2410c)',
-                }}
-              >
-                {readiness.ready
-                  ? 'Inventory Ready for Day Close'
-                  : 'Day Close Inventory Attention Required'}
-              </h4>
-              <p
-                style={{
-                  margin: '0.25rem 0 0',
-                  fontSize: '0.825rem',
-                  color: readiness.ready ? 'var(--color-success-text, #15803d)' : 'var(--color-warning-text, #c2410c)',
-                  opacity: 0.9,
-                }}
-              >
-                {readiness.ready
-                  ? 'All tanker receipts, operational movements, and dip variances are acknowledged and aligned.'
-                  : `${readiness.unacknowledged_variances_count} unacknowledged variance(s), ${readiness.unconfirmed_receipts_count} unconfirmed receipt(s), and ${readiness.conflicted_tanks_count} chronology conflict(s).`}
-              </p>
-            </div>
-          </div>
-
-          {(readiness.unacknowledged_variances_count > 0 || readiness.unconfirmed_receipts_count > 0) && (
-            <button
-              onClick={() => navigate('/app/purchases/tanker-receipts')}
-              className="btn btn-primary btn-sm"
-              style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
-            >
-              Review Tanker Receipts
-            </button>
-          )}
         </div>
       )}
 

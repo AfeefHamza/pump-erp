@@ -126,6 +126,7 @@ class Outlet(models.Model):
     operating_brand_name = models.CharField(max_length=255, blank=True, null=True)
     dealer_code = models.CharField(max_length=50, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
+    timezone = models.CharField(max_length=100, default='Asia/Kolkata', blank=True, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

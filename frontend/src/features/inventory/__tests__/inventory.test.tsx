@@ -54,8 +54,8 @@ describe('Inventory & Fuel Stock Domain Logic', () => {
     expect(hasNegative).toBe(true);
   });
 
-  it('evaluates day close readiness criteria', () => {
-    const evaluateReadiness = (
+  it('evaluates inventory integrity criteria', () => {
+    const evaluateIntegrity = (
       unacknowledgedVariances: number,
       chronologyConflicts: number,
       negativeBalances: number
@@ -67,9 +67,9 @@ describe('Inventory & Fuel Stock Domain Logic', () => {
       );
     };
 
-    expect(evaluateReadiness(0, 0, 0)).toBe(true);
-    expect(evaluateReadiness(1, 0, 0)).toBe(false);
-    expect(evaluateReadiness(0, 1, 0)).toBe(false);
-    expect(evaluateReadiness(0, 0, 1)).toBe(false);
+    expect(evaluateIntegrity(0, 0, 0)).toBe(true);
+    expect(evaluateIntegrity(1, 0, 0)).toBe(false);
+    expect(evaluateIntegrity(0, 1, 0)).toBe(false);
+    expect(evaluateIntegrity(0, 0, 1)).toBe(false);
   });
 });

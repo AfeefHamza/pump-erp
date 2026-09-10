@@ -3705,13 +3705,9 @@ def unlock_shift(shift: OperationalShift, user, reason: str) -> OperationalShift
     """
     Controlled unlock of an OperationalShift:
     - Requires mandatory reason
-    - Prohibits unlocking if locked by Day Close / accounting lock
     """
     if not reason or not reason.strip():
         raise ValidationError({'reason': "A mandatory reason is required to unlock a shift."})
-
-    if shift.lock_source == 'day_close':
-        raise ValidationError({'shift': "Cannot unlock: This shift is locked by Day Close. Unlock must be performed via Day Close correction."})
 
     shift.is_locked = False
     shift.locked_at = None

@@ -521,3 +521,5 @@ class NozzleCommissioningAuditLog(models.Model):
     def __str__(self):
         return f"Audit: {self.event_type} on {self.nozzle.code} by {self.actor} at {self.occurred_at}"
 
+
+

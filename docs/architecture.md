@@ -188,9 +188,9 @@ Live forecourt operations enforce strict real-time auditability and data integri
 4. **Shift Reopening & Reconciliation Dependencies**:
    - If any employee settlement is reconciled, operational shift reopening is strictly **blocked** until all affected settlements are explicitly reopened.
    - Reopening an employee settlement requires permission, mandatory reason, audit trail, and resets the shift's reconciliation status from `reconciled` to `partial` or `pending`.
-5. **Future Day Close Dependency**:
+5. **Document-Level Reconciliation Integrity**:
    - Exposes derived boolean `shift_reconciliation_complete: true/false`.
-   - Future Day Close requires `shift_reconciliation_complete == true` across all shifts for the business date.
+   - Pump ERP enforces document-level controls (shift card locking, parent shift status, and settlement reconciliation) rather than business-date Day Close.
 
 ---
 
@@ -226,7 +226,7 @@ To resolve the append-only ledger contradiction:
   $$\text{Physical Dip Gain} = \text{Post-Unloading Volume} - \text{Pre-Unloading Volume}$$
   $$\text{Receipt Variance} = \text{Physical Dip Gain} - \text{Allocated Book Quantity}$$
 - **Unified Physical Dip Selector**: Queries latest valid dip observations chronologically across Shift Card dips, Tanker Receipt post-dips, and Standalone Dip observations.
-- **Variance Acknowledgement**: Variances require manager acknowledgement (`variance_status`, `variance_acknowledged_at`, `variance_acknowledged_by`, `variance_acknowledgement_reason`) prior to Day Close, without altering the calculated variance.
+- **Variance Acknowledgement**: Variances require manager acknowledgement (`variance_status`, `variance_acknowledged_at`, `variance_acknowledged_by`, `variance_acknowledgement_reason`), without altering the calculated variance.
 
 ### 5. Secure Protected Attachments
 Both tanker receipts and stock adjustments utilize private file storage models with permission-gated, streaming download endpoints (`/attachments/:id/download/` and `/adjustments/:id/attachment/`), preventing unauthorized direct media exposure.

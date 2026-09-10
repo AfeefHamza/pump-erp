@@ -348,7 +348,7 @@ class ShiftCardWorkflowTests(ShiftCardBaseTestCase):
 
         # Lock shift
         lock_url = reverse('shift_lock', kwargs={'org_id': self.org.id, 'outlet_id': self.outlet.id, 'shift_id': parent.id})
-        resp = self.client.post(lock_url, {'reason': 'Day close audit complete'}, format='json')
+        resp = self.client.post(lock_url, {'reason': 'Shift audit complete'}, format='json')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         parent.refresh_from_db()
         self.assertTrue(parent.is_locked)

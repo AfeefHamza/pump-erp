@@ -130,30 +130,3 @@ export interface StockAdjustmentInput {
   explanation: string;
   attachment?: File | null;
 }
-
-export interface DayCloseInventoryReadiness {
-  ready: boolean;
-  unconfirmed_receipts_count: number;
-  unconfirmed_receipts: Array<{
-    id: string;
-    receipt_number: string;
-    supplier: string;
-    invoice_number: string;
-    invoice_date: string;
-  }>;
-  conflicted_tanks_count: number;
-  conflicted_tanks: Array<{
-    tank_id: string;
-    tank_code: string;
-    current_stock: string;
-    first_negative_at?: string | null;
-  }>;
-  unacknowledged_variances_count: number;
-  unacknowledged_variances: Array<{
-    allocation_id: string;
-    receipt_number: string;
-    tank_code: string;
-    variance: string;
-    status: string;
-  }>;
-}

@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   Clock,
   Droplet,
-  CalendarDays,
   FileText,
   DollarSign,
   Receipt,
@@ -40,7 +39,6 @@ export const navigationMenu: MenuSection[] = [
     items: [
       { name: 'Shift Cards', path: '/app/operations/shift-cards', icon: Clock },
       { name: 'Dip Readings', path: '/app/operations/dip-readings', icon: Droplet },
-      { name: 'Day Close', path: '/app/operations/day-close', icon: CalendarDays },
     ],
   },
   {

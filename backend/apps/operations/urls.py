@@ -40,3 +40,4 @@ urlpatterns = [
     path('<uuid:org_id>/outlets/<uuid:outlet_id>/nozzles/bulk-commission/', NozzleBulkCommissionView.as_view(), name='nozzle_bulk_commission'),
 ]
 
+

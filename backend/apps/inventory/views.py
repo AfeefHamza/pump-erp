@@ -20,8 +20,7 @@ from .serializers import (
     StockAdjustmentReverseSerializer
 )
 from .selectors import (
-    get_tank_stock_summary, get_tank_movement_ledger,
-    get_day_close_inventory_readiness
+    get_tank_stock_summary, get_tank_movement_ledger
 )
 from .services import (
     record_stock_adjustment, reverse_stock_adjustment,
@@ -191,17 +190,3 @@ class TankChronologyRecalculateView(APIView):
             'recalculated_at': projection.recalculated_at
         }, status=status.HTTP_200_OK)
 
-
-class DayCloseInventoryReadinessView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, org_id, outlet_id):
-        org, outlet = _get_org_and_outlet(org_id, outlet_id)
-        require_permission(request.user, org, 'fuel_stock.view', outlet=outlet)
-
-        date_str = request.query_params.get('business_date')
-        from django.utils.dateparse import parse_date
-        business_date = parse_date(date_str) if date_str else None
-
-        readiness = get_day_close_inventory_readiness(org, outlet, business_date=business_date)
-        return Response(readiness, status=status.HTTP_200_OK)

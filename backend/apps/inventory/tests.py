@@ -29,8 +29,7 @@ from apps.inventory.services import (
     backfill_operational_stock_data
 )
 from apps.inventory.selectors import (
-    get_tank_stock_summary, get_tank_movement_ledger,
-    get_day_close_inventory_readiness
+    get_tank_stock_summary, get_tank_movement_ledger
 )
 
 User = get_user_model()
@@ -322,8 +321,8 @@ class InventoryLedgerTests(InventoryBaseTestCase):
         proj_after = TankStockBalanceProjection.objects.get(tank=self.tank)
         self.assertEqual(proj_after.current_book_stock, Decimal('0.0000'))
 
-    def test_07_stock_ledger_query_and_day_close_readiness(self):
-        """7. Ledger selector computes dynamic running balance and Day Close readiness exposes checks."""
+    def test_07_stock_ledger_query(self):
+        """7. Ledger selector computes dynamic running balance."""
         post_tank_stock_movement(
             organisation=self.org,
             outlet=self.outlet,
@@ -363,9 +362,6 @@ class InventoryLedgerTests(InventoryBaseTestCase):
         self.assertEqual(ledger['movements'][0]['running_balance'], Decimal('800.0000'))
         # Second entry is opening balance, running balance 1000
         self.assertEqual(ledger['movements'][1]['running_balance'], Decimal('1000.0000'))
-
-        readiness = get_day_close_inventory_readiness(self.org, self.outlet)
-        self.assertTrue(readiness['ready'])
 
     def test_08_database_level_idempotency_constraint(self):
         """8. Database unique constraint prevents duplicate active movements even with different idempotency keys."""

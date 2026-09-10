@@ -62,6 +62,7 @@ class TankStockMovement(models.Model):
     direction = models.CharField(max_length=3, choices=DIRECTION_CHOICES)
     quantity = models.DecimalField(max_digits=15, decimal_places=4)
     effective_at = models.DateTimeField(db_index=True)
+    business_date = models.DateField(db_index=True, null=True, blank=True)
 
     source_type = models.CharField(max_length=50)
     source_id = models.UUIDField(db_index=True)
@@ -127,6 +128,9 @@ class TankStockMovement(models.Model):
         # Strictly append-only: no updates permitted
         if not self._state.adding and self.pk:
             raise ValidationError("TankStockMovement records are immutable and cannot be updated.")
+        if not self.business_date and self.effective_at:
+            from apps.core.timezone_utils import to_outlet_business_date
+            self.business_date = to_outlet_business_date(self.effective_at, outlet=getattr(self, 'outlet', None))
         self.full_clean()
         super().save(*args, **kwargs)
 
@@ -211,6 +215,7 @@ class StockAdjustment(models.Model):
     adjustment_type = models.CharField(max_length=10, choices=ADJUSTMENT_TYPE_CHOICES)
     quantity = models.DecimalField(max_digits=15, decimal_places=4)
     effective_at = models.DateTimeField(db_index=True)
+    business_date = models.DateField(db_index=True, null=True, blank=True)
     reason_category = models.CharField(max_length=50, choices=REASON_CHOICES)
     explanation = models.TextField()
 
@@ -265,6 +270,9 @@ class StockAdjustment(models.Model):
             raise ValidationError({'reversal_reason': "A mandatory reversal reason is required when reversing an adjustment."})
 
     def save(self, *args, **kwargs):
+        if not self.business_date and self.effective_at:
+            from apps.core.timezone_utils import to_outlet_business_date
+            self.business_date = to_outlet_business_date(self.effective_at, outlet=getattr(self, 'outlet', None))
         self.full_clean()
         super().save(*args, **kwargs)
 

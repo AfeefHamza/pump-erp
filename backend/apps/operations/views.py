@@ -753,4 +753,3 @@ class NozzleBulkCommissionView(APIView):
             }, status=status.HTTP_201_CREATED)
         except DjangoValidationError as e:
             return handle_django_validation_error(e)
-

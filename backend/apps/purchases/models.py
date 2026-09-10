@@ -99,6 +99,7 @@ class TankerReceipt(models.Model):
 
     unloading_start_time = models.DateTimeField(blank=True, null=True)
     unloading_end_time = models.DateTimeField(db_index=True)  # effective_at
+    business_date = models.DateField(db_index=True, null=True, blank=True)
 
     status = models.CharField(
         max_length=20,
@@ -173,6 +174,9 @@ class TankerReceipt(models.Model):
             raise ValidationError({'void_reason': "A void reason is required when voiding a receipt."})
 
     def save(self, *args, **kwargs):
+        if not self.business_date and self.unloading_end_time:
+            from apps.core.timezone_utils import to_outlet_business_date
+            self.business_date = to_outlet_business_date(self.unloading_end_time, outlet=getattr(self, 'outlet', None))
         if self.supplier and (not self.supplier_name_snapshot or not self.supplier_code_snapshot):
             self.supplier_name_snapshot = self.supplier.name
             self.supplier_code_snapshot = self.supplier.code

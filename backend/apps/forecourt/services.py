@@ -278,14 +278,14 @@ def update_nozzle(nozzle: Nozzle, **kwargs) -> Nozzle:
 
 
 @transaction.atomic
-def connect_nozzle_to_tank(nozzle: Nozzle, tank: Tank) -> Nozzle:
+def connect_nozzle_to_tank(nozzle: Nozzle, tank: Tank, effective_date=None) -> Nozzle:
     """
     Safely changes the tank connection for a nozzle.
     Enforces tenant and outlet consistency.
     """
     if tank.outlet_id != nozzle.outlet_id:
         raise ValidationError("The nozzle and the connected tank must belong to the same outlet.")
-    
+
     nozzle.tank = tank
     nozzle.save()
     return nozzle
