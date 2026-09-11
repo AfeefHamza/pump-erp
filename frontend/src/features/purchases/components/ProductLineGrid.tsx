@@ -1,8 +1,7 @@
-// frontend/src/features/purchases/components/ProductLineGrid.tsx
 import React, { useRef, useEffect, useMemo } from 'react';
 import { SearchableCombobox, type ComboboxOption } from '@/components/forms/SearchableCombobox';
 import type { PurchaseBillLineInput, PurchaseTaxCode, PurchaseItem } from '@/features/purchases/types';
-import type { FuelProduct } from '@/api/client';
+import type { FuelProduct, ItemOption, TaxTreatment } from '@/api/client';
 import { Trash2, AlertCircle, Plus } from 'lucide-react';
 
 export interface InternalLineItem extends PurchaseBillLineInput {
@@ -17,31 +16,46 @@ export interface InternalLineItem extends PurchaseBillLineInput {
 
 export interface ProductLineGridProps {
   lines: InternalLineItem[];
-  products: FuelProduct[];
-  purchaseItems: PurchaseItem[];
-  taxCodes: PurchaseTaxCode[];
+  products?: FuelProduct[];
+  purchaseItems?: PurchaseItem[];
+  canonicalItems?: ItemOption[];
+  taxCodes?: PurchaseTaxCode[];
+  taxTreatments?: TaxTreatment[];
   isVoided: boolean;
   taxPriceMode?: 'exclusive' | 'inclusive';
   onUpdateLine: (index: number, field: keyof InternalLineItem, value: any) => void;
   onRemoveLine: (index: number) => void;
   onAddLine: () => void;
+  onCreateItem?: () => void;
 }
 
 export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
   lines,
-  products,
-  purchaseItems,
-  taxCodes,
+  products = [],
+  purchaseItems = [],
+  canonicalItems = [],
+  taxCodes = [],
+  taxTreatments = [],
   isVoided,
   taxPriceMode = 'exclusive',
   onUpdateLine,
   onRemoveLine,
-  onAddLine
+  onAddLine,
+  onCreateItem
 }) => {
   const activeRowRef = useRef<number>(0);
 
-  // Map both FuelProducts and PurchaseItems to combobox options
+  // Map Canonical Items, FuelProducts and PurchaseItems to combobox options
   const itemOptions: ComboboxOption[] = useMemo(() => {
+    if (canonicalItems && canonicalItems.length > 0) {
+      return canonicalItems.map((ci) => ({
+        id: `canonical:${ci.id}`,
+        label: ci.name,
+        subLabel: `${ci.item_type.toUpperCase().replace('_', ' ')} | Code: ${ci.code} | Unit: ${ci.base_unit_code} | HSN: ${ci.hsn_sac || 'N/A'}`,
+        tags: [ci.code, ci.name, ci.item_type, ci.hsn_sac || '', ci.base_unit_code]
+      }));
+    }
+
     const fuelOpts: ComboboxOption[] = products.map((p) => ({
       id: `fuel:${p.id}`,
       label: p.name,
@@ -57,7 +71,7 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
     }));
 
     return [...fuelOpts, ...purchaseItemOpts];
-  }, [products, purchaseItems]);
+  }, [canonicalItems, products, purchaseItems]);
 
   // Handle Alt+R shortcut to add row, and Alt+Delete to delete row
   useEffect(() => {
@@ -138,18 +152,32 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
             {taxPriceMode === 'inclusive' ? 'Rates Tax-Inclusive' : 'Rates Tax-Exclusive'}
           </span>
         </div>
-        {!isVoided && (
-          <button
-            type="button"
-            onClick={onAddLine}
-            className="btn btn-secondary btn-sm"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 8px', fontSize: '0.75rem' }}
-            title="Add product row (Alt+R)"
-          >
-            <Plus size={13} />
-            <span>Add Row (Alt+R)</span>
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          {onCreateItem && !isVoided && (
+            <button
+              type="button"
+              onClick={onCreateItem}
+              className="btn btn-secondary btn-sm"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 8px', fontSize: '0.75rem' }}
+              title="Create a new Canonical Item in Item Master"
+            >
+              <Plus size={13} />
+              <span>New Item</span>
+            </button>
+          )}
+          {!isVoided && (
+            <button
+              type="button"
+              onClick={onAddLine}
+              className="btn btn-secondary btn-sm"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 8px', fontSize: '0.75rem' }}
+              title="Add product row (Alt+R)"
+            >
+              <Plus size={13} />
+              <span>Add Row (Alt+R)</span>
+            </button>
+          )}
+        </div>
       </div>
 
       <div style={{ overflowX: 'auto' }}>
@@ -166,7 +194,7 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
                 Rate {taxPriceMode === 'inclusive' ? '(Incl.)' : ''}
               </th>
               <th style={{ width: '130px', padding: '6px 8px' }}>Discount</th>
-              <th style={{ width: '120px', padding: '6px 8px' }}>Tax Code</th>
+              <th style={{ width: '130px', padding: '6px 8px' }}>Tax Treatment</th>
               <th style={{ width: '85px', textAlign: 'right', padding: '6px 8px' }}>Tax</th>
               <th style={{ width: '105px', textAlign: 'right', padding: '6px 8px' }}>Amount</th>
               <th style={{ width: '36px', textAlign: 'center', padding: '6px' }}></th>
@@ -199,7 +227,9 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
                   ? Math.max(0, gross - discount)
                   : Math.max(0, gross - discount) + lineTax);
 
-              const selectedOptionValue = line.product_id
+              const selectedOptionValue = (line as any).item_id
+                ? `canonical:${(line as any).item_id}`
+                : line.product_id
                 ? `fuel:${line.product_id}`
                 : line.purchase_item_id
                 ? `item:${line.purchase_item_id}`
@@ -229,35 +259,65 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
                         id={`line-product-${idx}`}
                         value={selectedOptionValue}
                         options={itemOptions}
-                        placeholder="Select fuel or purchase item..."
+                        placeholder="Select canonical item..."
                         disabled={isVoided}
                         onChange={(selectedId) => {
                           if (!selectedId) {
                             onUpdateLine(idx, 'product_id', null);
                             onUpdateLine(idx, 'purchase_item_id', null);
+                            onUpdateLine(idx, 'item_id' as any, null);
                             return;
                           }
 
-                          if (selectedId.startsWith('fuel:')) {
+                          if (selectedId.startsWith('canonical:')) {
+                            const cId = selectedId.replace('canonical:', '');
+                            const cItem = canonicalItems.find((ci) => ci.id === cId);
+                            onUpdateLine(idx, 'item_id' as any, cId);
+                            onUpdateLine(idx, 'product_id', null);
+                            onUpdateLine(idx, 'purchase_item_id', null);
+                            onUpdateLine(idx, 'line_type', cItem?.item_type === 'fuel' ? 'fuel' : 'other');
+                            if (cItem) {
+                              onUpdateLine(idx, 'description', cItem.name);
+                              onUpdateLine(idx, 'unit', cItem.base_unit_code || 'LTR');
+                              onUpdateLine(idx, 'hsn_sac', cItem.hsn_sac || '');
+                              if (cItem.current_purchase_tax_treatment) {
+                                onUpdateLine(idx, 'tax_treatment_id' as any, cItem.current_purchase_tax_treatment.tax_treatment_id);
+                                onUpdateLine(idx, 'tax_code_id', cItem.current_purchase_tax_treatment.tax_treatment_id);
+                                onUpdateLine(idx, 'tax_treatment', cItem.current_purchase_tax_treatment.tax_regime);
+                                onUpdateLine(idx, 'itc_classification', cItem.current_purchase_tax_treatment.default_itc_classification);
+                              } else if (cItem.item_type === 'fuel') {
+                                onUpdateLine(idx, 'tax_treatment', 'non_gst_petroleum');
+                                const allTreatments = taxTreatments.length > 0 ? taxTreatments : taxCodes;
+                                const petroCode = allTreatments.find((tc) => tc.tax_regime === 'non_gst_petroleum');
+                                if (petroCode) {
+                                  onUpdateLine(idx, 'tax_code_id', petroCode.id);
+                                  onUpdateLine(idx, 'tax_treatment_id' as any, petroCode.id);
+                                }
+                              }
+                            }
+                          } else if (selectedId.startsWith('fuel:')) {
                             const fId = selectedId.replace('fuel:', '');
                             const fuel = products.find((p) => p.id === fId);
                             onUpdateLine(idx, 'product_id', fId);
                             onUpdateLine(idx, 'purchase_item_id', null);
+                            onUpdateLine(idx, 'item_id' as any, null);
                             onUpdateLine(idx, 'line_type', 'fuel');
                             onUpdateLine(idx, 'tax_treatment', 'non_gst_petroleum');
                             onUpdateLine(idx, 'unit', 'LTR');
                             if (fuel) onUpdateLine(idx, 'description', fuel.name);
 
                             // Auto-set petroleum tax code if available
-                            const petroCode = taxCodes.find((tc) => tc.tax_regime === 'non_gst_petroleum');
+                            const petroCode = (taxTreatments.length > 0 ? taxTreatments : taxCodes).find((tc) => tc.tax_regime === 'non_gst_petroleum');
                             if (petroCode) {
                               onUpdateLine(idx, 'tax_code_id', petroCode.id);
+                              onUpdateLine(idx, 'tax_treatment_id' as any, petroCode.id);
                             }
                           } else if (selectedId.startsWith('item:')) {
                             const pId = selectedId.replace('item:', '');
                             const item = purchaseItems.find((i) => i.id === pId);
                             onUpdateLine(idx, 'purchase_item_id', pId);
                             onUpdateLine(idx, 'product_id', null);
+                            onUpdateLine(idx, 'item_id' as any, null);
                             onUpdateLine(idx, 'line_type', 'other');
                             if (item) {
                               onUpdateLine(idx, 'description', item.name);
@@ -265,6 +325,7 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
                               onUpdateLine(idx, 'hsn_sac', item.hsn_sac || '');
                               onUpdateLine(idx, 'tax_treatment', item.purchase_tax_treatment);
                               onUpdateLine(idx, 'tax_code_id', item.default_purchase_tax_code || null);
+                              onUpdateLine(idx, 'tax_treatment_id' as any, item.default_purchase_tax_code || null);
                               onUpdateLine(idx, 'itc_classification', item.default_itc_classification);
                             }
                           }
@@ -430,19 +491,28 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
                       </div>
                     </td>
 
-                    {/* Tax Code */}
+                    {/* Tax Treatment */}
                     <td style={{ padding: '4px 6px' }}>
                       <select
                         className="input"
                         style={{ height: '32px', fontSize: '0.8rem', padding: '2px 4px' }}
-                        value={line.tax_code_id || ''}
+                        value={line.tax_code_id || (line as any).tax_treatment_id || ''}
                         disabled={isVoided}
-                        onChange={(e) => onUpdateLine(idx, 'tax_code_id', e.target.value || null)}
+                        onChange={(e) => {
+                          const val = e.target.value || null;
+                          onUpdateLine(idx, 'tax_code_id', val);
+                          onUpdateLine(idx, 'tax_treatment_id' as any, val);
+                          const allTreatments = taxTreatments.length > 0 ? taxTreatments : taxCodes;
+                          const matched = allTreatments.find((t) => t.id === val);
+                          if (matched) {
+                            onUpdateLine(idx, 'tax_treatment', matched.tax_regime);
+                          }
+                        }}
                       >
-                        <option value="">-- Tax Code --</option>
-                        {taxCodes.map((tc) => (
+                        <option value="">-- Tax Treatment --</option>
+                        {(taxTreatments.length > 0 ? taxTreatments : taxCodes).map((tc) => (
                           <option key={tc.id} value={tc.id}>
-                            {tc.code} ({tc.tax_regime.replace(/_/g, ' ')})
+                            {tc.name || tc.code} ({tc.tax_regime.replace(/_/g, ' ')})
                           </option>
                         ))}
                       </select>

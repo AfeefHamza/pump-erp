@@ -737,3 +737,161 @@ class UnifiedPurchaseBillTaxTestCase(TestCase):
         self.assertEqual(updated_bill.taxable_value_total, Decimal('11000.00'))
         self.assertEqual(updated_bill.cgst_total, Decimal('990.00'))
         self.assertEqual(updated_bill.sgst_total, Decimal('990.00'))
+
+    def test_purchase_tax_code_api_crud_and_permissions(self):
+        """Verify API CRUD operations and permissions for purchase tax codes and rate versions."""
+        self.client.force_authenticate(user=self.user)
+
+        # 1. Create tax code via POST
+        create_url = f"/api/v1/organisations/{self.org.id}/purchase-tax-codes/"
+        payload = {
+            'code': 'GST_12',
+            'name': 'Standard 12%',
+            'tax_regime': 'gst',
+            'description': '12% Tax Code'
+        }
+        res = self.client.post(create_url, payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        code_id = res.json()['id']
+        self.assertEqual(res.json()['code'], 'GST_12')
+
+        # 2. List tax codes via GET
+        res = self.client.get(create_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        codes = [c['code'] for c in res.json()]
+        self.assertIn('GST_12', codes)
+
+        # 3. Update tax code via PUT
+        detail_url = f"/api/v1/organisations/{self.org.id}/purchase-tax-codes/{code_id}/"
+        res = self.client.put(detail_url, {'name': 'Updated 12%'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.json()['name'], 'Updated 12%')
+
+        # 4. Create rate version via POST
+        rate_url = f"/api/v1/organisations/{self.org.id}/purchase-tax-codes/{code_id}/rates/"
+        rate_payload = {
+            'effective_from': '2026-04-01',
+            'gst_rate': '12.00',
+            'cess_rate': '0.00',
+            'cess_per_unit': '0.0000',
+            'components': []
+        }
+        res = self.client.post(rate_url, rate_payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        rate_id = res.json()['id']
+        self.assertEqual(res.json()['gst_rate'], '12.00')
+
+        # 5. Update rate version via PUT
+        rate_detail_url = f"/api/v1/organisations/{self.org.id}/purchase-tax-codes/{code_id}/rates/{rate_id}/"
+        res = self.client.put(rate_detail_url, {'notes': 'Updated rate notes'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        # 6. Delete rate version via DELETE
+        res = self.client.delete(rate_detail_url)
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
+
+        # 7. Verify unauthorized user is rejected with 403 Forbidden
+        other_user = User.objects.create_user(
+            email="unauthorized@example.com",
+            password="password123",
+            display_name="Unauthorized User"
+        )
+        self.client.force_authenticate(user=other_user)
+        res = self.client.post(create_url, payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_purchase_bill_api_creation_with_frontend_workspace_payload(self):
+        """Verify POST /purchase-bills/ works seamlessly with frontend payload modes and detail error format."""
+        self.client.force_authenticate(user=self.user)
+        url = f"/api/v1/organisations/{self.org.id}/outlets/{self.outlet.id}/purchase-bills/"
+
+        # 1. Canonical frontend modes: 'exclusive', 'line', transaction_discount_method='none'
+        payload = {
+            'supplier_id': str(self.supplier_local.id),
+            'supplier_invoice_number': 'INV-FRONTEND-001',
+            'invoice_date': '2026-09-11',
+            'due_date': '2026-10-11',
+            'tax_price_mode': 'exclusive',
+            'discount_mode': 'line',
+            'transaction_discount_method': 'none',
+            'lines': [
+                {
+                    'line_number': 1,
+                    'line_type': 'other',
+                    'purchase_item_id': str(self.item_lube.id),
+                    'quantity': '10.0000',
+                    'unit': 'NOS',
+                    'unit_rate': '100.0000',
+                    'discount_method': 'none',
+                    'tax_treatment': 'gst',
+                    'tax_code_id': str(self.tax_code_gst18.id),
+                }
+            ]
+        }
+        res = self.client.post(url, payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
+        data = res.json()
+        self.assertEqual(data['tax_price_mode'], 'exclusive')
+        self.assertEqual(data['discount_mode'], 'line')
+        self.assertEqual(data['grand_total'], '1180.00')
+
+        # 2. Legacy mode values: 'tax_exclusive', 'line_level'
+        payload_legacy = {
+            'supplier_id': str(self.supplier_local.id),
+            'supplier_invoice_number': 'INV-FRONTEND-002',
+            'invoice_date': '2026-09-11',
+            'due_date': '2026-10-11',
+            'tax_price_mode': 'tax_exclusive',
+            'discount_mode': 'line_level',
+            'transaction_discount_method': 'none',
+            'lines': [
+                {
+                    'line_number': 1,
+                    'line_type': 'other',
+                    'purchase_item_id': str(self.item_lube.id),
+                    'quantity': '5.0000',
+                    'unit': 'NOS',
+                    'unit_rate': '200.0000',
+                    'discount_method': 'none',
+                    'tax_treatment': 'gst',
+                    'tax_code_id': str(self.tax_code_gst18.id),
+                }
+            ]
+        }
+        res_legacy = self.client.post(url, payload_legacy, format='json')
+        self.assertEqual(res_legacy.status_code, status.HTTP_201_CREATED, res_legacy.data)
+        self.assertEqual(res_legacy.json()['tax_price_mode'], 'exclusive')
+        self.assertEqual(res_legacy.json()['discount_mode'], 'line')
+
+        # 3. Model validation error (e.g. duplicate supplier invoice) produces a clean formatted string in 'detail'
+        payload_dup = {
+            'supplier_id': str(self.supplier_local.id),
+            'supplier_invoice_number': 'INV-FRONTEND-001',  # already recorded in step 1
+            'invoice_date': '2026-09-11',
+            'due_date': '2026-10-11',
+            'tax_price_mode': 'exclusive',
+            'discount_mode': 'line',
+            'transaction_discount_method': 'none',
+            'lines': [
+                {
+                    'line_number': 1,
+                    'line_type': 'other',
+                    'purchase_item_id': str(self.item_lube.id),
+                    'quantity': '1.0000',
+                    'unit': 'NOS',
+                    'unit_rate': '100.0000',
+                    'discount_method': 'none',
+                    'tax_treatment': 'gst',
+                    'tax_code_id': str(self.tax_code_gst18.id),
+                }
+            ]
+        }
+        res_dup = self.client.post(url, payload_dup, format='json')
+        self.assertEqual(res_dup.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('detail', res_dup.json())
+        self.assertIsInstance(res_dup.json()['detail'], str)
+        self.assertIn('Supplier Invoice Number', res_dup.json()['detail'])
+        self.assertIn('errors', res_dup.json())
+        self.assertIsInstance(res_dup.json()['errors'], dict)
+
+

@@ -3,6 +3,7 @@ import os
 from decimal import Decimal
 from rest_framework import serializers
 from apps.forecourt.models import Tank, FuelProduct
+from apps.inventory.models import Item
 from .models import (
     Supplier, TankerReceipt, TankerReceiptProductLine,
     TankerReceiptTankAllocation, TankerReceiptAttachment,
@@ -10,7 +11,7 @@ from .models import (
     PurchaseBillAdjustmentComponent, PurchaseBillAttachment,
     PurchaseBillAuditLog, PurchaseTaxCode, PurchaseTaxCodeRate,
     PurchaseTaxCodeComponent, PurchaseItem, ProductPurchaseTaxMapping,
-    PurchaseBillOtherCharge
+    PurchaseBillOtherCharge, ItemPurchaseTaxTreatment
 )
 
 
@@ -238,7 +239,7 @@ class DipConversionPreviewSerializer(serializers.Serializer):
 # Milestone 12 & Tax V2: Purchase Bills, Items & Tax Code Serializers
 # ============================================================================
 
-class PurchaseTaxCodeComponentSerializer(serializers.ModelSerializer):
+class TaxTreatmentComponentSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseTaxCodeComponent
         fields = [
@@ -247,8 +248,8 @@ class PurchaseTaxCodeComponentSerializer(serializers.ModelSerializer):
         ]
 
 
-class PurchaseTaxCodeRateSerializer(serializers.ModelSerializer):
-    components = PurchaseTaxCodeComponentSerializer(many=True, read_only=True)
+class TaxTreatmentRateSerializer(serializers.ModelSerializer):
+    components = TaxTreatmentComponentSerializer(many=True, read_only=True)
     is_locked = serializers.BooleanField(read_only=True)
 
     class Meta:
@@ -260,15 +261,47 @@ class PurchaseTaxCodeRateSerializer(serializers.ModelSerializer):
         ]
 
 
-class PurchaseTaxCodeSerializer(serializers.ModelSerializer):
-    rates = PurchaseTaxCodeRateSerializer(many=True, read_only=True)
+class TaxTreatmentSerializer(serializers.ModelSerializer):
+    rates = TaxTreatmentRateSerializer(many=True, read_only=True)
 
     class Meta:
         model = PurchaseTaxCode
         fields = [
-            'id', 'code', 'name', 'tax_regime', 'description', 'is_active',
+            'id', 'code', 'name', 'tax_regime', 'description',
+            'is_purchase_applicable', 'is_sales_applicable', 'is_active',
             'rates', 'created_at', 'updated_at'
         ]
+
+    def to_internal_value(self, data):
+        data = data.copy()
+        regime = data.get('tax_regime')
+        if regime in ('petroleum', 'vat'):
+            data['tax_regime'] = PurchaseTaxCode.REGIME_NON_GST_PETROLEUM
+        return super().to_internal_value(data)
+
+
+class ItemPurchaseTaxTreatmentSerializer(serializers.ModelSerializer):
+    tax_treatment_code = serializers.CharField(source='tax_treatment.code', read_only=True)
+    tax_treatment_name = serializers.CharField(source='tax_treatment.name', read_only=True)
+    tax_regime = serializers.CharField(source='tax_treatment.tax_regime', read_only=True)
+    item_code = serializers.CharField(source='item.code', read_only=True)
+    item_name = serializers.CharField(source='item.name', read_only=True)
+
+    class Meta:
+        model = ItemPurchaseTaxTreatment
+        fields = [
+            'id', 'item', 'item_code', 'item_name',
+            'tax_treatment', 'tax_treatment_code', 'tax_treatment_name', 'tax_regime',
+            'default_itc_classification', 'effective_from', 'effective_to',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+# Backward-compatible serializer aliases
+PurchaseTaxCodeComponentSerializer = TaxTreatmentComponentSerializer
+PurchaseTaxCodeRateSerializer = TaxTreatmentRateSerializer
+PurchaseTaxCodeSerializer = TaxTreatmentSerializer
 
 
 class PurchaseItemSerializer(serializers.ModelSerializer):
@@ -356,26 +389,35 @@ class PurchaseBillReceiptLinkSerializer(serializers.ModelSerializer):
 
 
 class PurchaseBillLineSerializer(serializers.ModelSerializer):
+    item_id = serializers.UUIDField(source='item.id', read_only=True, allow_null=True)
+    item_name = serializers.CharField(source='item.name', read_only=True, allow_null=True)
+    item_code = serializers.CharField(source='item.code', read_only=True, allow_null=True)
     product_name = serializers.CharField(source='product.name', read_only=True, allow_null=True)
     product_code = serializers.CharField(source='product.code', read_only=True, allow_null=True)
     purchase_item_name = serializers.CharField(source='purchase_item.name', read_only=True, allow_null=True)
     purchase_item_code = serializers.CharField(source='purchase_item.code', read_only=True, allow_null=True)
     tax_code_code = serializers.CharField(source='tax_code.code', read_only=True, allow_null=True)
+    applied_transaction_discount = serializers.DecimalField(source='allocated_transaction_discount', max_digits=15, decimal_places=2, read_only=True)
+    petroleum_tax_total = serializers.DecimalField(source='petroleum_tax_amount', max_digits=15, decimal_places=2, read_only=True)
 
     class Meta:
         model = PurchaseBillLine
         fields = [
             'id', 'line_number', 'receipt_link', 'line_type',
-            'description', 'product', 'product_code', 'product_name',
+            'description', 'item', 'item_id', 'item_code', 'item_name',
+            'product', 'product_code', 'product_name',
             'purchase_item', 'purchase_item_code', 'purchase_item_name',
             'product_code_snapshot', 'product_name_snapshot',
             'quantity', 'unit', 'unit_rate', 'gross_amount',
             'discount_method', 'discount_percentage', 'discount_amount',
-            'applied_transaction_discount', 'taxable_amount',
+            'allocated_transaction_discount', 'applied_transaction_discount', 'taxable_amount',
             'tax_treatment', 'tax_code', 'tax_code_code', 'tax_code_rate_version',
-            'tax_code_snapshot', 'hsn_sac', 'gst_rate',
+            'tax_code_snapshot', 'tax_treatment_id', 'tax_treatment_name', 'tax_regime',
+            'effective_rate_version_id',
+            'hsn_sac', 'gst_rate',
             'cgst_amount', 'sgst_amount', 'igst_amount',
-            'cess_rate', 'cess_amount', 'petroleum_tax_total',
+            'cess_rate', 'cess_amount', 'petroleum_tax_amount', 'petroleum_tax_total',
+            'is_petroleum_manual_override', 'petroleum_manual_override_reason',
             'itc_classification', 'line_total',
             'quantity_override_reason', 'notes'
         ]
@@ -476,6 +518,9 @@ class PurchaseBillDetailSerializer(serializers.ModelSerializer):
     attachments = PurchaseBillAttachmentSerializer(many=True, read_only=True)
     audit_logs = PurchaseBillAuditLogSerializer(many=True, read_only=True)
 
+    place_of_supply_override = serializers.BooleanField(source='is_place_of_supply_overridden', read_only=True)
+    tax_override = serializers.SerializerMethodField()
+    tax_override_reason = serializers.SerializerMethodField()
     is_overdue = serializers.SerializerMethodField()
     days_overdue = serializers.SerializerMethodField()
     linked_tanker_receipts = serializers.SerializerMethodField()
@@ -492,7 +537,8 @@ class PurchaseBillDetailSerializer(serializers.ModelSerializer):
             'invoice_date', 'received_date', 'due_date', 'currency',
             'calculation_version', 'purchase_type', 'tax_price_mode', 'discount_mode',
             'transaction_discount_method', 'transaction_discount_amount', 'transaction_discount_percentage',
-            'place_of_supply_state_code', 'is_interstate', 'place_of_supply_override', 'place_of_supply_override_reason',
+            'place_of_supply_state', 'place_of_supply_state_code', 'is_interstate',
+            'place_of_supply_override', 'place_of_supply_override_reason',
             'tax_override', 'tax_override_reason',
             'subtotal', 'discount_total', 'additional_charges_total',
             'tax_total', 'taxable_value_total', 'cgst_total', 'sgst_total',
@@ -505,6 +551,15 @@ class PurchaseBillDetailSerializer(serializers.ModelSerializer):
             'receipt_links', 'attachments', 'audit_logs',
             'linked_tanker_receipts', 'created_at', 'updated_at'
         ]
+
+    def get_tax_override(self, obj):
+        return any(bool(line.is_petroleum_manual_override) for line in obj.lines.all())
+
+    def get_tax_override_reason(self, obj):
+        for line in obj.lines.all():
+            if line.petroleum_manual_override_reason:
+                return line.petroleum_manual_override_reason
+        return None
 
     def _get_today(self, obj):
         from apps.core.timezone_utils import to_outlet_business_date
@@ -545,6 +600,7 @@ class PurchaseBillLineInputSerializer(serializers.Serializer):
         default=PurchaseBillLine.LINE_TYPE_FUEL
     )
     description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    item_id = serializers.UUIDField(required=False, allow_null=True)
     product_id = serializers.UUIDField(required=False, allow_null=True)
     purchase_item_id = serializers.UUIDField(required=False, allow_null=True)
     quantity = serializers.DecimalField(max_digits=15, decimal_places=4, min_value=Decimal('0.0000'))
@@ -560,10 +616,11 @@ class PurchaseBillLineInputSerializer(serializers.Serializer):
         max_digits=15, decimal_places=2, min_value=Decimal('0.00'), required=False, default=Decimal('0.00')
     )
     discount_percentage = serializers.DecimalField(
-        max_digits=5, decimal_places=2, min_value=Decimal('0.00'), required=False, default=Decimal('0.00')
+        max_digits=5, decimal_places=2, min_value=Decimal('0.00'), required=False, allow_null=True, default=None
     )
 
     tax_treatment = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    tax_treatment_id = serializers.UUIDField(required=False, allow_null=True)
     tax_code_id = serializers.UUIDField(required=False, allow_null=True)
     hsn_sac = serializers.CharField(max_length=20, required=False, allow_blank=True, allow_null=True)
     itc_classification = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -575,23 +632,30 @@ class PurchaseBillLineInputSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     def validate(self, attrs):
+        # Support tax_treatment_id as alternative to tax_code_id
+        if attrs.get('tax_treatment_id') and not attrs.get('tax_code_id'):
+            attrs['tax_code_id'] = attrs['tax_treatment_id']
+
         method = attrs.get('discount_method') or 'none'
         amt = attrs.get('discount_amount') or Decimal('0.00')
-        pct = attrs.get('discount_percentage') or Decimal('0.00')
+        pct = attrs.get('discount_percentage')
 
         if method == 'none' and amt > Decimal('0.00'):
             method = 'fixed_amount'
             attrs['discount_method'] = 'fixed_amount'
 
         if method == 'fixed_amount':
-            if pct > Decimal('0.00'):
+            if pct is not None and pct > Decimal('0.00'):
                 raise serializers.ValidationError({'discount_percentage': "Discount percentage must be 0 when discount method is fixed amount."})
+            attrs['discount_percentage'] = None
         elif method == 'percentage':
             if amt > Decimal('0.00'):
                 raise serializers.ValidationError({'discount_amount': "Discount amount must be 0 when discount method is percentage."})
         elif method == 'none':
-            if amt > Decimal('0.00') or pct > Decimal('0.00'):
+            if amt > Decimal('0.00') or (pct is not None and pct > Decimal('0.00')):
                 raise serializers.ValidationError("Discount amount/percentage must be 0 when discount method is none.")
+            attrs['discount_percentage'] = None
+            attrs['discount_amount'] = Decimal('0.00')
 
         return attrs
 
@@ -644,12 +708,12 @@ class PurchaseBillCreateUpdateSerializer(serializers.Serializer):
         required=False
     )
     tax_price_mode = serializers.ChoiceField(
-        choices=['exclusive', 'inclusive'],
+        choices=['exclusive', 'inclusive', 'tax_exclusive', 'tax_inclusive'],
         default='exclusive',
         required=False
     )
     discount_mode = serializers.ChoiceField(
-        choices=['line', 'transaction'],
+        choices=['line', 'transaction', 'line_level', 'transaction_level'],
         default='line',
         required=False
     )
@@ -662,7 +726,7 @@ class PurchaseBillCreateUpdateSerializer(serializers.Serializer):
         max_digits=15, decimal_places=2, min_value=Decimal('0.00'), required=False, default=Decimal('0.00')
     )
     transaction_discount_percentage = serializers.DecimalField(
-        max_digits=5, decimal_places=2, min_value=Decimal('0.00'), required=False, default=Decimal('0.00')
+        max_digits=5, decimal_places=2, min_value=Decimal('0.00'), required=False, allow_null=True, default=None
     )
 
     place_of_supply_override = serializers.BooleanField(default=False, required=False)
@@ -685,24 +749,40 @@ class PurchaseBillCreateUpdateSerializer(serializers.Serializer):
             if attrs['due_date'] < attrs['invoice_date']:
                 raise serializers.ValidationError({'due_date': "Due date cannot precede invoice date."})
 
+        # Normalize modes
+        tax_mode = attrs.get('tax_price_mode', 'exclusive')
+        if tax_mode in ('tax_exclusive', 'exclusive'):
+            attrs['tax_price_mode'] = 'exclusive'
+        elif tax_mode in ('tax_inclusive', 'inclusive'):
+            attrs['tax_price_mode'] = 'inclusive'
+
+        disc_mode = attrs.get('discount_mode', 'line')
+        if disc_mode in ('line_level', 'line'):
+            attrs['discount_mode'] = 'line'
+        elif disc_mode in ('transaction_level', 'transaction'):
+            attrs['discount_mode'] = 'transaction'
+
         # Discount exclusivity
         disc_method = attrs.get('transaction_discount_method') or 'none'
         disc_amt = attrs.get('transaction_discount_amount') or Decimal('0.00')
-        disc_pct = attrs.get('transaction_discount_percentage') or Decimal('0.00')
+        disc_pct = attrs.get('transaction_discount_percentage')
 
         if disc_method == 'none' and disc_amt > Decimal('0.00'):
             disc_method = 'fixed_amount'
             attrs['transaction_discount_method'] = 'fixed_amount'
 
         if disc_method == 'fixed_amount':
-            if disc_pct > Decimal('0.00'):
+            if disc_pct is not None and disc_pct > Decimal('0.00'):
                 raise serializers.ValidationError({'transaction_discount_percentage': "Discount percentage must be 0 when transaction discount method is fixed amount."})
+            attrs['transaction_discount_percentage'] = None
         elif disc_method == 'percentage':
             if disc_amt > Decimal('0.00'):
                 raise serializers.ValidationError({'transaction_discount_amount': "Discount amount must be 0 when transaction discount method is percentage."})
         elif disc_method == 'none':
-            if disc_amt > Decimal('0.00') or disc_pct > Decimal('0.00'):
+            if disc_amt > Decimal('0.00') or (disc_pct is not None and disc_pct > Decimal('0.00')):
                 raise serializers.ValidationError("Transaction discount amount/percentage must be 0 when discount method is none.")
+            attrs['transaction_discount_percentage'] = None
+            attrs['transaction_discount_amount'] = Decimal('0.00')
 
         # POS override validation
         if attrs.get('place_of_supply_override'):

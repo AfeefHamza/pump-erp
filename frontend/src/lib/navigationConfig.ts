@@ -58,13 +58,12 @@ export const navigationMenu: MenuSection[] = [
       { name: 'Purchase Bills', path: '/app/purchases/purchase-bills', icon: ShoppingBag },
       { name: 'Supplier Outstanding', path: '/app/purchases/supplier-outstanding', icon: DollarSign },
       { name: 'Suppliers', path: '/app/purchases/suppliers', icon: Briefcase },
-      { name: 'Purchase Items', path: '/app/purchases/items', icon: Tags },
-      { name: 'Tax Codes', path: '/app/purchases/tax-codes', icon: FileText },
     ],
   },
   {
     title: 'INVENTORY',
     items: [
+      { name: 'Items', path: '/app/inventory/items', icon: BookOpen },
       { name: 'Fuel Stock', path: '/app/inventory/fuel-stock', icon: Layers },
       { name: 'Lubricants', path: '/app/inventory/lubricants', icon: Compass },
       { name: 'Stock Transfers', path: '/app/inventory/stock-transfers', icon: Shuffle },

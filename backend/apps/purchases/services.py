@@ -7,6 +7,7 @@ from apps.organizations.models import Organisation, Outlet
 from apps.forecourt.models import Tank, FuelProduct
 from apps.operations.services import convert_dip_to_volume
 from apps.organizations.permissions import require_permission, has_permission
+from apps.inventory.models import Item
 from .models import (
     Supplier, TankerReceipt, TankerReceiptProductLine,
     TankerReceiptTankAllocation, TankerReceiptAttachment,
@@ -14,7 +15,8 @@ from .models import (
     PurchaseBillLine, PurchaseBillAdjustmentComponent,
     PurchaseBillAttachment, PurchaseBillAuditLog,
     PurchaseTaxCode, PurchaseTaxCodeRate, PurchaseTaxCodeComponent,
-    PurchaseItem, ProductPurchaseTaxMapping, PurchaseBillOtherCharge
+    PurchaseItem, ProductPurchaseTaxMapping, PurchaseBillOtherCharge,
+    ItemPurchaseTaxTreatment
 )
 
 
@@ -170,21 +172,57 @@ def create_purchase_item(
     default_itc_classification: str = PurchaseItem.ITC_PENDING_REVIEW,
     is_active: bool = True
 ) -> PurchaseItem:
-    item = PurchaseItem(
+    """
+    Legacy compatibility bridge: Routes purchase item creation to authoritative Item master.
+    """
+    from apps.inventory.models import UnitMaster, Item
+    from apps.inventory.services_item import create_canonical_item
+
+    # Find or seed base unit
+    unit_obj = UnitMaster.objects.filter(
+        organisation=organisation
+    ).filter(
+        models.Q(code__iexact=unit) | models.Q(name__iexact=unit) | models.Q(code__iexact='PCS')
+    ).first()
+    if not unit_obj:
+        unit_obj = UnitMaster.objects.create(organisation=organisation, code=(unit or 'PCS')[:20].upper(), name=(unit or 'Piece')[:50].title())
+
+    canonical_type = Item.ITEM_TYPE_SERVICE if item_type == PurchaseItem.TYPE_SERVICE else Item.ITEM_TYPE_STOCK
+
+    # Check if canonical item already exists
+    existing_item = Item.objects.filter(organisation=organisation, code__iexact=code).first()
+    if existing_item:
+        legacy_pi = PurchaseItem.objects.filter(canonical_item=existing_item).first()
+        if legacy_pi:
+            return legacy_pi
+
+    canonical = create_canonical_item(
         organisation=organisation,
         code=code,
         name=name,
-        item_type=item_type,
-        unit=unit,
+        item_type=canonical_type,
+        base_unit=unit_obj,
         hsn_sac=hsn_sac,
-        purchase_tax_treatment=purchase_tax_treatment,
-        default_purchase_tax_code=default_purchase_tax_code,
+        is_active=is_active,
+        tax_treatment_id=default_purchase_tax_code.id if default_purchase_tax_code else None,
         default_itc_classification=default_itc_classification,
-        is_active=is_active
     )
-    item.full_clean()
-    item.save()
-    return item
+    pi = PurchaseItem.objects.filter(canonical_item=canonical).first()
+    if not pi:
+        pi = PurchaseItem.objects.create(
+            organisation=organisation,
+            code=code,
+            name=name,
+            item_type=item_type,
+            unit=unit,
+            hsn_sac=hsn_sac,
+            purchase_tax_treatment=purchase_tax_treatment,
+            default_purchase_tax_code=default_purchase_tax_code,
+            default_itc_classification=default_itc_classification,
+            is_active=is_active,
+            canonical_item=canonical
+        )
+    return pi
 
 
 @transaction.atomic
@@ -192,12 +230,35 @@ def update_purchase_item(
     item: PurchaseItem,
     **kwargs
 ) -> PurchaseItem:
-    for k, v in kwargs.items():
-        if hasattr(item, k):
-            setattr(item, k, v)
-    item.full_clean()
-    item.save()
-    return item
+    """
+    Legacy compatibility bridge: Routes updates through authoritative Item master.
+    """
+    from apps.inventory.services_item import update_canonical_item
+    if item.canonical_item:
+        update_data = {}
+        if 'name' in kwargs:
+            update_data['name'] = kwargs['name']
+        if 'code' in kwargs:
+            update_data['code'] = kwargs['code']
+        if 'hsn_sac' in kwargs:
+            update_data['hsn_sac'] = kwargs['hsn_sac']
+        if 'is_active' in kwargs:
+            update_data['is_active'] = kwargs['is_active']
+        if 'default_purchase_tax_code' in kwargs and kwargs['default_purchase_tax_code']:
+            update_data['tax_treatment_id'] = kwargs['default_purchase_tax_code'].id
+        if 'default_itc_classification' in kwargs:
+            update_data['default_itc_classification'] = kwargs['default_itc_classification']
+
+        update_canonical_item(item.canonical_item, **update_data)
+        item.refresh_from_db()
+        return item
+    else:
+        for k, v in kwargs.items():
+            if hasattr(item, k):
+                setattr(item, k, v)
+        item.full_clean()
+        item.save()
+        return item
 
 
 @transaction.atomic
@@ -897,7 +958,7 @@ def calculate_bill_totals_v2(
 
     # Discount handling
     total_tx_discount = Decimal('0.00')
-    if discount_mode == PurchaseBill.DISCOUNT_MODE_TRANSACTION:
+    if discount_mode in (PurchaseBill.DISCOUNT_MODE_TRANSACTION, 'transaction', 'transaction_level'):
         if transaction_discount_method == PurchaseBill.DISCOUNT_METHOD_NONE:
             if (transaction_discount_amount and transaction_discount_amount > Decimal('0.00')) or (transaction_discount_percentage and transaction_discount_percentage > Decimal('0.00')):
                 raise ValidationError("Transaction discount amount and percentage must be 0 when method is none.")
@@ -978,13 +1039,50 @@ def calculate_bill_totals_v2(
         net_after_discount = max(Decimal('0.00'), gross - discount)
         qty = pline['quantity']
 
-        tax_treatment = l.get('tax_treatment', 'gst')
+        tax_treatment = l.get('tax_treatment')
         itc_classification = l.get('itc_classification', PurchaseItem.ITC_PENDING_REVIEW)
+
+        # Canonical item resolution
+        canonical_item = None
+        item_id = l.get('item_id')
+        if item_id:
+            try:
+                canonical_item = Item.objects.get(id=item_id, organisation=organisation)
+            except Item.DoesNotExist:
+                raise ValidationError(f"Item '{item_id}' not found in this organisation.")
+        elif l.get('product_id'):
+            fp = FuelProduct.objects.filter(id=l.get('product_id'), organisation=organisation).first()
+            if fp and fp.canonical_item:
+                canonical_item = fp.canonical_item
+        elif l.get('purchase_item_id'):
+            pi = PurchaseItem.objects.filter(id=l.get('purchase_item_id'), organisation=organisation).first()
+            if pi and pi.canonical_item:
+                canonical_item = pi.canonical_item
 
         tax_code = None
         rate_version = None
-        tax_code_id = l.get('tax_code_id') or (l.get('tax_code').id if hasattr(l.get('tax_code'), 'id') else None)
-        if tax_code_id:
+        tax_code_id = l.get('tax_code_id') or l.get('tax_treatment_id') or (l.get('tax_code').id if hasattr(l.get('tax_code'), 'id') else None)
+
+        if not tax_code_id and canonical_item:
+            mapping = ItemPurchaseTaxTreatment.objects.filter(
+                organisation=organisation,
+                item=canonical_item,
+                effective_from__lte=invoice_date,
+            ).filter(
+                models.Q(effective_to__isnull=True) | models.Q(effective_to__gte=invoice_date)
+            ).select_related('tax_treatment').first()
+            if mapping:
+                tax_code = mapping.tax_treatment
+                rate_version = resolve_tax_code_rate_version(tax_code, invoice_date, organisation)
+                if not l.get('itc_classification'):
+                    itc_classification = mapping.default_itc_classification
+                if not tax_treatment:
+                    tax_treatment = 'non_gst_petroleum' if tax_code.tax_regime in ('petroleum', 'non_gst') else 'gst'
+
+        if not tax_treatment:
+            tax_treatment = 'gst'
+
+        if tax_code_id and not tax_code:
             tax_code = PurchaseTaxCode.objects.get(id=tax_code_id, organisation=organisation)
             rate_version = resolve_tax_code_rate_version(tax_code, invoice_date, organisation)
 
@@ -1021,7 +1119,7 @@ def calculate_bill_totals_v2(
                 sgst_rate = half_rate
                 igst_rate = Decimal('0.00')
 
-            if tax_price_mode == PurchaseBill.TAX_MODE_INCLUSIVE:
+            if tax_price_mode in (PurchaseBill.TAX_MODE_INCLUSIVE, 'inclusive', 'tax_inclusive'):
                 per_unit_cess = (qty * c_per_unit).quantize(Decimal('0.01'))
                 inclusive_net = max(Decimal('0.00'), net_after_discount - per_unit_cess)
                 total_pct = gst_rate + cess_rate
@@ -1117,10 +1215,17 @@ def calculate_bill_totals_v2(
             'description': l.get('description'),
             'product_id': l.get('product_id'),
             'purchase_item_id': l.get('purchase_item_id'),
+            'item_id': canonical_item.id if canonical_item else l.get('item_id'),
+            'item': canonical_item,
+            'tanker_receipt_line_id': l.get('tanker_receipt_line_id'),
             'tax_treatment': tax_treatment,
             'tax_code': tax_code,
             'tax_code_rate_version': rate_version,
             'tax_code_snapshot': tax_code.code if tax_code else None,
+            'tax_treatment_id': tax_code.id if tax_code else None,
+            'tax_treatment_name': tax_code.name if tax_code else (tax_treatment or ''),
+            'tax_regime': tax_code.tax_regime if tax_code else (tax_treatment or ''),
+            'effective_rate_version_id': rate_version.id if rate_version else None,
             'hsn_sac': l.get('hsn_sac') or (tax_code.code if tax_code else None),
             'itc_classification': itc_classification,
             'discount_method': pline['discount_method'],
@@ -1159,7 +1264,7 @@ def calculate_bill_totals_v2(
     igst_charges_sum = Decimal('0.00')
 
     charges_data = other_charges_data or []
-    lines_net_base = max(Decimal('0.00'), lines_gross_subtotal - (total_tx_discount if discount_mode == PurchaseBill.DISCOUNT_MODE_TRANSACTION else sum(pl['discount_amount'] for pl in processed_lines)))
+    lines_net_base = max(Decimal('0.00'), lines_gross_subtotal - (total_tx_discount if discount_mode in (PurchaseBill.DISCOUNT_MODE_TRANSACTION, 'transaction', 'transaction_level') else sum(pl['discount_amount'] for pl in processed_lines)))
 
     for idx, c in enumerate(charges_data, start=1):
         c_calc_type = c.get('calculation_type', PurchaseBillOtherCharge.CALC_FIXED)
@@ -1230,7 +1335,7 @@ def calculate_bill_totals_v2(
     tax_total = cgst_total + sgst_total + igst_total + gst_cess_total + petroleum_tax_total
     additional_charges_total = other_charges_subtotal
 
-    if tax_price_mode == PurchaseBill.TAX_MODE_INCLUSIVE:
+    if tax_price_mode in (PurchaseBill.TAX_MODE_INCLUSIVE, 'inclusive', 'tax_inclusive'):
         grand_total = (subtotal - total_discounts) + additional_charges_total + other_charges_tax_total + round_off_amount
     else:
         grand_total = subtotal - total_discounts + tax_total + additional_charges_total + round_off_amount
@@ -1367,6 +1472,20 @@ def create_purchase_bill(
     # Auto-adjust discount method if amount provided but method is none
     if transaction_discount_amount and transaction_discount_amount > Decimal('0.00') and transaction_discount_method == PurchaseBill.DISCOUNT_METHOD_NONE:
         transaction_discount_method = PurchaseBill.DISCOUNT_METHOD_FIXED
+
+    if transaction_discount_method in (PurchaseBill.DISCOUNT_METHOD_NONE, PurchaseBill.DISCOUNT_METHOD_FIXED):
+        if transaction_discount_percentage == Decimal('0.00'):
+            transaction_discount_percentage = None
+
+    if tax_price_mode in ('exclusive', 'tax_exclusive'):
+        tax_price_mode = 'exclusive'
+    elif tax_price_mode in ('inclusive', 'tax_inclusive'):
+        tax_price_mode = 'inclusive'
+
+    if discount_mode in ('line', 'line_level'):
+        discount_mode = 'line'
+    elif discount_mode in ('transaction', 'transaction_level'):
+        discount_mode = 'transaction'
 
     if calculation_version == PurchaseBill.CALC_LEGACY_V1:
         calc = calculate_bill_totals(lines_data, adjustments_data or [])
@@ -1525,18 +1644,36 @@ def create_purchase_bill(
                 created_by=user
             )
 
+        canonical_item = line_info.get('item')
+        if not canonical_item and line_info.get('item_id'):
+            canonical_item = Item.objects.filter(id=line_info['item_id'], organisation=organisation).first()
+
         product = None
         prod_id = line_info.get('product_id')
         if prod_id:
             product = FuelProduct.objects.get(id=prod_id, organisation=organisation)
+            if not canonical_item and product.canonical_item:
+                canonical_item = product.canonical_item
 
         purchase_item = None
-        item_id = line_info.get('purchase_item_id')
-        if item_id:
-            purchase_item = PurchaseItem.objects.get(id=item_id, organisation=organisation)
+        p_item_id = line_info.get('purchase_item_id')
+        if p_item_id:
+            purchase_item = PurchaseItem.objects.get(id=p_item_id, organisation=organisation)
+            if not canonical_item and purchase_item.canonical_item:
+                canonical_item = purchase_item.canonical_item
 
-        p_code = product.code if product else (purchase_item.code if purchase_item else None)
-        p_name = product.name if product else (purchase_item.name if purchase_item else None)
+        if canonical_item:
+            if canonical_item.item_type == Item.ITEM_TYPE_FUEL and not product:
+                product = getattr(canonical_item, 'legacy_fuel_product', None) or FuelProduct.objects.filter(canonical_item=canonical_item).first()
+            elif canonical_item.item_type != Item.ITEM_TYPE_FUEL and not purchase_item:
+                purchase_item = getattr(canonical_item, 'legacy_purchase_item', None) or PurchaseItem.objects.filter(canonical_item=canonical_item).first()
+
+        # Enforce fuel-only for tanker receipt linkage
+        if receipt_link and canonical_item and canonical_item.item_type != Item.ITEM_TYPE_FUEL:
+            raise ValidationError("Only fuel items can be linked to tanker receipts.")
+
+        p_code = canonical_item.code if canonical_item else (product.code if product else (purchase_item.code if purchase_item else None))
+        p_name = canonical_item.name if canonical_item else (product.name if product else (purchase_item.name if purchase_item else None))
 
         if line_info.get('is_petroleum_manual_override'):
             has_tax_override = True
@@ -1552,6 +1689,7 @@ def create_purchase_bill(
             receipt_link=receipt_link,
             line_type=line_info['line_type'],
             description=line_info.get('description'),
+            item=canonical_item,
             product=product,
             purchase_item=purchase_item,
             product_code_snapshot=p_code,
@@ -1560,6 +1698,10 @@ def create_purchase_bill(
             tax_code=line_info.get('tax_code'),
             tax_code_rate_version=line_info.get('tax_code_rate_version'),
             tax_code_snapshot=line_info.get('tax_code_snapshot'),
+            tax_treatment_id=line_info.get('tax_treatment_id'),
+            tax_treatment_name=line_info.get('tax_treatment_name') or '',
+            tax_regime=line_info.get('tax_regime') or '',
+            effective_rate_version_id=line_info.get('effective_rate_version_id'),
             hsn_sac=line_info.get('hsn_sac'),
             gst_rate=line_info.get('gst_rate', Decimal('0.00')),
             cgst_rate=line_info.get('cgst_rate', Decimal('0.00')),
@@ -1891,18 +2033,36 @@ def update_purchase_bill(
                     created_by=user
                 )
 
+            canonical_item = line_info.get('item')
+            if not canonical_item and line_info.get('item_id'):
+                canonical_item = Item.objects.filter(id=line_info['item_id'], organisation=bill.organisation).first()
+
             product = None
             prod_id = line_info.get('product_id')
             if prod_id:
                 product = FuelProduct.objects.get(id=prod_id, organisation=bill.organisation)
+                if not canonical_item and product.canonical_item:
+                    canonical_item = product.canonical_item
 
             purchase_item = None
-            item_id = line_info.get('purchase_item_id')
-            if item_id:
-                purchase_item = PurchaseItem.objects.get(id=item_id, organisation=bill.organisation)
+            p_item_id = line_info.get('purchase_item_id')
+            if p_item_id:
+                purchase_item = PurchaseItem.objects.get(id=p_item_id, organisation=bill.organisation)
+                if not canonical_item and purchase_item.canonical_item:
+                    canonical_item = purchase_item.canonical_item
 
-            p_code = product.code if product else (purchase_item.code if purchase_item else None)
-            p_name = product.name if product else (purchase_item.name if purchase_item else None)
+            if canonical_item:
+                if canonical_item.item_type == Item.ITEM_TYPE_FUEL and not product:
+                    product = getattr(canonical_item, 'legacy_fuel_product', None) or FuelProduct.objects.filter(canonical_item=canonical_item).first()
+                elif canonical_item.item_type != Item.ITEM_TYPE_FUEL and not purchase_item:
+                    purchase_item = getattr(canonical_item, 'legacy_purchase_item', None) or PurchaseItem.objects.filter(canonical_item=canonical_item).first()
+
+            # Enforce fuel-only for tanker receipt linkage
+            if receipt_link and canonical_item and canonical_item.item_type != Item.ITEM_TYPE_FUEL:
+                raise ValidationError("Only fuel items can be linked to tanker receipts.")
+
+            p_code = canonical_item.code if canonical_item else (product.code if product else (purchase_item.code if purchase_item else None))
+            p_name = canonical_item.name if canonical_item else (product.name if product else (purchase_item.name if purchase_item else None))
 
             if line_info.get('is_petroleum_manual_override'):
                 has_tax_override = True
@@ -1918,6 +2078,7 @@ def update_purchase_bill(
                 receipt_link=receipt_link,
                 line_type=line_info['line_type'],
                 description=line_info.get('description'),
+                item=canonical_item,
                 product=product,
                 purchase_item=purchase_item,
                 product_code_snapshot=p_code,
@@ -1926,6 +2087,10 @@ def update_purchase_bill(
                 tax_code=line_info.get('tax_code'),
                 tax_code_rate_version=line_info.get('tax_code_rate_version'),
                 tax_code_snapshot=line_info.get('tax_code_snapshot'),
+                tax_treatment_id=line_info.get('tax_treatment_id'),
+                tax_treatment_name=line_info.get('tax_treatment_name') or '',
+                tax_regime=line_info.get('tax_regime') or '',
+                effective_rate_version_id=line_info.get('effective_rate_version_id'),
                 hsn_sac=line_info.get('hsn_sac'),
                 gst_rate=line_info.get('gst_rate', Decimal('0.00')),
                 cgst_rate=line_info.get('cgst_rate', Decimal('0.00')),

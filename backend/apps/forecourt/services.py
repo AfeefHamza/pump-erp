@@ -1,5 +1,5 @@
 # apps/forecourt/services.py
-from django.db import transaction
+from django.db import transaction, models
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from .models import FuelProduct, ProductPrice, Tank, Dispenser, Nozzle
@@ -7,41 +7,128 @@ from .models import FuelProduct, ProductPrice, Tank, Dispenser, Nozzle
 @transaction.atomic
 def create_fuel_product(organisation, code: str, name: str, **kwargs) -> FuelProduct:
     """
-    Creates a new FuelProduct scoped to the organisation.
+    Legacy compatibility bridge: Routes fuel product creation through canonical Item master.
     """
-    return FuelProduct.objects.create(
+    from apps.inventory.models import UnitMaster, Item
+    from apps.inventory.services_item import create_canonical_item
+
+    # Find or seed base unit (default LTR)
+    unit_str = kwargs.get('unit', FuelProduct.UNIT_LITRE)
+    unit_obj = UnitMaster.objects.filter(
+        organisation=organisation
+    ).filter(
+        models.Q(code__iexact=unit_str) | models.Q(name__iexact=unit_str) | models.Q(code__iexact='LTR')
+    ).first()
+    if not unit_obj:
+        unit_obj = UnitMaster.objects.create(organisation=organisation, code='LTR', name='Litre', symbol='L')
+
+    # Check if canonical item exists
+    existing_item = Item.objects.filter(organisation=organisation, code__iexact=code).first()
+    if existing_item:
+        legacy_fp = FuelProduct.objects.filter(canonical_item=existing_item).first()
+        if legacy_fp:
+            return legacy_fp
+
+    fuel_profile_data = {
+        'fuel_category': kwargs.get('category', FuelProduct.CATEGORY_PETROL),
+        'custom_category_name': kwargs.get('custom_category_name'),
+        'short_code': kwargs.get('short_name'),
+        'stock_unit': unit_obj,
+        'density_std': kwargs.get('density_std'),
+        'density_min': kwargs.get('density_min'),
+        'density_max': kwargs.get('density_max'),
+        'price_configuration_eligible': kwargs.get('price_configuration_eligible', True),
+        'forecourt_display_order': kwargs.get('display_order', 0),
+    }
+
+    canonical = create_canonical_item(
         organisation=organisation,
         code=code,
         name=name,
         short_name=kwargs.get('short_name'),
-        category=kwargs.get('category', FuelProduct.CATEGORY_PETROL),
-        custom_category_name=kwargs.get('custom_category_name'),
-        unit=kwargs.get('unit', FuelProduct.UNIT_LITRE),
+        item_type=Item.ITEM_TYPE_FUEL,
+        base_unit=unit_obj,
+        is_active=kwargs.get('is_active', True),
         display_order=kwargs.get('display_order', 0),
-        is_active=kwargs.get('is_active', True)
+        fuel_profile_data=fuel_profile_data,
     )
+
+    legacy_unit = FuelProduct.UNIT_KILOGRAM if str(unit_str).upper() in ('KG', 'KILOGRAM') else FuelProduct.UNIT_LITRE
+    fp = FuelProduct.objects.filter(canonical_item=canonical).first()
+    if not fp:
+        fp = FuelProduct.objects.create(
+            organisation=organisation,
+            code=code,
+            name=name,
+            short_name=kwargs.get('short_name'),
+            category=kwargs.get('category', FuelProduct.CATEGORY_PETROL),
+            custom_category_name=kwargs.get('custom_category_name'),
+            unit=legacy_unit,
+            display_order=kwargs.get('display_order', 0),
+            is_active=kwargs.get('is_active', True),
+            canonical_item=canonical
+        )
+    return fp
 
 
 @transaction.atomic
 def update_fuel_product(product: FuelProduct, **kwargs) -> FuelProduct:
     """
-    Updates field values on an existing FuelProduct.
+    Legacy compatibility bridge: Routes fuel product updates through canonical Item master.
     """
-    for field in ['code', 'name', 'short_name', 'category', 'custom_category_name', 'unit', 'display_order', 'is_active']:
-        if field in kwargs:
-            setattr(product, field, kwargs[field])
-    product.save()
-    return product
+    from apps.inventory.services_item import update_canonical_item
+    if product.canonical_item:
+        update_data = {}
+        if 'name' in kwargs:
+            update_data['name'] = kwargs['name']
+        if 'code' in kwargs:
+            update_data['code'] = kwargs['code']
+        if 'short_name' in kwargs:
+            update_data['short_name'] = kwargs['short_name']
+        if 'is_active' in kwargs:
+            update_data['is_active'] = kwargs['is_active']
+        if 'display_order' in kwargs:
+            update_data['display_order'] = kwargs['display_order']
+
+        fp_profile = {}
+        if 'category' in kwargs:
+            fp_profile['fuel_category'] = kwargs['category']
+        if 'custom_category_name' in kwargs:
+            fp_profile['custom_category_name'] = kwargs['custom_category_name']
+        if 'density_std' in kwargs:
+            fp_profile['density_std'] = kwargs['density_std']
+        if 'density_min' in kwargs:
+            fp_profile['density_min'] = kwargs['density_min']
+        if 'density_max' in kwargs:
+            fp_profile['density_max'] = kwargs['density_max']
+        if fp_profile:
+            update_data['fuel_profile'] = fp_profile
+
+        update_canonical_item(product.canonical_item, **update_data)
+        product.refresh_from_db()
+        return product
+    else:
+        for field in ['code', 'name', 'short_name', 'category', 'custom_category_name', 'unit', 'display_order', 'is_active']:
+            if field in kwargs:
+                setattr(product, field, kwargs[field])
+        product.save()
+        return product
 
 
 @transaction.atomic
 def deactivate_fuel_product(product: FuelProduct) -> FuelProduct:
     """
-    Sets a FuelProduct status to inactive.
+    Legacy compatibility bridge: Deactivates fuel product and its canonical Item.
     """
-    product.is_active = False
-    product.save()
-    return product
+    from apps.inventory.services_item import deactivate_canonical_item
+    if product.canonical_item:
+        deactivate_canonical_item(product.canonical_item)
+        product.refresh_from_db()
+        return product
+    else:
+        product.is_active = False
+        product.save()
+        return product
 
 
 @transaction.atomic

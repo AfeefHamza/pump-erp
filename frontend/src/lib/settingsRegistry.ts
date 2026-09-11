@@ -8,6 +8,7 @@ import {
   Clock, 
   ClipboardCheck, 
   Contact,
+  Percent,
   type LucideIcon
 } from 'lucide-react';
 
@@ -77,14 +78,27 @@ export const settingsRegistry: SettingCategory[] = [
     ],
   },
   {
+    category: 'TAXATION & COMPLIANCE',
+    items: [
+      {
+        label: 'Tax Treatments',
+        description: 'Statutory GST rates, exemptions & tax regimes',
+        route: '/app/settings/tax-treatments',
+        anyOfPermissions: ['settings.view', 'role.view', 'outlet.view'],
+        keywords: ['tax treatments', 'gst', 'exempt', 'nil rated', 'statutory', 'tax codes'],
+        icon: Percent,
+      },
+    ],
+  },
+  {
     category: 'FUEL & FORECOURT',
     items: [
       {
-        label: 'Products & Pricing',
-        description: 'Fuel grades, products & tax rules',
-        route: '/app/settings/products',
-        anyOfPermissions: ['fuel_product.view'],
-        keywords: ['products', 'pricing', 'fuel grades', 'tax', 'petrol', 'diesel'],
+        label: 'Fuel Items (Master)',
+        description: 'Canonical fuel grades & item master catalog',
+        route: '/app/inventory/items?type=fuel',
+        anyOfPermissions: ['fuel_product.view', 'settings.view'],
+        keywords: ['fuel items', 'products', 'pricing', 'fuel grades', 'tax', 'petrol', 'diesel'],
         icon: Fuel,
       },
       {

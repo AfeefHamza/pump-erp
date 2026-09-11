@@ -17,6 +17,8 @@ vi.mock('@/api/client', () => {
     fetchFuelProducts: vi.fn(),
     fetchPurchaseItems: vi.fn(),
     fetchPurchaseTaxCodes: vi.fn(),
+    fetchItemOptions: vi.fn(),
+    fetchTaxTreatments: vi.fn(),
     previewPurchaseBillCalculation: vi.fn(),
     fetchAvailableTankerReceipts: vi.fn(),
     fetchPurchaseBillDetail: vi.fn(),
@@ -224,6 +226,8 @@ const createTestStore = () => {
           'purchase_bill.edit',
           'purchase_bill.void',
           'purchase_tax_code.view',
+          'purchase_tax_code.create',
+          'purchase_tax_code.update',
           'purchase_tax_code.manage'
         ],
         loading: false,
@@ -254,6 +258,8 @@ describe('Unified Purchase Bills Taxation & Master Integration', () => {
     vi.mocked(apiClient.fetchFuelProducts).mockResolvedValue(mockFuelProducts as any);
     vi.mocked(apiClient.fetchPurchaseItems).mockResolvedValue(mockPurchaseItems as any);
     vi.mocked(apiClient.fetchPurchaseTaxCodes).mockResolvedValue(mockTaxCodes as any);
+    vi.mocked(apiClient.fetchItemOptions).mockResolvedValue([]);
+    vi.mocked(apiClient.fetchTaxTreatments).mockResolvedValue([]);
     vi.mocked(apiClient.fetchAvailableTankerReceipts).mockResolvedValue([]);
     vi.mocked(apiClient.previewPurchaseBillCalculation).mockResolvedValue({
       status: 'success',

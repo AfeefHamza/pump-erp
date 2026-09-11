@@ -18,8 +18,13 @@ import {
   fetchAvailableTankerReceipts,
   uploadPurchaseBillAttachment,
   getPurchaseBillAttachmentDownloadUrl,
-  type FuelProduct
+  fetchItemOptions,
+  fetchTaxTreatments,
+  type FuelProduct,
+  type ItemOption,
+  type TaxTreatment
 } from '@/api/client';
+import { ItemDrawer } from '@/features/inventory/components/ItemDrawer';
 import type {
   Supplier,
   PurchaseBillDetail,
@@ -69,7 +74,10 @@ export const PurchaseBillWorkspace: React.FC = () => {
   const [fuelProducts, setFuelProducts] = useState<FuelProduct[]>([]);
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
   const [taxCodes, setTaxCodes] = useState<PurchaseTaxCode[]>([]);
+  const [canonicalItems, setCanonicalItems] = useState<ItemOption[]>([]);
+  const [taxTreatments, setTaxTreatments] = useState<TaxTreatment[]>([]);
   const [availableReceipts, setAvailableReceipts] = useState<AvailableTankerReceipt[]>([]);
+  const [itemDrawerOpen, setItemDrawerOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -154,8 +162,22 @@ export const PurchaseBillWorkspace: React.FC = () => {
   // Navigation guard
   const { confirmNavigation } = useUnsavedChanges(isDirty && !isVoided);
 
-  const showToast = useCallback((message: string, type: 'success' | 'error') => {
-    setToast({ message, type });
+  const showToast = useCallback((message: any, type: 'success' | 'error') => {
+    let msgStr = '';
+    if (typeof message === 'string') {
+      msgStr = message;
+    } else if (message && typeof message === 'object') {
+      if (message.detail) {
+        msgStr = typeof message.detail === 'string'
+          ? message.detail
+          : Object.entries(message.detail).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' | ');
+      } else {
+        msgStr = Object.entries(message).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' | ');
+      }
+    } else {
+      msgStr = String(message || 'An error occurred');
+    }
+    setToast({ message: msgStr, type });
     setTimeout(() => setToast(null), 4000);
   }, []);
 
@@ -206,16 +228,20 @@ export const PurchaseBillWorkspace: React.FC = () => {
     if (!activeOrgId || !activeOutletId) return;
     setLoading(true);
     try {
-      const [suppliersData, productsData, itemsData, taxCodesData] = await Promise.all([
+      const [suppliersData, productsData, itemsData, taxCodesData, canonicalItemsData, taxTreatmentsData] = await Promise.all([
         fetchSuppliers(activeOrgId).catch(() => []),
         fetchFuelProducts(activeOrgId, { status: 'active' }).catch(() => []),
         fetchPurchaseItems(activeOrgId, { is_active: 'true' }).catch(() => []),
-        fetchPurchaseTaxCodes(activeOrgId).catch(() => [])
+        fetchPurchaseTaxCodes(activeOrgId).catch(() => []),
+        fetchItemOptions(activeOrgId, { purchasable_only: 'true' }).catch(() => []),
+        fetchTaxTreatments(activeOrgId, { purchase_only: 'true' }).catch(() => [])
       ]);
       setSuppliers(suppliersData);
       setFuelProducts(productsData);
       setPurchaseItems(itemsData);
       setTaxCodes(taxCodesData);
+      setCanonicalItems(canonicalItemsData);
+      setTaxTreatments(taxTreatmentsData);
 
       if (!isNew && billId) {
         const billData = await fetchPurchaseBillDetail(activeOrgId, activeOutletId, billId);
@@ -602,6 +628,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
         lines: lines.map((l, idx) => ({
           line_number: idx + 1,
           line_type: l.line_type || 'fuel',
+          item_id: (l as any).item_id || null,
           product_id: l.product_id || null,
           purchase_item_id: l.purchase_item_id || null,
           quantity: l.quantity,
@@ -611,7 +638,8 @@ export const PurchaseBillWorkspace: React.FC = () => {
           discount_amount: l.discount_method === 'fixed_amount' ? l.discount_amount : undefined,
           discount_percentage: l.discount_method === 'percentage' ? l.discount_percentage : undefined,
           tax_treatment: l.tax_treatment || 'gst',
-          tax_code_id: l.tax_code_id || null,
+          tax_code_id: l.tax_code_id || (l as any).tax_treatment_id || null,
+          tax_treatment_id: (l as any).tax_treatment_id || l.tax_code_id || null,
           hsn_sac: l.hsn_sac || null,
           itc_classification: l.itc_classification || 'not_applicable',
           is_petroleum_manual_override: l.is_petroleum_manual_override,
@@ -918,6 +946,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
           tanker_receipt_line_id: l.tanker_receipt_line_id || null,
           line_type: l.line_type || 'fuel',
           description: l.description || null,
+          item_id: (l as any).item_id || null,
           product_id: l.product_id || null,
           purchase_item_id: l.purchase_item_id || null,
           quantity: l.quantity,
@@ -927,7 +956,8 @@ export const PurchaseBillWorkspace: React.FC = () => {
           discount_amount: l.discount_method === 'fixed_amount' ? l.discount_amount : undefined,
           discount_percentage: l.discount_method === 'percentage' ? l.discount_percentage : undefined,
           tax_treatment: l.tax_treatment || 'gst',
-          tax_code_id: l.tax_code_id || null,
+          tax_code_id: l.tax_code_id || (l as any).tax_treatment_id || null,
+          tax_treatment_id: (l as any).tax_treatment_id || l.tax_code_id || null,
           hsn_sac: l.hsn_sac || null,
           itc_classification: l.itc_classification || 'not_applicable',
           is_petroleum_manual_override: l.is_petroleum_manual_override,
@@ -1017,7 +1047,16 @@ export const PurchaseBillWorkspace: React.FC = () => {
       }
     } catch (err: any) {
       console.error(err);
-      const errMsg = err?.data?.detail || err?.data?.error || err.message || 'Failed to save purchase bill.';
+      let errMsg = 'Failed to save purchase bill.';
+      if (typeof err?.message === 'string') {
+        errMsg = err.message;
+      } else if (typeof err?.data?.detail === 'string') {
+        errMsg = err.data.detail;
+      } else if (err?.data?.detail && typeof err.data.detail === 'object') {
+        errMsg = Object.entries(err.data.detail).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' | ');
+      } else if (err?.data?.error) {
+        errMsg = typeof err.data.error === 'string' ? err.data.error : JSON.stringify(err.data.error);
+      }
       showToast(errMsg, 'error');
 
       if (
@@ -1144,7 +1183,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
           }}
         >
           {toast.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-          <span>{toast.message}</span>
+          <span>{typeof toast.message === 'string' ? toast.message : JSON.stringify(toast.message)}</span>
         </div>
       )}
 
@@ -1649,12 +1688,15 @@ export const PurchaseBillWorkspace: React.FC = () => {
           lines={lines}
           products={fuelProducts}
           purchaseItems={purchaseItems}
+          canonicalItems={canonicalItems}
           taxCodes={taxCodes}
+          taxTreatments={taxTreatments}
           isVoided={isVoided}
           taxPriceMode={taxPriceMode}
           onUpdateLine={handleUpdateProductLine}
           onRemoveLine={handleRemoveProductLine}
           onAddLine={handleAddProductLine}
+          onCreateItem={() => setItemDrawerOpen(true)}
         />
       </div>
 
@@ -2190,6 +2232,17 @@ export const PurchaseBillWorkspace: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Canonical Item Drawer (Quick Create without losing bill state) */}
+      <ItemDrawer
+        isOpen={itemDrawerOpen}
+        onClose={() => setItemDrawerOpen(false)}
+        onSaved={async () => {
+          if (activeOrgId) {
+            const updated = await fetchItemOptions(activeOrgId, { purchasable_only: 'true' }).catch(() => []);
+            setCanonicalItems(updated);
+          }
+        }}
+      />
     </div>
   );
 };

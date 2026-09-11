@@ -17,6 +17,8 @@ vi.mock('@/api/client', () => {
     fetchFuelProducts: vi.fn(),
     fetchPurchaseItems: vi.fn(),
     fetchPurchaseTaxCodes: vi.fn(),
+    fetchItemOptions: vi.fn(),
+    fetchTaxTreatments: vi.fn(),
     previewPurchaseBillCalculation: vi.fn(),
     fetchAvailableTankerReceipts: vi.fn(),
     fetchPurchaseBillDetail: vi.fn(),
@@ -216,6 +218,8 @@ describe('PurchaseBillWorkspace Keyboard-First ERP Workspace (Section 14 Verific
     vi.mocked(apiClient.fetchFuelProducts).mockResolvedValue(mockProducts as any);
     vi.mocked(apiClient.fetchPurchaseItems).mockResolvedValue([] as any);
     vi.mocked(apiClient.fetchPurchaseTaxCodes).mockResolvedValue([] as any);
+    vi.mocked(apiClient.fetchItemOptions).mockResolvedValue([] as any);
+    vi.mocked(apiClient.fetchTaxTreatments).mockResolvedValue([] as any);
     vi.mocked(apiClient.fetchAvailableTankerReceipts).mockResolvedValue(mockReceipts as any);
     vi.mocked(apiClient.fetchPurchaseBillDetail).mockResolvedValue(mockExistingBill as any);
   });

@@ -225,6 +225,8 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'shift.void', 'shift.lock', 'shift.unlock',
                 'tanker_receipt.view', 'tanker_receipt.create', 'tanker_receipt.update', 'tanker_receipt.confirm', 'tanker_receipt.void',
                 'fuel_stock.view', 'fuel_stock.adjust', 'fuel_stock.override_book_quantity',
+                'item.view', 'item.create', 'item.update', 'item.deactivate',
+                'tax_treatment.view', 'tax_treatment.create', 'tax_treatment.update', 'tax_treatment.deactivate',
             ]
         },
         {
@@ -260,6 +262,8 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'shift.void', 'shift.lock',
                 'tanker_receipt.view', 'tanker_receipt.create', 'tanker_receipt.update', 'tanker_receipt.confirm',
                 'fuel_stock.view',
+                'item.view', 'item.create', 'item.update', 'item.deactivate',
+                'tax_treatment.view', 'tax_treatment.create', 'tax_treatment.update',
             ]
         },
         {
@@ -289,6 +293,8 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'collection.view',
                 'shift_deduction.view',
                 'reconciliation.view', 'reconciliation.reconcile',
+                'item.view',
+                'tax_treatment.view', 'tax_treatment.create', 'tax_treatment.update',
             ]
         },
         {
@@ -298,6 +304,7 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'organisation.view',
                 'outlet.view',
                 'fuel_product.view',
+                'item.view',
                 'product_price.view',
                 'tank.view',
                 'dispenser.view',

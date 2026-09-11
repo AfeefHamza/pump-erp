@@ -3,7 +3,7 @@ import os
 from decimal import Decimal
 from django.http import Http404, FileResponse
 from django.shortcuts import get_object_or_404
-from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.exceptions import ValidationError as DjangoValidationError, PermissionDenied
 from django.utils.dateparse import parse_date
 from rest_framework import status
 from rest_framework.views import APIView
@@ -21,7 +21,8 @@ from .models import (
     PurchaseBillAdjustmentComponent, PurchaseBillAttachment,
     PurchaseBillAuditLog, PurchaseTaxCode, PurchaseTaxCodeRate,
     PurchaseTaxCodeComponent, PurchaseItem, ProductPurchaseTaxMapping,
-    PurchaseBillOtherCharge
+    PurchaseTaxCodeComponent, PurchaseItem, ProductPurchaseTaxMapping,
+    PurchaseBillOtherCharge, ItemPurchaseTaxTreatment
 )
 from .serializers import (
     SupplierSerializer, TankerReceiptListSerializer,
@@ -33,7 +34,9 @@ from .serializers import (
     PurchaseBillAttachmentSerializer,
     PurchaseTaxCodeSerializer, PurchaseTaxCodeRateSerializer,
     PurchaseTaxCodeComponentSerializer, PurchaseItemSerializer,
-    ProductPurchaseTaxMappingSerializer, PurchaseBillOtherChargeSerializer
+    ProductPurchaseTaxMappingSerializer, PurchaseBillOtherChargeSerializer,
+    TaxTreatmentSerializer, TaxTreatmentRateSerializer,
+    TaxTreatmentComponentSerializer, ItemPurchaseTaxTreatmentSerializer
 )
 from .selectors import (
     list_suppliers, list_tanker_receipts, get_tanker_receipt_detail,
@@ -71,7 +74,12 @@ def _get_org_and_outlet(org_id, outlet_id):
 
 def _handle_validation_error(exc):
     if hasattr(exc, 'message_dict'):
-        return Response({'detail': exc.message_dict}, status=status.HTTP_400_BAD_REQUEST)
+        formatted = []
+        for field, msgs in exc.message_dict.items():
+            f_name = field.replace('_', ' ').title() if field != '__all__' else ''
+            m_str = ', '.join(str(m) for m in (msgs if isinstance(msgs, list) else [msgs]))
+            formatted.append(f"{f_name}: {m_str}" if f_name else m_str)
+        return Response({'detail': " | ".join(formatted), 'errors': exc.message_dict}, status=status.HTTP_400_BAD_REQUEST)
     return Response({'detail': str(exc.message if hasattr(exc, 'message') else exc)}, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -656,7 +664,7 @@ class PurchaseTaxCodeListCreateView(APIView):
 
     def post(self, request, org_id):
         org = _get_org(org_id)
-        require_permission(request.user, org, 'purchase_tax_code.manage')
+        require_permission(request.user, org, 'purchase_tax_code.create')
         serializer = PurchaseTaxCodeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -689,7 +697,7 @@ class PurchaseTaxCodeDetailView(APIView):
 
     def put(self, request, org_id, code_id):
         org = _get_org(org_id)
-        require_permission(request.user, org, 'purchase_tax_code.manage')
+        require_permission(request.user, org, 'purchase_tax_code.update')
         code = get_purchase_tax_code_detail(code_id, org)
         if not code:
             raise Http404("Purchase tax code not found.")
@@ -710,7 +718,8 @@ class PurchaseTaxCodeRateCreateView(APIView):
 
     def post(self, request, org_id, code_id):
         org = _get_org(org_id)
-        require_permission(request.user, org, 'purchase_tax_code.manage')
+        if not (has_permission(request.user, org, 'purchase_tax_code.create') or has_permission(request.user, org, 'purchase_tax_code.update')):
+            raise PermissionDenied("You do not have permission to perform this action.")
         code = get_purchase_tax_code_detail(code_id, org)
         if not code:
             raise Http404("Purchase tax code not found.")
@@ -744,18 +753,19 @@ class PurchaseTaxCodeRateUpdateView(APIView):
 
     def put(self, request, org_id, code_id, rate_id):
         org = _get_org(org_id)
-        require_permission(request.user, org, 'purchase_tax_code.manage')
+        require_permission(request.user, org, 'purchase_tax_code.update')
         get_object_or_404(PurchaseTaxCode, id=code_id, organisation=org)
+        rate = get_object_or_404(PurchaseTaxCodeRate, id=rate_id, tax_code_id=code_id)
 
         try:
-            updated = update_purchase_tax_code_rate(rate_id, org, request.data)
+            updated = update_purchase_tax_code_rate(rate, **request.data)
             return Response(PurchaseTaxCodeRateSerializer(updated).data, status=status.HTTP_200_OK)
         except DjangoValidationError as e:
             return _handle_validation_error(e)
 
     def delete(self, request, org_id, code_id, rate_id):
         org = _get_org(org_id)
-        require_permission(request.user, org, 'purchase_tax_code.manage')
+        require_permission(request.user, org, 'purchase_tax_code.update')
         get_object_or_404(PurchaseTaxCode, id=code_id, organisation=org)
         rate = get_object_or_404(PurchaseTaxCodeRate, id=rate_id, tax_code_id=code_id)
 
@@ -766,12 +776,179 @@ class PurchaseTaxCodeRateUpdateView(APIView):
             return _handle_validation_error(e)
 
 
+def _has_tax_treatment_perm(user, org, action):
+    return (
+        has_permission(user, org, f'tax_treatment.{action}') or
+        has_permission(user, org, f'purchase_tax_code.{action}') or
+        (action == 'deactivate' and (has_permission(user, org, 'purchase_tax_code.update') or has_permission(user, org, 'purchase_tax_code.manage'))) or
+        has_permission(user, org, 'purchase_tax_code.manage')
+    )
+
+
+class TaxTreatmentListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id):
+        org = _get_org(org_id)
+        if not _has_tax_treatment_perm(request.user, org, 'view'):
+            require_permission(request.user, org, 'tax_treatment.view')
+
+        active_only = request.query_params.get('active_only', 'false').lower() == 'true'
+        tax_regime = request.query_params.get('tax_regime')
+        is_purchase = request.query_params.get('is_purchase_applicable')
+        is_sales = request.query_params.get('is_sales_applicable')
+        search = request.query_params.get('search')
+
+        from django.db.models import Q
+        qs = PurchaseTaxCode.objects.filter(organisation=org).prefetch_related('rates__components')
+        if active_only:
+            qs = qs.filter(is_active=True)
+        if tax_regime:
+            qs = qs.filter(tax_regime=tax_regime)
+        if is_purchase is not None:
+            qs = qs.filter(is_purchase_applicable=is_purchase.lower() == 'true')
+        if is_sales is not None:
+            qs = qs.filter(is_sales_applicable=is_sales.lower() == 'true')
+        if search:
+            search = search.strip()
+            qs = qs.filter(Q(code__icontains=search) | Q(name__icontains=search) | Q(description__icontains=search))
+
+        return Response(TaxTreatmentSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+
+    def post(self, request, org_id):
+        org = _get_org(org_id)
+        if not _has_tax_treatment_perm(request.user, org, 'create'):
+            require_permission(request.user, org, 'tax_treatment.create')
+
+        serializer = TaxTreatmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            code = create_purchase_tax_code(
+                organisation=org,
+                code=data['code'],
+                name=data.get('name', data['code']),
+                tax_regime=data.get('tax_regime', PurchaseTaxCode.REGIME_GST),
+                description=data.get('description'),
+                is_active=data.get('is_active', True)
+            )
+            if 'is_purchase_applicable' in data or 'is_sales_applicable' in data:
+                if 'is_purchase_applicable' in data:
+                    code.is_purchase_applicable = data['is_purchase_applicable']
+                if 'is_sales_applicable' in data:
+                    code.is_sales_applicable = data['is_sales_applicable']
+                code.save(update_fields=['is_purchase_applicable', 'is_sales_applicable'])
+
+            detail = get_purchase_tax_code_detail(code.id, org)
+            return Response(TaxTreatmentSerializer(detail).data, status=status.HTTP_201_CREATED)
+        except DjangoValidationError as e:
+            return _handle_validation_error(e)
+
+
+class TaxTreatmentDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, code_id):
+        org = _get_org(org_id)
+        if not _has_tax_treatment_perm(request.user, org, 'view'):
+            require_permission(request.user, org, 'tax_treatment.view')
+        code = get_purchase_tax_code_detail(code_id, org)
+        if not code:
+            raise Http404("Tax treatment not found.")
+        return Response(TaxTreatmentSerializer(code).data, status=status.HTTP_200_OK)
+
+    def put(self, request, org_id, code_id):
+        org = _get_org(org_id)
+        if not _has_tax_treatment_perm(request.user, org, 'update'):
+            require_permission(request.user, org, 'tax_treatment.update')
+        code = get_purchase_tax_code_detail(code_id, org)
+        if not code:
+            raise Http404("Tax treatment not found.")
+
+        serializer = TaxTreatmentSerializer(code, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            updated = update_purchase_tax_code(code, **serializer.validated_data)
+            detail = get_purchase_tax_code_detail(updated.id, org)
+            return Response(TaxTreatmentSerializer(detail).data, status=status.HTTP_200_OK)
+        except DjangoValidationError as e:
+            return _handle_validation_error(e)
+
+
+class TaxTreatmentDeactivateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, code_id):
+        org = _get_org(org_id)
+        if not _has_tax_treatment_perm(request.user, org, 'deactivate'):
+            require_permission(request.user, org, 'tax_treatment.deactivate')
+        code = get_purchase_tax_code_detail(code_id, org)
+        if not code:
+            raise Http404("Tax treatment not found.")
+
+        code.is_active = False
+        code.save(update_fields=['is_active'])
+        return Response(TaxTreatmentSerializer(code).data, status=status.HTTP_200_OK)
+
+
+TaxTreatmentRateCreateView = PurchaseTaxCodeRateCreateView
+TaxTreatmentRateUpdateView = PurchaseTaxCodeRateUpdateView
+
+
+class ItemTaxTreatmentListCreateView(APIView):
+    """
+    GET/POST /api/v1/organisations/<org_id>/items/<item_id>/tax-treatments/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, item_id):
+        org = _get_org(org_id)
+        require_permission(request.user, org, 'item.view')
+        from apps.inventory.models import Item
+        item = get_object_or_404(Item, id=item_id, organisation=org)
+        qs = ItemPurchaseTaxTreatment.objects.filter(item=item, organisation=org).select_related('tax_treatment')
+        return Response(ItemPurchaseTaxTreatmentSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+
+    def post(self, request, org_id, item_id):
+        org = _get_org(org_id)
+        require_permission(request.user, org, 'item.update')
+        from apps.inventory.models import Item
+        item = get_object_or_404(Item, id=item_id, organisation=org)
+
+        tax_treatment_id = request.data.get('tax_treatment_id') or request.data.get('tax_treatment')
+        if not tax_treatment_id:
+            return Response({'detail': "Tax treatment ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        tax_treatment = get_object_or_404(PurchaseTaxCode, id=tax_treatment_id, organisation=org)
+        eff_from = request.data.get('effective_from')
+        if not eff_from:
+            return Response({'detail': "Effective from date is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            mapping = ItemPurchaseTaxTreatment(
+                organisation=org,
+                item=item,
+                tax_treatment=tax_treatment,
+                default_itc_classification=request.data.get('default_itc_classification', ItemPurchaseTaxTreatment.ITC_PENDING_REVIEW),
+                effective_from=eff_from,
+                effective_to=request.data.get('effective_to') or None
+            )
+            mapping.full_clean()
+            mapping.save()
+            return Response(ItemPurchaseTaxTreatmentSerializer(mapping).data, status=status.HTTP_201_CREATED)
+        except DjangoValidationError as e:
+            return _handle_validation_error(e)
+
+
 class PurchaseItemListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, org_id):
         org = _get_org(org_id)
-        require_permission(request.user, org, 'purchase_bill.view')
+        if not (has_permission(request.user, org, 'purchase_item.view') or has_permission(request.user, org, 'purchase_bill.view')):
+            raise PermissionDenied("You do not have permission to perform this action.")
         active_only = request.query_params.get('active_only', 'false').lower() == 'true'
         item_type = request.query_params.get('item_type')
         items = list_purchase_items(org, active_only=active_only, item_type=item_type)
@@ -779,7 +956,8 @@ class PurchaseItemListCreateView(APIView):
 
     def post(self, request, org_id):
         org = _get_org(org_id)
-        require_permission(request.user, org, 'purchase_bill.create')
+        if not (has_permission(request.user, org, 'purchase_item.create') or has_permission(request.user, org, 'purchase_bill.create')):
+            raise PermissionDenied("You do not have permission to perform this action.")
         serializer = PurchaseItemSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -807,7 +985,8 @@ class PurchaseItemDetailView(APIView):
 
     def get(self, request, org_id, item_id):
         org = _get_org(org_id)
-        require_permission(request.user, org, 'purchase_bill.view')
+        if not (has_permission(request.user, org, 'purchase_item.view') or has_permission(request.user, org, 'purchase_bill.view')):
+            raise PermissionDenied("You do not have permission to perform this action.")
         item = get_purchase_item_detail(item_id, org)
         if not item:
             raise Http404("Purchase item not found.")
@@ -815,7 +994,8 @@ class PurchaseItemDetailView(APIView):
 
     def put(self, request, org_id, item_id):
         org = _get_org(org_id)
-        require_permission(request.user, org, 'purchase_bill.create')
+        if not (has_permission(request.user, org, 'purchase_item.update') or has_permission(request.user, org, 'purchase_bill.create') or has_permission(request.user, org, 'purchase_bill.update')):
+            raise PermissionDenied("You do not have permission to perform this action.")
         item = get_purchase_item_detail(item_id, org)
         if not item:
             raise Http404("Purchase item not found.")

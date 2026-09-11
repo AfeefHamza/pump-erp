@@ -14,7 +14,10 @@ from .views import (
     PurchaseTaxCodeRateCreateView, PurchaseTaxCodeRateUpdateView,
     PurchaseItemListCreateView, PurchaseItemDetailView,
     ProductPurchaseTaxMappingListCreateView,
-    PurchaseBillCalculatePreviewView
+    PurchaseBillCalculatePreviewView,
+    TaxTreatmentListCreateView, TaxTreatmentDetailView,
+    TaxTreatmentRateCreateView, TaxTreatmentRateUpdateView,
+    TaxTreatmentDeactivateView, ItemTaxTreatmentListCreateView
 )
 
 urlpatterns = [
@@ -22,7 +25,17 @@ urlpatterns = [
     path('<uuid:org_id>/suppliers/', SupplierListCreateView.as_view(), name='supplier_list_create'),
     path('<uuid:org_id>/suppliers/<uuid:supplier_id>/', SupplierDetailView.as_view(), name='supplier_detail'),
 
-    # Purchase Tax Codes (Organisation-scoped)
+    # Tax Treatments (Settings - Organisation-scoped)
+    path('<uuid:org_id>/tax-treatments/', TaxTreatmentListCreateView.as_view(), name='tax_treatment_list_create'),
+    path('<uuid:org_id>/tax-treatments/<uuid:code_id>/', TaxTreatmentDetailView.as_view(), name='tax_treatment_detail'),
+    path('<uuid:org_id>/tax-treatments/<uuid:code_id>/rates/', TaxTreatmentRateCreateView.as_view(), name='tax_treatment_rate_create'),
+    path('<uuid:org_id>/tax-treatments/<uuid:code_id>/rates/<uuid:rate_id>/', TaxTreatmentRateUpdateView.as_view(), name='tax_treatment_rate_update'),
+    path('<uuid:org_id>/tax-treatments/<uuid:code_id>/deactivate/', TaxTreatmentDeactivateView.as_view(), name='tax_treatment_deactivate'),
+
+    # Item Tax Treatments Mapping (Organisation-scoped)
+    path('<uuid:org_id>/items/<uuid:item_id>/tax-treatments/', ItemTaxTreatmentListCreateView.as_view(), name='item_tax_treatment_list_create'),
+
+    # Legacy Purchase Tax Codes (Organisation-scoped backward-compatibility)
     path('<uuid:org_id>/purchase-tax-codes/', PurchaseTaxCodeListCreateView.as_view(), name='purchase_tax_code_list_create'),
     path('<uuid:org_id>/purchase-tax-codes/<uuid:code_id>/', PurchaseTaxCodeDetailView.as_view(), name='purchase_tax_code_detail'),
     path('<uuid:org_id>/purchase-tax-codes/<uuid:code_id>/rates/', PurchaseTaxCodeRateCreateView.as_view(), name='purchase_tax_code_rate_create'),

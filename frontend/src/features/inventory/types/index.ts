@@ -130,3 +130,144 @@ export interface StockAdjustmentInput {
   explanation: string;
   attachment?: File | null;
 }
+
+export type ItemType = 'fuel' | 'stock_item' | 'non_stock_item' | 'service';
+export type InventoryTrackingMode = 'tank' | 'quantity' | 'none';
+
+export interface UnitMaster {
+  id: string;
+  code: string;
+  name: string;
+  unit_type: 'volume' | 'weight' | 'quantity' | 'service';
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface UnitConversion {
+  id: string;
+  item?: string | null;
+  from_unit: string;
+  from_unit_code?: string;
+  from_unit_name?: string;
+  to_unit: string;
+  to_unit_code?: string;
+  to_unit_name?: string;
+  multiplier: string;
+  inverse_multiplier?: string;
+  is_active: boolean;
+}
+
+export interface FuelItemProfile {
+  id?: string;
+  fuel_type: 'motor_spirit' | 'high_speed_diesel' | 'cng' | 'lpg' | 'other';
+  density_standard?: string | null;
+  color_code?: string | null;
+}
+
+export interface StockItemProfile {
+  id?: string;
+  reorder_level?: string | null;
+  reorder_quantity?: string | null;
+  barcode?: string | null;
+  storage_location?: string | null;
+}
+
+export interface ResolvedTaxTreatment {
+  tax_treatment_id: string;
+  tax_treatment_name: string;
+  tax_regime: string;
+  default_itc_classification: string;
+  effective_from?: string;
+  effective_to?: string | null;
+}
+
+export interface Item {
+  id: string;
+  code: string;
+  name: string;
+  item_type: ItemType;
+  inventory_tracking_mode: InventoryTrackingMode;
+  base_unit: string;
+  base_unit_code?: string;
+  base_unit_name?: string;
+  base_unit_type?: string;
+  hsn_sac?: string | null;
+  description?: string | null;
+  is_active: boolean;
+  is_purchasable: boolean;
+  is_sellable: boolean;
+  fuel_profile?: FuelItemProfile | null;
+  stock_profile?: StockItemProfile | null;
+  current_purchase_tax_treatment?: ResolvedTaxTreatment | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ItemOption {
+  id: string;
+  code: string;
+  name: string;
+  item_type: ItemType;
+  inventory_tracking_mode: InventoryTrackingMode;
+  base_unit_id: string;
+  base_unit_code: string;
+  base_unit_name: string;
+  hsn_sac?: string | null;
+  is_purchasable: boolean;
+  is_sellable: boolean;
+  fuel_profile?: FuelItemProfile | null;
+  current_purchase_tax_treatment?: ResolvedTaxTreatment | null;
+}
+
+export interface TaxTreatmentComponent {
+  id?: string;
+  name: string;
+  component_type: 'vat' | 'additional_tax' | 'cess' | 'excise' | 'other_levy';
+  calculation_base: 'discounted_line_value' | 'taxable_value' | 'value_plus_previous_components' | 'quantity' | 'manual_invoice_amount';
+  calculation_type: 'percentage' | 'per_unit' | 'fixed_amount';
+  rate_value: string;
+  is_inclusive: boolean;
+  sequence: number;
+}
+
+export interface TaxTreatmentRate {
+  id: string;
+  tax_treatment?: string;
+  tax_code?: string;
+  effective_from: string;
+  effective_to?: string | null;
+  gst_rate: string;
+  cess_rate: string;
+  cess_per_unit: string;
+  notes?: string | null;
+  is_locked: boolean;
+  components: TaxTreatmentComponent[];
+  created_at: string;
+}
+
+export interface TaxTreatment {
+  id: string;
+  code: string;
+  name: string;
+  tax_regime: 'gst' | 'non_gst_petroleum' | 'exempt' | 'nil_rated' | 'out_of_scope';
+  description?: string | null;
+  is_active: boolean;
+  is_purchase_applicable: boolean;
+  is_sales_applicable: boolean;
+  rates: TaxTreatmentRate[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ItemPurchaseTaxTreatment {
+  id: string;
+  item: string;
+  tax_treatment: string;
+  tax_treatment_name?: string;
+  tax_treatment_code?: string;
+  tax_regime?: string;
+  default_itc_classification: 'not_applicable' | 'pending_review' | 'eligible_inputs' | 'eligible_capital_goods' | 'eligible_input_services' | 'ineligible_blocked' | 'ineligible_other';
+  effective_from: string;
+  effective_to?: string | null;
+}
+

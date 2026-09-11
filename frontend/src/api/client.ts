@@ -111,15 +111,39 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    let fieldMsg: string | null = null;
-    if (typeof errorData === 'object' && errorData !== null) {
-      const vals = Object.values(errorData).flat();
-      if (vals.length > 0 && typeof vals[0] === 'string') {
-        fieldMsg = vals[0];
+    let messageStr = 'An API error occurred';
+
+    const extractString = (val: unknown): string | null => {
+      if (!val) return null;
+      if (typeof val === 'string') return val;
+      if (Array.isArray(val)) {
+        const joined = val.map(extractString).filter(Boolean).join(', ');
+        return joined || null;
       }
+      if (typeof val === 'object' && val !== null) {
+        const parts = Object.entries(val as Record<string, unknown>).map(([k, v]) => {
+          const sub = extractString(v);
+          const formattedKey = k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+          return sub ? (k === '__all__' || k === 'detail' ? sub : `${formattedKey}: ${sub}`) : null;
+        }).filter(Boolean);
+        return parts.join(' | ') || null;
+      }
+      return String(val);
+    };
+
+    if (errorData.detail) {
+      messageStr = extractString(errorData.detail) || messageStr;
+    } else if (errorData.non_field_errors) {
+      messageStr = extractString(errorData.non_field_errors) || messageStr;
+    } else if (errorData.error) {
+      messageStr = extractString(errorData.error) || messageStr;
+    } else if (errorData.message) {
+      messageStr = extractString(errorData.message) || messageStr;
+    } else if (typeof errorData === 'object' && errorData !== null) {
+      messageStr = extractString(errorData) || messageStr;
     }
-    const message = errorData.detail || errorData.non_field_errors?.[0] || fieldMsg || 'An API error occurred';
-    throw new ApiError(message, response.status, errorData);
+
+    throw new ApiError(messageStr, response.status, errorData);
   }
 
   if (response.status === 204) {
@@ -3530,8 +3554,27 @@ import type {
   TankStockSummaryResponse,
   TankMovementLedgerResponse,
   StockAdjustmentItem,
-  StockAdjustmentInput
+  StockAdjustmentInput,
+  UnitMaster,
+  UnitConversion,
+  Item,
+  ItemOption,
+  TaxTreatment,
+  TaxTreatmentRate,
+  TaxTreatmentComponent,
+  ItemPurchaseTaxTreatment,
 } from '@/features/inventory/types';
+
+export type {
+  UnitMaster,
+  UnitConversion,
+  Item,
+  ItemOption,
+  TaxTreatment,
+  TaxTreatmentRate,
+  TaxTreatmentComponent,
+  ItemPurchaseTaxTreatment,
+};
 
 export async function fetchFuelStockSummary(
   orgId: string,
@@ -3630,4 +3673,146 @@ export async function recalculateTankChronology(
       method: 'POST',
     }
   );
+}
+
+// ==========================================
+// Canonical Item Master & Units (Inventory)
+// ==========================================
+
+export async function fetchUnits(orgId: string): Promise<UnitMaster[]> {
+  return apiRequest<UnitMaster[]>(`/organisations/${orgId}/inventory/units/`);
+}
+
+export async function createUnit(orgId: string, data: Partial<UnitMaster>): Promise<UnitMaster> {
+  return apiRequest<UnitMaster>(`/organisations/${orgId}/inventory/units/`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchUnitConversions(orgId: string, params?: Record<string, string>): Promise<UnitConversion[]> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<UnitConversion[]>(`/organisations/${orgId}/inventory/unit-conversions/${query}`);
+}
+
+export async function createUnitConversion(orgId: string, data: Partial<UnitConversion>): Promise<UnitConversion> {
+  return apiRequest<UnitConversion>(`/organisations/${orgId}/inventory/unit-conversions/`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function fetchItems(orgId: string, params?: Record<string, string>): Promise<Item[]> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<Item[]>(`/organisations/${orgId}/inventory/items/${query}`);
+}
+
+export async function fetchItemDetail(orgId: string, itemId: string): Promise<Item> {
+  return apiRequest<Item>(`/organisations/${orgId}/inventory/items/${itemId}/`);
+}
+
+export async function createItem(orgId: string, data: any): Promise<Item> {
+  return apiRequest<Item>(`/organisations/${orgId}/inventory/items/`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateItem(orgId: string, itemId: string, data: any): Promise<Item> {
+  return apiRequest<Item>(`/organisations/${orgId}/inventory/items/${itemId}/`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deactivateItem(orgId: string, itemId: string): Promise<{ status: string; id: string; is_active: boolean }> {
+  return apiRequest<{ status: string; id: string; is_active: boolean }>(
+    `/organisations/${orgId}/inventory/items/${itemId}/deactivate/`,
+    {
+      method: 'POST',
+    }
+  );
+}
+
+export async function fetchItemOptions(orgId: string, params?: Record<string, string>): Promise<ItemOption[]> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<ItemOption[]>(`/organisations/${orgId}/inventory/items/options/${query}`);
+}
+
+export async function resolveLegacyItem(orgId: string, identifier: string): Promise<{ canonical_item: ItemOption }> {
+  return apiRequest<{ canonical_item: ItemOption }>(
+    `/organisations/${orgId}/inventory/items/resolve-legacy/?identifier=${encodeURIComponent(identifier)}`
+  );
+}
+
+// ==========================================
+// Tax Treatments (Settings / Purchases)
+// ==========================================
+
+export async function fetchTaxTreatments(orgId: string, params?: Record<string, string>): Promise<TaxTreatment[]> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<TaxTreatment[]>(`/organisations/${orgId}/tax-treatments/${query}`);
+}
+
+export async function fetchTaxTreatmentDetail(orgId: string, treatmentId: string): Promise<TaxTreatment> {
+  return apiRequest<TaxTreatment>(`/organisations/${orgId}/tax-treatments/${treatmentId}/`);
+}
+
+export async function createTaxTreatment(orgId: string, data: Partial<TaxTreatment>): Promise<TaxTreatment> {
+  return apiRequest<TaxTreatment>(`/organisations/${orgId}/tax-treatments/`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateTaxTreatment(orgId: string, treatmentId: string, data: Partial<TaxTreatment>): Promise<TaxTreatment> {
+  return apiRequest<TaxTreatment>(`/organisations/${orgId}/tax-treatments/${treatmentId}/`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deactivateTaxTreatment(orgId: string, treatmentId: string): Promise<{ status: string; id: string; is_active: boolean }> {
+  return apiRequest<{ status: string; id: string; is_active: boolean }>(
+    `/organisations/${orgId}/tax-treatments/${treatmentId}/deactivate/`,
+    {
+      method: 'POST',
+    }
+  );
+}
+
+export async function createTaxTreatmentRate(orgId: string, treatmentId: string, data: any): Promise<TaxTreatmentRate> {
+  return apiRequest<TaxTreatmentRate>(`/organisations/${orgId}/tax-treatments/${treatmentId}/rates/`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateTaxTreatmentRate(orgId: string, treatmentId: string, rateId: string, data: any): Promise<TaxTreatmentRate> {
+  return apiRequest<TaxTreatmentRate>(`/organisations/${orgId}/tax-treatments/${treatmentId}/rates/${rateId}/`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteTaxTreatmentRate(orgId: string, treatmentId: string, rateId: string): Promise<{ status: string }> {
+  return apiRequest<{ status: string }>(`/organisations/${orgId}/tax-treatments/${treatmentId}/rates/${rateId}/`, {
+    method: 'DELETE',
+  });
+}
+
+// Item Purchase Tax Treatment Mapping
+export async function fetchItemPurchaseTaxTreatments(orgId: string, itemId: string): Promise<ItemPurchaseTaxTreatment[]> {
+  return apiRequest<ItemPurchaseTaxTreatment[]>(`/organisations/${orgId}/items/${itemId}/tax-treatments/`);
+}
+
+export async function createItemPurchaseTaxTreatment(
+  orgId: string,
+  itemId: string,
+  data: Partial<ItemPurchaseTaxTreatment>
+): Promise<ItemPurchaseTaxTreatment> {
+  return apiRequest<ItemPurchaseTaxTreatment>(`/organisations/${orgId}/items/${itemId}/tax-treatments/`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 }

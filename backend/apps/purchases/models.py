@@ -244,6 +244,13 @@ class TankerReceiptProductLine(models.Model):
         on_delete=models.PROTECT,
         related_name='receipt_lines'
     )
+    item = models.ForeignKey(
+        'inventory.Item',
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name='tanker_receipt_lines'
+    )
     invoice_quantity = models.DecimalField(max_digits=15, decimal_places=4)
     accepted_book_quantity = models.DecimalField(max_digits=15, decimal_places=4)
     unit_rate = models.DecimalField(max_digits=15, decimal_places=4, null=True, blank=True)
@@ -268,6 +275,11 @@ class TankerReceiptProductLine(models.Model):
         if hasattr(self, 'receipt') and hasattr(self, 'product'):
             if self.product.organisation_id != self.receipt.organisation_id:
                 raise ValidationError("Product must belong to the same organisation as receipt.")
+        if hasattr(self, 'item') and self.item:
+            if self.item.item_type != 'fuel':
+                raise ValidationError({'item': "Only fuel items can be received in tanker receipts."})
+            if hasattr(self, 'receipt') and self.receipt and self.item.organisation_id != self.receipt.organisation_id:
+                raise ValidationError({'item': "Item must belong to the same organisation as receipt."})
 
         if self.invoice_quantity is not None and self.invoice_quantity < Decimal('0.0000'):
             raise ValidationError({'invoice_quantity': "Invoice quantity cannot be negative."})
@@ -452,12 +464,14 @@ class TankerReceiptAttachment(models.Model):
 class PurchaseTaxCode(models.Model):
     REGIME_GST = 'gst'
     REGIME_NON_GST_PETROLEUM = 'non_gst_petroleum'
+    REGIME_NON_GST = 'non_gst'
     REGIME_EXEMPT = 'exempt'
     REGIME_NIL_RATED = 'nil_rated'
     REGIME_OUT_OF_SCOPE = 'out_of_scope'
     REGIME_CHOICES = [
         (REGIME_GST, 'GST'),
         (REGIME_NON_GST_PETROLEUM, 'Non-GST Petroleum'),
+        (REGIME_NON_GST, 'Non-GST'),
         (REGIME_EXEMPT, 'Exempt'),
         (REGIME_NIL_RATED, 'Nil Rated'),
         (REGIME_OUT_OF_SCOPE, 'Out of Scope'),
@@ -473,6 +487,8 @@ class PurchaseTaxCode(models.Model):
     name = models.CharField(max_length=100)
     tax_regime = models.CharField(max_length=30, choices=REGIME_CHOICES, default=REGIME_GST)
     description = models.TextField(blank=True, null=True)
+    is_purchase_applicable = models.BooleanField(default=True)
+    is_sales_applicable = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -609,6 +625,73 @@ class PurchaseTaxCodeComponent(models.Model):
         return f"{self.name} ({self.component_type}) [{self.rate_value}]"
 
 
+class ItemPurchaseTaxTreatment(models.Model):
+    ITC_NOT_APPLICABLE = 'not_applicable'
+    ITC_PENDING_REVIEW = 'pending_review'
+    ITC_ELIGIBLE_INPUTS = 'eligible_inputs'
+    ITC_ELIGIBLE_CAPITAL = 'eligible_capital_goods'
+    ITC_ELIGIBLE_SERVICES = 'eligible_input_services'
+    ITC_INELIGIBLE_BLOCKED = 'ineligible_blocked'
+    ITC_INELIGIBLE_OTHER = 'ineligible_other'
+    ITC_CHOICES = [
+        (ITC_NOT_APPLICABLE, 'Not Applicable'),
+        (ITC_PENDING_REVIEW, 'Pending Review'),
+        (ITC_ELIGIBLE_INPUTS, 'Eligible - Inputs'),
+        (ITC_ELIGIBLE_CAPITAL, 'Eligible - Capital Goods'),
+        (ITC_ELIGIBLE_SERVICES, 'Eligible - Input Services'),
+        (ITC_INELIGIBLE_BLOCKED, 'Ineligible - Blocked Credit'),
+        (ITC_INELIGIBLE_OTHER, 'Ineligible - Others'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(
+        Organisation,
+        on_delete=models.CASCADE,
+        related_name='item_tax_treatments'
+    )
+    item = models.ForeignKey(
+        'inventory.Item',
+        on_delete=models.CASCADE,
+        related_name='purchase_tax_treatments'
+    )
+    tax_treatment = models.ForeignKey(
+        PurchaseTaxCode,
+        on_delete=models.PROTECT,
+        related_name='mapped_items'
+    )
+    default_itc_classification = models.CharField(
+        max_length=30,
+        choices=ITC_CHOICES,
+        default=ITC_PENDING_REVIEW
+    )
+    effective_from = models.DateField(db_index=True)
+    effective_to = models.DateField(null=True, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-effective_from']
+
+    def clean(self):
+        super().clean()
+        if hasattr(self, 'item') and self.item and hasattr(self, 'organisation'):
+            if self.item.organisation_id != self.organisation_id:
+                raise ValidationError({'item': "Item must belong to the same organisation."})
+        if hasattr(self, 'tax_treatment') and self.tax_treatment and hasattr(self, 'organisation'):
+            if self.tax_treatment.organisation_id != self.organisation_id:
+                raise ValidationError({'tax_treatment': "Tax treatment must belong to the same organisation."})
+        if self.effective_to and self.effective_to < self.effective_from:
+            raise ValidationError({'effective_to': "Effective to date cannot precede effective from date."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        to_str = self.effective_to.isoformat() if self.effective_to else 'present'
+        return f"{self.item.name} -> {self.tax_treatment.name} ({self.effective_from} to {to_str})"
+
+
 class PurchaseItem(models.Model):
     TYPE_GOODS = 'goods'
     TYPE_SERVICE = 'service'
@@ -652,6 +735,13 @@ class PurchaseItem(models.Model):
         Organisation,
         on_delete=models.CASCADE,
         related_name='purchase_items'
+    )
+    canonical_item = models.OneToOneField(
+        'inventory.Item',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='legacy_purchase_item'
     )
     code = models.CharField(max_length=50)
     name = models.CharField(max_length=255)
@@ -711,6 +801,13 @@ class ProductPurchaseTaxMapping(models.Model):
         on_delete=models.CASCADE,
         null=True,
         blank=True,
+        related_name='purchase_tax_mapping'
+    )
+    item = models.ForeignKey(
+        'inventory.Item',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
         related_name='purchase_tax_mapping'
     )
     purchase_tax_treatment = models.CharField(max_length=30, default='non_gst_petroleum')
@@ -829,18 +926,22 @@ class PurchaseBill(models.Model):
         (PURCHASE_TYPE_MIXED, 'Mixed (Fuel & Goods/Services)'),
     ]
 
-    TAX_MODE_EXCLUSIVE = 'tax_exclusive'
-    TAX_MODE_INCLUSIVE = 'tax_inclusive'
+    TAX_MODE_EXCLUSIVE = 'exclusive'
+    TAX_MODE_INCLUSIVE = 'inclusive'
     TAX_MODE_CHOICES = [
         (TAX_MODE_EXCLUSIVE, 'Tax Exclusive'),
         (TAX_MODE_INCLUSIVE, 'Tax Inclusive'),
+        ('tax_exclusive', 'Tax Exclusive'),
+        ('tax_inclusive', 'Tax Inclusive'),
     ]
 
-    DISCOUNT_MODE_LINE = 'line_level'
-    DISCOUNT_MODE_TRANSACTION = 'transaction_level'
+    DISCOUNT_MODE_LINE = 'line'
+    DISCOUNT_MODE_TRANSACTION = 'transaction'
     DISCOUNT_MODE_CHOICES = [
         (DISCOUNT_MODE_LINE, 'Line Level Discounts'),
         (DISCOUNT_MODE_TRANSACTION, 'Transaction Level Discount'),
+        ('line_level', 'Line Level Discounts'),
+        ('transaction_level', 'Transaction Level Discount'),
     ]
 
     DISCOUNT_METHOD_NONE = 'none'
@@ -947,6 +1048,20 @@ class PurchaseBill(models.Model):
         ]
 
     def clean(self):
+        if self.tax_price_mode == 'tax_exclusive':
+            self.tax_price_mode = 'exclusive'
+        elif self.tax_price_mode == 'tax_inclusive':
+            self.tax_price_mode = 'inclusive'
+
+        if self.discount_mode == 'line_level':
+            self.discount_mode = 'line'
+        elif self.discount_mode == 'transaction_level':
+            self.discount_mode = 'transaction'
+
+        if self.transaction_discount_method in (self.DISCOUNT_METHOD_NONE, self.DISCOUNT_METHOD_FIXED):
+            if self.transaction_discount_percentage == Decimal('0.00'):
+                self.transaction_discount_percentage = None
+
         super().clean()
         if hasattr(self, 'outlet') and hasattr(self, 'organisation'):
             if self.outlet.organisation_id != self.organisation_id:
@@ -966,11 +1081,15 @@ class PurchaseBill(models.Model):
         if self.transaction_discount_method == self.DISCOUNT_METHOD_NONE:
             if self.transaction_discount_amount and self.transaction_discount_amount > Decimal('0.00'):
                 raise ValidationError({'transaction_discount_amount': "Discount amount must be 0 when discount method is none."})
-            if self.transaction_discount_percentage is not None:
+            if self.transaction_discount_percentage is not None and self.transaction_discount_percentage > Decimal('0.00'):
                 raise ValidationError({'transaction_discount_percentage': "Discount percentage must be null when discount method is none."})
+            elif self.transaction_discount_percentage == Decimal('0.00'):
+                self.transaction_discount_percentage = None
         elif self.transaction_discount_method == self.DISCOUNT_METHOD_FIXED:
-            if self.transaction_discount_percentage is not None:
+            if self.transaction_discount_percentage is not None and self.transaction_discount_percentage > Decimal('0.00'):
                 raise ValidationError({'transaction_discount_percentage': "Discount percentage must be null when using fixed amount discount."})
+            elif self.transaction_discount_percentage == Decimal('0.00'):
+                self.transaction_discount_percentage = None
         elif self.transaction_discount_method == self.DISCOUNT_METHOD_PERCENTAGE:
             if self.transaction_discount_percentage is None:
                 raise ValidationError({'transaction_discount_percentage': "Discount percentage is required when using percentage discount."})
@@ -1103,10 +1222,22 @@ class PurchaseBillLine(models.Model):
         blank=True,
         related_name='purchase_bill_lines'
     )
+    item = models.ForeignKey(
+        'inventory.Item',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='purchase_bill_lines'
+    )
     product_code_snapshot = models.CharField(max_length=50, blank=True, null=True)
     product_name_snapshot = models.CharField(max_length=255, blank=True, null=True)
 
     tax_treatment = models.CharField(max_length=30, default='legacy')
+    tax_treatment_id = models.UUIDField(null=True, blank=True)
+    tax_treatment_name = models.CharField(max_length=255, blank=True, null=True)
+    tax_regime = models.CharField(max_length=30, blank=True, null=True)
+    effective_rate_version_id = models.UUIDField(null=True, blank=True)
+
     tax_code = models.ForeignKey(
         PurchaseTaxCode,
         on_delete=models.PROTECT,
@@ -1167,6 +1298,8 @@ class PurchaseBillLine(models.Model):
         ordering = ['line_number']
 
     def clean(self):
+        if self.discount_percentage == Decimal('0.00') and self.discount_method in (self.DISCOUNT_METHOD_NONE, self.DISCOUNT_METHOD_FIXED):
+            self.discount_percentage = None
         super().clean()
         if hasattr(self, 'purchase_bill'):
             if hasattr(self, 'product') and self.product:
@@ -1175,6 +1308,9 @@ class PurchaseBillLine(models.Model):
             if hasattr(self, 'purchase_item') and self.purchase_item:
                 if self.purchase_item.organisation_id != self.purchase_bill.organisation_id:
                     raise ValidationError("Purchase item must belong to the same organisation as the purchase bill.")
+            if hasattr(self, 'item') and self.item:
+                if self.item.organisation_id != self.purchase_bill.organisation_id:
+                    raise ValidationError("Item must belong to the same organisation as the purchase bill.")
 
         if self.discount_amount and self.discount_amount > Decimal('0.00') and self.discount_method == self.DISCOUNT_METHOD_NONE:
             self.discount_method = self.DISCOUNT_METHOD_FIXED
@@ -1203,7 +1339,10 @@ class PurchaseBillLine(models.Model):
             raise ValidationError({'unit_rate': "Unit rate cannot be negative."})
 
     def save(self, *args, **kwargs):
-        if self.product and (not self.product_code_snapshot or not self.product_name_snapshot):
+        if self.item and (not self.product_code_snapshot or not self.product_name_snapshot):
+            self.product_code_snapshot = self.item.code
+            self.product_name_snapshot = self.item.name
+        elif self.product and (not self.product_code_snapshot or not self.product_name_snapshot):
             self.product_code_snapshot = self.product.code
             self.product_name_snapshot = self.product.name
         elif self.purchase_item and (not self.product_code_snapshot or not self.product_name_snapshot):

@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.db.models.functions import Lower
 from apps.organizations.models import Organisation, Outlet
 from apps.forecourt.models import Tank, FuelProduct
 
@@ -52,6 +53,13 @@ class TankStockMovement(models.Model):
     )
     fuel_product = models.ForeignKey(
         FuelProduct,
+        on_delete=models.PROTECT,
+        related_name='stock_movements'
+    )
+    item = models.ForeignKey(
+        'Item',
+        null=True,
+        blank=True,
         on_delete=models.PROTECT,
         related_name='stock_movements'
     )
@@ -308,3 +316,404 @@ class StockAdjustmentAttachment(models.Model):
 
     def __str__(self):
         return f"{self.file_name} for {self.adjustment}"
+
+
+class UnitMaster(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(
+        Organisation,
+        on_delete=models.CASCADE,
+        related_name='units'
+    )
+    code = models.CharField(max_length=20)
+    name = models.CharField(max_length=50)
+    symbol = models.CharField(max_length=10, blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                Lower('code'),
+                'organisation',
+                name='unique_org_unit_code_ci'
+            ),
+            models.UniqueConstraint(
+                Lower('name'),
+                'organisation',
+                name='unique_org_unit_name_ci'
+            )
+        ]
+        ordering = ['name']
+
+    def clean(self):
+        super().clean()
+        if self.code:
+            self.code = self.code.strip().upper()
+        if self.name:
+            self.name = self.name.strip()
+        if self.symbol:
+            self.symbol = self.symbol.strip()
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+
+class UnitConversion(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(
+        Organisation,
+        on_delete=models.CASCADE,
+        related_name='unit_conversions'
+    )
+    item = models.ForeignKey(
+        'Item',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='unit_conversions'
+    )
+    from_unit = models.ForeignKey(
+        UnitMaster,
+        on_delete=models.PROTECT,
+        related_name='conversions_from'
+    )
+    to_unit = models.ForeignKey(
+        UnitMaster,
+        on_delete=models.PROTECT,
+        related_name='conversions_to'
+    )
+    multiplier = models.DecimalField(max_digits=15, decimal_places=6)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['organisation', 'item', 'from_unit', 'to_unit'],
+                name='unique_org_item_unit_conversion'
+            )
+        ]
+        ordering = ['from_unit__name', 'to_unit__name']
+
+    def clean(self):
+        super().clean()
+        if self.multiplier is not None and self.multiplier <= Decimal('0.000000'):
+            raise ValidationError({'multiplier': "Conversion multiplier must be strictly greater than zero."})
+        if self.from_unit_id and self.to_unit_id and self.from_unit_id == self.to_unit_id:
+            raise ValidationError({'to_unit': "From Unit and To Unit cannot be the same unit."})
+        if hasattr(self, 'from_unit') and hasattr(self, 'organisation') and self.from_unit.organisation_id != self.organisation_id:
+            raise ValidationError({'from_unit': "From Unit must belong to the same organisation."})
+        if hasattr(self, 'to_unit') and hasattr(self, 'organisation') and self.to_unit.organisation_id != self.organisation_id:
+            raise ValidationError({'to_unit': "To Unit must belong to the same organisation."})
+        if hasattr(self, 'item') and self.item and self.item.organisation_id != self.organisation_id:
+            raise ValidationError({'item': "Item must belong to the same organisation."})
+
+        # Check for contradictory reverse conversion
+        reverse_conv = UnitConversion.objects.filter(
+            organisation=self.organisation,
+            item=self.item,
+            from_unit=self.to_unit,
+            to_unit=self.from_unit,
+            is_active=True
+        ).exclude(pk=self.pk).first()
+        if reverse_conv and self.multiplier:
+            expected_reverse = Decimal('1') / self.multiplier
+            if abs(reverse_conv.multiplier - expected_reverse) > Decimal('0.0001'):
+                raise ValidationError(f"A reverse conversion already exists with multiplier {reverse_conv.multiplier}. Conflicting multiplier is not permitted.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        item_prefix = f"[{self.item.code}] " if self.item else ""
+        return f"{item_prefix}1 {self.from_unit.code} = {self.multiplier} {self.to_unit.code}"
+
+
+class Item(models.Model):
+    ITEM_TYPE_FUEL = 'fuel'
+    ITEM_TYPE_STOCK = 'stock_item'
+    ITEM_TYPE_NON_STOCK = 'non_stock_item'
+    ITEM_TYPE_SERVICE = 'service'
+    ITEM_TYPE_CHOICES = [
+        (ITEM_TYPE_FUEL, 'Fuel'),
+        (ITEM_TYPE_STOCK, 'Stock Item'),
+        (ITEM_TYPE_NON_STOCK, 'Non-stock Item'),
+        (ITEM_TYPE_SERVICE, 'Service'),
+    ]
+
+    TRACKING_TANK = 'tank'
+    TRACKING_QUANTITY = 'quantity'
+    TRACKING_NONE = 'none'
+    TRACKING_CHOICES = [
+        (TRACKING_TANK, 'Tank Ledger'),
+        (TRACKING_QUANTITY, 'Quantity Ledger'),
+        (TRACKING_NONE, 'No Inventory Tracking'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(
+        Organisation,
+        on_delete=models.CASCADE,
+        related_name='items'
+    )
+    code = models.CharField(max_length=50)
+    name = models.CharField(max_length=255)
+    short_name = models.CharField(max_length=100, blank=True, null=True)
+    item_type = models.CharField(max_length=30, choices=ITEM_TYPE_CHOICES, default=ITEM_TYPE_STOCK)
+    category = models.CharField(max_length=100, blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
+    base_unit = models.ForeignKey(
+        UnitMaster,
+        on_delete=models.PROTECT,
+        related_name='items'
+    )
+    hsn_sac = models.CharField(max_length=20, blank=True, null=True)
+    barcode = models.CharField(max_length=100, blank=True, null=True)
+    is_purchasable = models.BooleanField(default=True)
+    is_sellable = models.BooleanField(default=True)
+    inventory_tracking_mode = models.CharField(
+        max_length=20,
+        choices=TRACKING_CHOICES,
+        default=TRACKING_QUANTITY
+    )
+    is_active = models.BooleanField(default=True)
+    display_order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='created_items'
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='updated_items'
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                Lower('code'),
+                'organisation',
+                name='unique_org_item_code_ci'
+            ),
+            models.UniqueConstraint(
+                fields=['organisation', 'barcode'],
+                condition=models.Q(barcode__isnull=False) & ~models.Q(barcode=''),
+                name='unique_org_item_barcode'
+            )
+        ]
+        ordering = ['display_order', 'name']
+
+    def clean(self):
+        super().clean()
+        if self.code:
+            self.code = self.code.strip()
+        if self.name:
+            self.name = self.name.strip()
+        if self.short_name:
+            self.short_name = self.short_name.strip()
+        elif self.short_name == '':
+            self.short_name = None
+
+        if self.barcode:
+            self.barcode = self.barcode.strip()
+        elif self.barcode == '':
+            self.barcode = None
+
+        if self.hsn_sac:
+            self.hsn_sac = self.hsn_sac.strip()
+        elif self.hsn_sac == '':
+            self.hsn_sac = None
+
+        if self.category:
+            self.category = self.category.strip()
+        elif self.category == '':
+            self.category = None
+
+        # Tracking mode derivation & enforcement
+        if self.item_type == self.ITEM_TYPE_FUEL:
+            self.inventory_tracking_mode = self.TRACKING_TANK
+        elif self.item_type == self.ITEM_TYPE_STOCK:
+            if self.inventory_tracking_mode not in (self.TRACKING_QUANTITY, self.TRACKING_NONE):
+                self.inventory_tracking_mode = self.TRACKING_QUANTITY
+        elif self.item_type in (self.ITEM_TYPE_NON_STOCK, self.ITEM_TYPE_SERVICE):
+            self.inventory_tracking_mode = self.TRACKING_NONE
+
+        if self.item_type == self.ITEM_TYPE_SERVICE and self.inventory_tracking_mode != self.TRACKING_NONE:
+            raise ValidationError({'inventory_tracking_mode': "Service items cannot track inventory."})
+
+        if hasattr(self, 'base_unit') and self.base_unit and hasattr(self, 'organisation'):
+            if self.base_unit.organisation_id != self.organisation_id:
+                raise ValidationError({'base_unit': "Base unit must belong to the same organisation."})
+
+    def save(self, *args, **kwargs):
+        if self.item_type == self.ITEM_TYPE_FUEL:
+            self.inventory_tracking_mode = self.TRACKING_TANK
+        elif self.item_type in (self.ITEM_TYPE_NON_STOCK, self.ITEM_TYPE_SERVICE):
+            self.inventory_tracking_mode = self.TRACKING_NONE
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if hasattr(self, 'tanks') and self.tanks.exists():
+            raise ValidationError("Cannot delete an item assigned to tanks. Deactivate it instead.")
+        if hasattr(self, 'purchase_bill_lines') and self.purchase_bill_lines.exists():
+            raise ValidationError("Cannot delete an item referenced in purchase bills. Deactivate it instead.")
+        if hasattr(self, 'tanker_receipt_lines') and self.tanker_receipt_lines.exists():
+            raise ValidationError("Cannot delete an item referenced in tanker receipts. Deactivate it instead.")
+        if hasattr(self, 'stock_movements') and self.stock_movements.exists():
+            raise ValidationError("Cannot delete an item with inventory ledger history. Deactivate it instead.")
+        super().delete(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.name} ({self.code}) [{self.item_type}]"
+
+
+class FuelItemProfile(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    item = models.OneToOneField(
+        Item,
+        on_delete=models.CASCADE,
+        related_name='fuel_profile'
+    )
+    fuel_category = models.CharField(
+        max_length=50,
+        choices=FuelProduct.CATEGORY_CHOICES,
+        default=FuelProduct.CATEGORY_PETROL
+    )
+    custom_category_name = models.CharField(max_length=255, blank=True, null=True)
+    short_code = models.CharField(max_length=50, blank=True, null=True)
+    stock_unit = models.ForeignKey(
+        UnitMaster,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='fuel_profiles'
+    )
+    density_std = models.DecimalField(max_digits=8, decimal_places=4, blank=True, null=True)
+    density_min = models.DecimalField(max_digits=8, decimal_places=4, blank=True, null=True)
+    density_max = models.DecimalField(max_digits=8, decimal_places=4, blank=True, null=True)
+    price_configuration_eligible = models.BooleanField(default=True)
+    forecourt_display_order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def clean(self):
+        super().clean()
+        if hasattr(self, 'item') and self.item.item_type != Item.ITEM_TYPE_FUEL:
+            raise ValidationError("FuelItemProfile can only be attached to an Item of type 'fuel'.")
+        if self.fuel_category == FuelProduct.CATEGORY_OTHER and not self.custom_category_name:
+            raise ValidationError({'custom_category_name': "Custom category name is required when category is 'other'."})
+        if self.fuel_category != FuelProduct.CATEGORY_OTHER and self.custom_category_name:
+            self.custom_category_name = None
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"FuelProfile for {self.item.name} ({self.short_code or self.fuel_category})"
+
+
+class StockItemProfile(models.Model):
+    VALUATION_FIFO = 'fifo'
+    VALUATION_WEIGHTED_AVG = 'weighted_average'
+    VALUATION_CHOICES = [
+        (VALUATION_FIFO, 'FIFO (First In First Out)'),
+        (VALUATION_WEIGHTED_AVG, 'Weighted Average'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    item = models.OneToOneField(
+        Item,
+        on_delete=models.CASCADE,
+        related_name='stock_profile'
+    )
+    brand = models.CharField(max_length=100, blank=True, null=True)
+    reorder_level = models.DecimalField(max_digits=12, decimal_places=4, default=Decimal('0.0000'))
+    preferred_purchase_unit = models.ForeignKey(
+        UnitMaster,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='preferred_purchase_stock_profiles'
+    )
+    sales_unit = models.ForeignKey(
+        UnitMaster,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='sales_stock_profiles'
+    )
+    valuation_method = models.CharField(max_length=30, choices=VALUATION_CHOICES, default=VALUATION_FIFO)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def clean(self):
+        super().clean()
+        if hasattr(self, 'item') and self.item.item_type != Item.ITEM_TYPE_STOCK:
+            raise ValidationError("StockItemProfile can only be attached to an Item of type 'stock_item'.")
+        if self.reorder_level is not None and self.reorder_level < Decimal('0.0000'):
+            raise ValidationError({'reorder_level': "Reorder level cannot be negative."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"StockProfile for {self.item.name} (Brand: {self.brand or 'N/A'})"
+
+
+class ItemCodeAlias(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(
+        Organisation,
+        on_delete=models.CASCADE,
+        related_name='item_code_aliases'
+    )
+    item = models.ForeignKey(
+        Item,
+        on_delete=models.CASCADE,
+        related_name='aliases'
+    )
+    alias_code = models.CharField(max_length=100)
+    source = models.CharField(max_length=50)  # 'legacy_fuel_product', 'legacy_purchase_item', 'manual'
+    is_conflict = models.BooleanField(default=False)
+    notes = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                Lower('alias_code'),
+                'organisation',
+                name='unique_org_item_alias_code_ci'
+            )
+        ]
+        ordering = ['alias_code']
+
+    def clean(self):
+        super().clean()
+        if self.alias_code:
+            self.alias_code = self.alias_code.strip()
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Alias {self.alias_code} -> {self.item.code} ({'CONFLICT' if self.is_conflict else 'OK'})"

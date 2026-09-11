@@ -12,7 +12,6 @@ import { UserManagement } from '@/features/administration/pages/UserManagement';
 import { RolesManagement } from '@/features/administration/pages/RolesManagement';
 import { PublicActivation } from '@/features/auth/pages/PublicActivation';
 import { OutletsManagement } from '@/features/settings/pages/OutletsManagement';
-import { FuelProducts } from '@/features/settings/pages/FuelProducts';
 import { ProductPrices } from '@/features/settings/pages/ProductPrices';
 import { ForecourtSetup } from '@/features/settings/pages/ForecourtSetup';
 import { TanksManagement } from '@/features/inventory/pages/TanksManagement';
@@ -38,8 +37,8 @@ import { PurchaseBillListPage } from '@/features/purchases/pages/PurchaseBillLis
 import { PurchaseBillWorkspace } from '@/features/purchases/pages/PurchaseBillWorkspace';
 import { SupplierOutstandingPage } from '@/features/purchases/pages/SupplierOutstandingPage';
 import { SuppliersPage } from '@/features/purchases/pages/SuppliersPage';
-import { PurchaseTaxCodesPage } from '@/features/purchases/pages/PurchaseTaxCodesPage';
-import { PurchaseItemsPage } from '@/features/purchases/pages/PurchaseItemsPage';
+import { ItemsMasterPage } from '@/features/inventory/pages/ItemsMasterPage';
+import { TaxTreatmentsPage } from '@/features/settings/pages/TaxTreatmentsPage';
 import { FuelStockDashboardPage } from '@/features/inventory/pages/FuelStockDashboardPage';
 import { TankLedgerPage } from '@/features/inventory/pages/TankLedgerPage';
 import { useParams, useLocation } from 'react-router-dom';
@@ -231,13 +230,17 @@ export const router = createBrowserRouter([
       },
       {
         path: 'purchases/items',
-        element: <PurchaseItemsPage />,
+        element: <RedirectWithSearchAndHash getDest={() => '/app/inventory/items'} />,
       },
       {
         path: 'purchases/tax-codes',
-        element: <PurchaseTaxCodesPage />,
+        element: <RedirectWithSearchAndHash getDest={() => '/app/settings/tax-treatments'} />,
       },
       // Inventory
+      {
+        path: 'inventory/items',
+        element: <ItemsMasterPage />,
+      },
       {
         path: 'inventory/fuel-stock',
         element: <FuelStockDashboardPage />,
@@ -383,11 +386,15 @@ export const router = createBrowserRouter([
       },
       {
         path: 'settings/products',
-        element: <FuelProducts />,
+        element: <RedirectWithSearchAndHash getDest={() => '/app/inventory/items?type=fuel'} />,
       },
       {
         path: 'settings/products/:productId',
-        element: <FuelProducts />,
+        element: <RedirectWithSearchAndHash getDest={() => '/app/inventory/items?type=fuel'} />,
+      },
+      {
+        path: 'settings/tax-treatments',
+        element: <TaxTreatmentsPage />,
       },
       {
         path: 'settings/product-prices',

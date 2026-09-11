@@ -39,6 +39,13 @@ class FuelProduct(models.Model):
         on_delete=models.CASCADE,
         related_name='fuel_products'
     )
+    canonical_item = models.OneToOneField(
+        'inventory.Item',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='legacy_fuel_product'
+    )
     code = models.CharField(max_length=50)
     name = models.CharField(max_length=255)
     short_name = models.CharField(max_length=100, blank=True, null=True)
@@ -114,6 +121,13 @@ class ProductPrice(models.Model):
         on_delete=models.CASCADE,
         related_name='prices'
     )
+    item = models.ForeignKey(
+        'inventory.Item',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='prices_for_item'
+    )
     selling_price = models.DecimalField(max_digits=12, decimal_places=4)
     effective_from = models.DateTimeField()
     effective_to = models.DateTimeField(blank=True, null=True)
@@ -134,8 +148,13 @@ class ProductPrice(models.Model):
         # Tenant consistency checks
         if hasattr(self, 'outlet') and self.outlet.organisation_id != self.organisation_id:
             raise ValidationError("The outlet must belong to the same organisation.")
-        if hasattr(self, 'product') and self.product.organisation_id != self.organisation_id:
+        if hasattr(self, 'product') and self.product and self.product.organisation_id != self.organisation_id:
             raise ValidationError("The product must belong to the same organisation.")
+        if hasattr(self, 'item') and self.item:
+            if self.item.organisation_id != self.organisation_id:
+                raise ValidationError("The item must belong to the same organisation.")
+            if self.item.item_type != 'fuel':
+                raise ValidationError({'item': "Only fuel items can have product prices configured."})
 
         if self.selling_price is not None and self.selling_price <= 0:
             raise ValidationError({'selling_price': "Price must be greater than zero."})
@@ -145,6 +164,8 @@ class ProductPrice(models.Model):
                 raise ValidationError({'effective_to': "Effective to date must be after effective from date."})
 
     def save(self, *args, **kwargs):
+        if hasattr(self, 'item') and self.item and self.item.item_type != 'fuel':
+            raise ValidationError({'item': "Only fuel items can have product prices configured."})
         self.full_clean()
         super().save(*args, **kwargs)
 
@@ -176,6 +197,13 @@ class Tank(models.Model):
     )
     product = models.ForeignKey(
         FuelProduct,
+        on_delete=models.PROTECT,
+        related_name='tanks'
+    )
+    item = models.ForeignKey(
+        'inventory.Item',
+        null=True,
+        blank=True,
         on_delete=models.PROTECT,
         related_name='tanks'
     )
@@ -213,8 +241,13 @@ class Tank(models.Model):
         # Tenant consistency checks
         if hasattr(self, 'outlet') and self.outlet.organisation_id != self.organisation_id:
             raise ValidationError("The outlet must belong to the same organisation.")
-        if hasattr(self, 'product') and self.product.organisation_id != self.organisation_id:
+        if hasattr(self, 'product') and self.product and self.product.organisation_id != self.organisation_id:
             raise ValidationError("The product must belong to the same organisation.")
+        if hasattr(self, 'item') and self.item:
+            if self.item.organisation_id != self.organisation_id:
+                raise ValidationError("The item must belong to the same organisation.")
+            if self.item.item_type != 'fuel':
+                raise ValidationError({'item': "Only fuel items can be assigned to a tank."})
 
         if self.code:
             self.code = self.code.strip()
@@ -240,6 +273,8 @@ class Tank(models.Model):
             raise ValidationError({'low_stock_threshold': "Low-stock threshold cannot exceed capacity."})
 
     def save(self, *args, **kwargs):
+        if hasattr(self, 'item') and self.item and self.item.item_type != 'fuel':
+            raise ValidationError({'item': "Only fuel items can be assigned to a tank."})
         self.full_clean()
         super().save(*args, **kwargs)
 
