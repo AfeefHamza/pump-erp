@@ -38,6 +38,7 @@ import { PurchaseBillWorkspace } from '@/features/purchases/pages/PurchaseBillWo
 import { SupplierOutstandingPage } from '@/features/purchases/pages/SupplierOutstandingPage';
 import { SuppliersPage } from '@/features/purchases/pages/SuppliersPage';
 import { ItemsMasterPage } from '@/features/inventory/pages/ItemsMasterPage';
+import { ItemFormPage } from '@/features/inventory/pages/ItemFormPage';
 import { TaxTreatmentsPage } from '@/features/settings/pages/TaxTreatmentsPage';
 import { FuelStockDashboardPage } from '@/features/inventory/pages/FuelStockDashboardPage';
 import { TankLedgerPage } from '@/features/inventory/pages/TankLedgerPage';
@@ -240,6 +241,14 @@ export const router = createBrowserRouter([
       {
         path: 'inventory/items',
         element: <ItemsMasterPage />,
+      },
+      {
+        path: 'inventory/items/new',
+        element: <ItemFormPage />,
+      },
+      {
+        path: 'inventory/items/:itemId/edit',
+        element: <ItemFormPage />,
       },
       {
         path: 'inventory/fuel-stock',

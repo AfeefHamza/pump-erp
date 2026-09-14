@@ -82,10 +82,10 @@ export const settingsRegistry: SettingCategory[] = [
     items: [
       {
         label: 'Tax Treatments',
-        description: 'Statutory GST rates, exemptions & tax regimes',
+        description: 'GST and non-GST item defaults',
         route: '/app/settings/tax-treatments',
         anyOfPermissions: ['settings.view', 'role.view', 'outlet.view'],
-        keywords: ['tax treatments', 'gst', 'exempt', 'nil rated', 'statutory', 'tax codes'],
+        keywords: ['tax treatments', 'gst', 'non-gst petroleum', 'exempt', 'nil rated'],
         icon: Percent,
       },
     ],

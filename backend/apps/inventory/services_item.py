@@ -8,15 +8,33 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional, Dict, Any
 from django.apps import apps
-from django.db import transaction, models
+from django.db import transaction
 from django.core.exceptions import ValidationError
-from django.db.models.functions import Lower
+from django.utils.dateparse import parse_date
 
 from apps.organizations.models import Organisation
 from .models import (
     UnitMaster, UnitConversion, Item,
     FuelItemProfile, StockItemProfile, ItemCodeAlias
 )
+
+
+def _normalise_effective_date(value) -> date:
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        parsed = parse_date(value)
+        if parsed:
+            return parsed
+    return date.today()
+
+
+def _default_itc_classification(item_type: str, tax_regime: str) -> str:
+    if tax_regime != 'gst':
+        return 'not_applicable'
+    if item_type == Item.ITEM_TYPE_SERVICE:
+        return 'eligible_input_services'
+    return 'eligible_inputs'
 
 
 @transaction.atomic
@@ -190,21 +208,30 @@ def create_canonical_item(
         }
     )
 
-    # Attach tax treatment if provided
+    # Attach the selected default purchase tax treatment. The item endpoint owns
+    # this operation so the ERP form can save the item and its tax default once.
     if tax_treatment_id:
+        ItemPurchaseTaxTreatment = apps.get_model('purchases', 'ItemPurchaseTaxTreatment')
+        PurchaseTaxCode = apps.get_model('purchases', 'PurchaseTaxCode')
         try:
-            ItemPurchaseTaxTreatment = apps.get_model('purchases', 'ItemPurchaseTaxTreatment')
-            PurchaseTaxCode = apps.get_model('purchases', 'PurchaseTaxCode')
-            tax_treatment = PurchaseTaxCode.objects.get(id=tax_treatment_id, organisation=organisation)
-            ItemPurchaseTaxTreatment.objects.create(
+            tax_treatment = PurchaseTaxCode.objects.get(
+                id=tax_treatment_id,
                 organisation=organisation,
-                item=item,
-                tax_treatment=tax_treatment,
-                default_itc_classification=default_itc_classification or 'pending_review',
-                effective_from=effective_from or date.today(),
+                is_active=True,
             )
-        except Exception:
-            pass
+        except PurchaseTaxCode.DoesNotExist as exc:
+            raise ValidationError({'tax_treatment_id': "Select a valid active tax treatment."}) from exc
+
+        ItemPurchaseTaxTreatment.objects.create(
+            organisation=organisation,
+            item=item,
+            tax_treatment=tax_treatment,
+            default_itc_classification=(
+                default_itc_classification
+                or _default_itc_classification(item_type, tax_treatment.tax_regime)
+            ),
+            effective_from=_normalise_effective_date(effective_from),
+        )
 
     return item
 
@@ -358,37 +385,44 @@ def update_canonical_item(
     except Exception:
         pass
 
-    # 7. Update tax treatment if passed
+    # 7. Update the current item tax default when explicitly supplied.
     if 'tax_treatment_id' in data and data['tax_treatment_id']:
+        ItemPurchaseTaxTreatment = apps.get_model('purchases', 'ItemPurchaseTaxTreatment')
+        PurchaseTaxCode = apps.get_model('purchases', 'PurchaseTaxCode')
         try:
-            ItemPurchaseTaxTreatment = apps.get_model('purchases', 'ItemPurchaseTaxTreatment')
-            PurchaseTaxCode = apps.get_model('purchases', 'PurchaseTaxCode')
-            tax_treatment = PurchaseTaxCode.objects.get(id=data['tax_treatment_id'], organisation=item.organisation)
-            eff_from = data.get('tax_treatment_effective_from') or date.today()
-            itc_class = data.get('default_itc_classification') or 'pending_review'
+            tax_treatment = PurchaseTaxCode.objects.get(
+                id=data['tax_treatment_id'],
+                organisation=item.organisation,
+                is_active=True,
+            )
+        except PurchaseTaxCode.DoesNotExist as exc:
+            raise ValidationError({'tax_treatment_id': "Select a valid active tax treatment."}) from exc
 
-            existing_mapping = ItemPurchaseTaxTreatment.objects.filter(
+        eff_from = _normalise_effective_date(data.get('tax_treatment_effective_from'))
+        itc_class = (
+            data.get('default_itc_classification')
+            or _default_itc_classification(item.item_type, tax_treatment.tax_regime)
+        )
+        existing_mapping = ItemPurchaseTaxTreatment.objects.filter(
+            organisation=item.organisation,
+            item=item,
+            effective_to__isnull=True,
+        ).order_by('-effective_from').first()
+
+        if existing_mapping:
+            existing_mapping.tax_treatment = tax_treatment
+            existing_mapping.default_itc_classification = itc_class
+            existing_mapping.save(update_fields=[
+                'tax_treatment', 'default_itc_classification', 'updated_at'
+            ])
+        else:
+            ItemPurchaseTaxTreatment.objects.create(
                 organisation=item.organisation,
                 item=item,
-                effective_from__lte=eff_from,
-            ).filter(
-                models.Q(effective_to__isnull=True) | models.Q(effective_to__gte=eff_from)
-            ).first()
-
-            if existing_mapping:
-                existing_mapping.tax_treatment = tax_treatment
-                existing_mapping.default_itc_classification = itc_class
-                existing_mapping.save()
-            else:
-                ItemPurchaseTaxTreatment.objects.create(
-                    organisation=item.organisation,
-                    item=item,
-                    tax_treatment=tax_treatment,
-                    default_itc_classification=itc_class,
-                    effective_from=eff_from,
-                )
-        except Exception:
-            pass
+                tax_treatment=tax_treatment,
+                default_itc_classification=itc_class,
+                effective_from=eff_from,
+            )
 
     return item
 

@@ -132,7 +132,7 @@ class ItemDetailView(APIView):
         org = _get_org(org_id)
         require_permission(request.user, org, 'item.view')
         item = get_object_or_404(
-            Item.objects.select_related('base_unit').prefetch_related('aliases', 'conversions_from'),
+            Item.objects.select_related('base_unit').prefetch_related('aliases', 'unit_conversions'),
             id=item_id,
             organisation=org
         )
@@ -195,6 +195,9 @@ class ItemOptionsView(APIView):
             qs = qs.filter(item_type=item_type)
 
         is_purchasable = request.query_params.get('is_purchasable')
+        if is_purchasable is None:
+            # Compatibility with the purchase workspace's existing query name.
+            is_purchasable = request.query_params.get('purchasable_only')
         if is_purchasable is not None:
             qs = qs.filter(is_purchasable=is_purchasable.lower() == 'true')
 

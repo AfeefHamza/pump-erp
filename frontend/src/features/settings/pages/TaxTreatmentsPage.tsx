@@ -1,992 +1,213 @@
-// frontend/src/features/settings/pages/TaxTreatmentsPage.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { CheckCircle2, ChevronDown, ChevronRight, Info, Percent, Plus, X } from 'lucide-react';
 import { useAppSelector } from '@/app/store';
 import {
-  fetchTaxTreatments,
   createTaxTreatment,
-  updateTaxTreatment,
   createTaxTreatmentRate,
-  updateTaxTreatmentRate,
-  deleteTaxTreatmentRate
+  deactivateTaxTreatment,
+  fetchTaxTreatments,
 } from '@/api/client';
-import type {
-  TaxTreatment,
-  TaxTreatmentRate,
-  TaxTreatmentComponent
-} from '@/features/inventory/types';
+import type { TaxTreatment } from '@/features/inventory/types';
 import { PageHeader } from '@/components/navigation/PageHeader';
-import {
-  Plus,
-  Search,
-  CheckCircle2,
-  XCircle,
-  Edit2,
-  X,
-  Lock,
-  AlertCircle,
-  ChevronDown,
-  ChevronRight,
-  Percent,
-  Trash2
-} from 'lucide-react';
+
+type Regime = TaxTreatment['tax_regime'];
+
+const regimeLabels: Record<Regime, string> = {
+  gst: 'GST',
+  non_gst_petroleum: 'Non-GST Petroleum',
+  non_gst: 'Other Non-GST',
+  exempt: 'GST Exempt',
+  nil_rated: 'Nil-Rated GST',
+  out_of_scope: 'Out of Scope',
+};
+
+const regimeHelp: Record<Regime, string> = {
+  gst: 'Normal taxable goods and services. Choose the GST rate used on the invoice.',
+  non_gst_petroleum: 'Petrol, diesel and other petroleum products currently outside GST. Do not classify them as exempt.',
+  non_gst: 'A non-petroleum transaction that is outside GST but still belongs in the books.',
+  exempt: 'A supply specifically exempted from GST by notification.',
+  nil_rated: 'A taxable supply with a notified GST rate of 0%.',
+  out_of_scope: 'An entry that is not a GST supply, such as a pure accounting or statutory entry.',
+};
+
+const defaultName = (regime: Regime, rate: string) => regime === 'gst' ? `GST ${Number(rate)}%` : regimeLabels[regime];
+const defaultCode = (regime: Regime, rate: string) => regime === 'gst'
+  ? `GST-${String(Number(rate)).replace('.', '-')}`
+  : ({
+      non_gst_petroleum: 'NON-GST-PETROLEUM',
+      non_gst: 'NON-GST',
+      exempt: 'GST-EXEMPT',
+      nil_rated: 'GST-NIL',
+      out_of_scope: 'OUT-OF-SCOPE',
+      gst: 'GST',
+    } as Record<Regime, string>)[regime];
 
 export const TaxTreatmentsPage: React.FC = () => {
-  const selectedOrgId = useAppSelector((state) => state.ui.selectedOrganizationId);
-
+  const organisationId = useAppSelector((state) => state.ui.selectedOrganizationId);
   const [treatments, setTreatments] = useState<TaxTreatment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [regimeFilter, setRegimeFilter] = useState<string>('all');
-  const [expandedTreatmentId, setExpandedTreatmentId] = useState<string | null>(null);
-
-  // Treatment Modal (Create / Edit)
-  const [treatmentModalOpen, setTreatmentModalOpen] = useState(false);
-  const [editingTreatment, setEditingTreatment] = useState<TaxTreatment | null>(null);
-  const [treatmentFormData, setTreatmentFormData] = useState({
-    code: '',
-    name: '',
-    tax_regime: 'gst' as 'gst' | 'exempt' | 'nil_rated' | 'out_of_scope',
-    description: '',
-    is_purchase_applicable: true,
-    is_sales_applicable: true,
-    is_active: true,
-  });
-
-  // Rate Version Modal
-  const [rateModalOpen, setRateModalOpen] = useState(false);
-  const [activeTreatmentForRate, setActiveTreatmentForRate] = useState<TaxTreatment | null>(null);
-  const [editingRate, setEditingRate] = useState<TaxTreatmentRate | null>(null);
-  const [rateFormData, setRateFormData] = useState({
-    effective_from: new Date().toISOString().split('T')[0],
-    effective_to: '',
-    gst_rate: '18.00',
-    cess_rate: '0.00',
-    cess_per_unit: '0.00',
-    notes: '',
-    components: [] as Partial<TaxTreatmentComponent>[],
-  });
-
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [addRateTo, setAddRateTo] = useState<TaxTreatment | null>(null);
+  const [regime, setRegime] = useState<Regime>('gst');
+  const [rate, setRate] = useState('18');
+  const [effectiveFrom, setEffectiveFrom] = useState(new Date().toISOString().slice(0, 10));
+  const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
-  const [modalError, setModalError] = useState<string | null>(null);
 
-  const loadData = async () => {
-    if (!selectedOrgId) return;
+  const load = useCallback(async () => {
+    if (!organisationId) return;
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchTaxTreatments(selectedOrgId);
-      setTreatments(data);
-    } catch (err: any) {
-      console.error(err);
-      setError('Failed to load tax treatments.');
+      setTreatments(await fetchTaxTreatments(organisationId));
+    } catch (loadError: any) {
+      setError(loadError?.data?.detail || 'Unable to load tax treatments.');
     } finally {
       setLoading(false);
     }
+  }, [organisationId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const sortedTreatments = useMemo(() => [...treatments].sort((a, b) => {
+    const order: Regime[] = ['gst', 'non_gst_petroleum', 'non_gst', 'exempt', 'nil_rated', 'out_of_scope'];
+    return order.indexOf(a.tax_regime) - order.indexOf(b.tax_regime) || a.name.localeCompare(b.name);
+  }), [treatments]);
+
+  const openNew = () => {
+    setAddRateTo(null);
+    setRegime('gst');
+    setRate('18');
+    setName('');
+    setEffectiveFrom(new Date().toISOString().slice(0, 10));
+    setError(null);
+    setShowForm(true);
   };
 
-  useEffect(() => {
-    loadData();
-  }, [selectedOrgId]);
+  const openRate = (treatment: TaxTreatment) => {
+    setAddRateTo(treatment);
+    setRegime('gst');
+    setRate('18');
+    setName(treatment.name);
+    setEffectiveFrom(new Date().toISOString().slice(0, 10));
+    setError(null);
+    setShowForm(true);
+  };
 
-  const filteredTreatments = treatments.filter((t) => {
-    const matchesSearch =
-      t.code.toLowerCase().includes(search.toLowerCase()) ||
-      t.name.toLowerCase().includes(search.toLowerCase()) ||
-      t.tax_regime.toLowerCase().includes(search.toLowerCase());
-
-    const matchesRegime = regimeFilter === 'all' || t.tax_regime === regimeFilter;
-    return matchesSearch && matchesRegime;
-  });
-
-  const handleOpenTreatmentModal = (treatment?: TaxTreatment) => {
-    if (treatment) {
-      setEditingTreatment(treatment);
-      setTreatmentFormData({
-        code: treatment.code,
-        name: treatment.name,
-        tax_regime: (treatment.tax_regime === 'non_gst_petroleum' ? 'out_of_scope' : treatment.tax_regime) as 'gst' | 'exempt' | 'nil_rated' | 'out_of_scope',
-        description: treatment.description || '',
-        is_purchase_applicable: treatment.is_purchase_applicable ?? true,
-        is_sales_applicable: treatment.is_sales_applicable ?? true,
-        is_active: treatment.is_active,
-      });
-    } else {
-      setEditingTreatment(null);
-      setTreatmentFormData({
-        code: '',
-        name: '',
-        tax_regime: 'gst',
-        description: '',
-        is_purchase_applicable: true,
-        is_sales_applicable: true,
-        is_active: true,
-      });
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!organisationId) return;
+    const numericRate = Number(rate);
+    if (regime === 'gst' && (!Number.isFinite(numericRate) || numericRate < 0 || numericRate > 100)) {
+      setError('Enter a valid GST percentage between 0 and 100.');
+      return;
     }
-    setModalError(null);
-    setTreatmentModalOpen(true);
-  };
 
-  const handleSaveTreatment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedOrgId) return;
     setSaving(true);
-    setModalError(null);
+    setError(null);
     try {
-      if (editingTreatment) {
-        await updateTaxTreatment(selectedOrgId, editingTreatment.id, treatmentFormData);
-      } else {
-        await createTaxTreatment(selectedOrgId, treatmentFormData);
+      let treatment = addRateTo;
+      if (!treatment) {
+        treatment = await createTaxTreatment(organisationId, {
+          code: defaultCode(regime, rate),
+          name: name.trim() || defaultName(regime, rate),
+          tax_regime: regime,
+          description: regimeHelp[regime],
+          is_purchase_applicable: true,
+          is_sales_applicable: true,
+          is_active: true,
+        });
       }
-      setTreatmentModalOpen(false);
-      await loadData();
-    } catch (err: any) {
-      setModalError(err?.data?.error || err?.message || 'Failed to save tax treatment.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleOpenRateModal = (treatment: TaxTreatment, rate?: TaxTreatmentRate) => {
-    setActiveTreatmentForRate(treatment);
-    if (rate) {
-      setEditingRate(rate);
-      setRateFormData({
-        effective_from: rate.effective_from,
-        effective_to: rate.effective_to || '',
-        gst_rate: rate.gst_rate,
-        cess_rate: rate.cess_rate,
-        cess_per_unit: rate.cess_per_unit,
-        notes: rate.notes || '',
-        components: rate.components ? [...rate.components] : [],
-      });
-    } else {
-      setEditingRate(null);
-      setRateFormData({
-        effective_from: new Date().toISOString().split('T')[0],
-        effective_to: '',
-        gst_rate: treatment.tax_regime === 'gst' ? '18.00' : '0.00',
+      await createTaxTreatmentRate(organisationId, treatment.id, {
+        effective_from: effectiveFrom,
+        effective_to: null,
+        gst_rate: regime === 'gst' ? numericRate.toFixed(2) : '0.00',
         cess_rate: '0.00',
-        cess_per_unit: '0.00',
-        notes: '',
-        components: [],
+        cess_per_unit: '0.0000',
       });
-    }
-    setModalError(null);
-    setRateModalOpen(true);
-  };
-
-  const handleSaveRate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedOrgId || !activeTreatmentForRate) return;
-    setSaving(true);
-    setModalError(null);
-    try {
-      const payload: any = {
-        effective_from: rateFormData.effective_from,
-        effective_to: rateFormData.effective_to || null,
-        gst_rate: rateFormData.gst_rate,
-        cess_rate: rateFormData.cess_rate,
-        cess_per_unit: rateFormData.cess_per_unit,
-        notes: rateFormData.notes || null,
-      };
-
-      if (editingRate) {
-        await updateTaxTreatmentRate(selectedOrgId, activeTreatmentForRate.id, editingRate.id, payload);
-      } else {
-        await createTaxTreatmentRate(selectedOrgId, activeTreatmentForRate.id, payload);
-      }
-      setRateModalOpen(false);
-      await loadData();
-    } catch (err: any) {
-      setModalError(err?.data?.error || err?.message || 'Failed to save rate version.');
+      setShowForm(false);
+      setAddRateTo(null);
+      await load();
+    } catch (saveError: any) {
+      setError(saveError?.data?.detail || saveError?.data?.error || saveError?.message || 'Unable to save the treatment.');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDeleteRate = async (treatmentId: string, rateId: string) => {
-    if (!selectedOrgId) return;
-    if (!window.confirm('Delete this draft rate version?')) return;
-
+  const deactivate = async (treatment: TaxTreatment) => {
+    if (!organisationId || !window.confirm(`Deactivate “${treatment.name}”? Existing bills will not change.`)) return;
     try {
-      await deleteTaxTreatmentRate(selectedOrgId, treatmentId, rateId);
-      await loadData();
-    } catch (err: any) {
-      alert(err?.data?.error || 'Failed to delete rate version.');
+      await deactivateTaxTreatment(organisationId, treatment.id);
+      await load();
+    } catch (actionError: any) {
+      setError(actionError?.data?.detail || 'Unable to deactivate the treatment.');
     }
   };
-
-
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1440px', margin: '0 auto' }}>
+    <div style={{ maxWidth: 1180, margin: '0 auto', padding: '2rem' }}>
       <PageHeader
         title="Tax Treatments"
-        subtitle="Manage statutory GST rates, exemptions, and effective-dated rate versions"
-        actions={
-          <button
-            type="button"
-            onClick={() => handleOpenTreatmentModal()}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '0.625rem 1.25rem',
-              borderRadius: '8px',
-              border: 'none',
-              backgroundColor: '#2563eb',
-              fontSize: '0.875rem',
-              fontWeight: 600,
-              color: '#ffffff',
-              cursor: 'pointer',
-              boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-            }}
-          >
-            <Plus size={16} />
-            New Tax Treatment
-          </button>
-        }
+        subtitle="Simple defaults used by Item Master and purchase bills"
+        actions={<button className="btn btn-primary" type="button" onClick={openNew}><Plus size={16} /> Add Treatment</button>}
       />
 
-      {/* Regime Filter Tabs */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: '1.5rem',
-          marginBottom: '1rem',
-          borderBottom: '1px solid #e2e8f0',
-          paddingBottom: '0.5rem',
-        }}
-      >
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          {[
-            { id: 'all', label: 'All Regimes' },
-            { id: 'gst', label: 'GST' },
-            { id: 'exempt', label: 'Exempt' },
-            { id: 'nil_rated', label: 'Nil-Rated' },
-            { id: 'out_of_scope', label: 'Out of Scope' },
-          ].map((tab) => {
-            const isSelected = regimeFilter === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setRegimeFilter(tab.id)}
-                style={{
-                  padding: '0.5rem 1rem',
-                  borderRadius: '8px',
-                  border: 'none',
-                  backgroundColor: isSelected ? '#eff6ff' : 'transparent',
-                  color: isSelected ? '#1d4ed8' : '#64748b',
-                  fontWeight: isSelected ? 600 : 500,
-                  fontSize: '0.875rem',
-                  cursor: 'pointer',
-                }}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.7rem', margin: '1rem 0' }}>
+        {[
+          ['GST', 'Taxable goods and services'],
+          ['Non-GST Petroleum', 'Petrol and diesel; not GST-exempt'],
+          ['Exempt / Nil-Rated', 'Use only when legally applicable'],
+          ['Out of Scope', 'Non-supply accounting entries'],
+        ].map(([title, note]) => <div key={title} style={{ padding: '0.8rem', border: '1px solid #dbe2ea', borderRadius: 8, background: '#fff' }}><strong style={{ display: 'block', fontSize: '0.82rem' }}>{title}</strong><small style={{ color: '#64748b' }}>{note}</small></div>)}
       </div>
 
-      {/* Search Bar */}
-      <div style={{ position: 'relative', marginBottom: '1.25rem' }}>
-        <Search
-          size={18}
-          style={{
-            position: 'absolute',
-            left: '12px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            color: '#94a3b8',
-          }}
-        />
-        <input
-          type="text"
-          placeholder="Search tax treatments by name, code or regime..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '0.625rem 0.75rem 0.625rem 2.5rem',
-            borderRadius: '8px',
-            border: '1px solid #cbd5e1',
-            backgroundColor: '#ffffff',
-            fontSize: '0.875rem',
-          }}
-        />
-      </div>
-
-      {/* Error state */}
-      {error && (
-        <div
-          style={{
-            marginBottom: '1rem',
-            padding: '1rem',
-            backgroundColor: '#fef2f2',
-            border: '1px solid #fecaca',
-            borderRadius: '10px',
-            color: '#b91c1c',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-          }}
-        >
-          <AlertCircle size={20} />
-          <span>{error}</span>
-        </div>
+      {showForm && (
+        <form onSubmit={save} style={{ marginBottom: '1rem', border: '1px solid #93c5fd', borderRadius: 8, background: '#eff6ff', padding: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+            <strong>{addRateTo ? `New rate for ${addRateTo.name}` : 'Add Tax Treatment'}</strong>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowForm(false)} aria-label="Close"><X size={16} /></button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '0.75rem', alignItems: 'end' }}>
+            {!addRateTo && <label><small style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>Treatment Type</small><select className="input" value={regime} onChange={(e) => setRegime(e.target.value as Regime)}><option value="gst">GST</option><option value="non_gst_petroleum">Non-GST Petroleum</option><option value="non_gst">Other Non-GST</option><option value="exempt">GST Exempt</option><option value="nil_rated">Nil-Rated GST</option><option value="out_of_scope">Out of Scope</option></select></label>}
+            {regime === 'gst' && <label><small style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>GST Rate %</small><input className="input" type="number" min="0" max="100" step="0.01" value={rate} onChange={(e) => setRate(e.target.value)} /></label>}
+            {!addRateTo && <label><small style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>Display Name <span style={{ color: '#64748b' }}>(optional)</span></small><input className="input" value={name} placeholder={defaultName(regime, rate)} onChange={(e) => setName(e.target.value)} /></label>}
+            <label><small style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>Effective From</small><input className="input" type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} required /></label>
+            <button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: '0.7rem', color: '#475569', fontSize: '0.78rem' }}><Info size={14} /> {regimeHelp[regime]}</div>
+        </form>
       )}
 
-      {/* Treatments List Card */}
-      <div
-        style={{
-          backgroundColor: '#ffffff',
-          borderRadius: '12px',
-          border: '1px solid #e2e8f0',
-          boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)',
-          overflow: 'hidden',
-        }}
-      >
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
-          <thead>
-            <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-              <th style={{ width: '40px', padding: '0.875rem 0.5rem' }}></th>
-              <th style={{ padding: '0.875rem 1rem', fontWeight: 600, color: '#475569' }}>Treatment Name</th>
-              <th style={{ padding: '0.875rem 1rem', fontWeight: 600, color: '#475569' }}>Regime</th>
-              <th style={{ padding: '0.875rem 1rem', fontWeight: 600, color: '#475569' }}>Active Rate</th>
-              <th style={{ padding: '0.875rem 1rem', fontWeight: 600, color: '#475569' }}>Applicability</th>
-              <th style={{ padding: '0.875rem 1rem', fontWeight: 600, color: '#475569' }}>Status</th>
-              <th style={{ padding: '0.875rem 1.25rem', fontWeight: 600, color: '#475569', textAlign: 'right' }}>Actions</th>
-            </tr>
-          </thead>
+      {error && <div className="alert alert-error" style={{ marginBottom: '0.8rem' }}>{error}</div>}
+
+      <div style={{ border: '1px solid #dbe2ea', borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
+        <table className="table" style={{ width: '100%' }}>
+          <thead><tr><th style={{ width: 42 }}></th><th>Treatment</th><th>Type</th><th>Current Rate</th><th>Status</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
           <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
-                  Loading tax treatments...
-                </td>
-              </tr>
-            ) : filteredTreatments.length === 0 ? (
-              <tr>
-                <td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
-                  No tax treatments configured. Click "+ New Tax Treatment" to define statutory tax rules.
-                </td>
-              </tr>
-            ) : (
-              filteredTreatments.map((t) => {
-                const isExpanded = expandedTreatmentId === t.id;
-                const activeRate = t.rates && t.rates.length > 0 ? t.rates[0] : null;
-
-                return (
-                  <React.Fragment key={t.id}>
-                    <tr
-                      style={{
-                        borderBottom: '1px solid #f1f5f9',
-                        backgroundColor: isExpanded ? '#f8fafc' : '#ffffff',
-                      }}
-                    >
-                      <td style={{ padding: '0.875rem 0.5rem', textAlign: 'center' }}>
-                        <button
-                          type="button"
-                          onClick={() => setExpandedTreatmentId(isExpanded ? null : t.id)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#64748b',
-                            cursor: 'pointer',
-                            padding: '0.25rem',
-                          }}
-                        >
-                          {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                        </button>
-                      </td>
-                      <td style={{ padding: '0.875rem 1rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <span style={{ fontWeight: 600, color: '#0f172a' }}>{t.name}</span>
-                          <span
-                            style={{
-                              fontSize: '0.75rem',
-                              fontFamily: 'monospace',
-                              backgroundColor: '#f1f5f9',
-                              color: '#475569',
-                              padding: '0.1rem 0.4rem',
-                              borderRadius: '4px',
-                            }}
-                          >
-                            {t.code}
-                          </span>
-                        </div>
-                        {t.description && (
-                          <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block', marginTop: '0.15rem' }}>
-                            {t.description}
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '0.875rem 1rem' }}>
-                        <span
-                          style={{
-                            fontSize: '0.75rem',
-                            fontWeight: 500,
-                            padding: '0.25rem 0.625rem',
-                            borderRadius: '9999px',
-                            backgroundColor:
-                              t.tax_regime === 'gst'
-                                ? '#eff6ff'
-                                : t.tax_regime === 'exempt'
-                                ? '#f0fdf4'
-                                : '#f1f5f9',
-                            color:
-                              t.tax_regime === 'gst'
-                                ? '#1d4ed8'
-                                : t.tax_regime === 'exempt'
-                                ? '#16a34a'
-                                : '#475569',
-                          }}
-                        >
-                          {t.tax_regime === 'out_of_scope' ? 'OUT OF SCOPE' : t.tax_regime.replace('_', ' ').toUpperCase()}
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.875rem 1rem' }}>
-                        {activeRate ? (
-                          <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            {t.tax_regime === 'gst' && (
-                              <span style={{ fontWeight: 600, color: '#0f172a' }}>
-                                {activeRate.gst_rate}% GST
-                                {parseFloat(activeRate.cess_rate) > 0 && ` + ${activeRate.cess_rate}% Cess`}
-                                {parseFloat(activeRate.cess_per_unit) > 0 && ` + ₹${activeRate.cess_per_unit}/unit`}
-                              </span>
-                            )}
-                            {t.tax_regime === 'exempt' && <span style={{ color: '#16a34a' }}>0% (Exempted)</span>}
-                            {t.tax_regime === 'nil_rated' && <span style={{ color: '#64748b' }}>0% (Nil-Rated)</span>}
-                            {t.tax_regime === 'out_of_scope' && <span style={{ color: '#94a3b8' }}>Out of Scope</span>}
-                            <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                              Effective {activeRate.effective_from}
-                              {activeRate.effective_to ? ` to ${activeRate.effective_to}` : ' (Ongoing)'}
-                            </span>
-                          </div>
-                        ) : (
-                          <span style={{ color: '#94a3b8', fontSize: '0.8125rem' }}>No rates defined</span>
-                        )}
-                      </td>
-                      <td style={{ padding: '0.875rem 1rem' }}>
-                        <div style={{ display: 'flex', gap: '0.375rem' }}>
-                          {t.is_purchase_applicable && (
-                            <span style={{ fontSize: '0.6875rem', backgroundColor: '#eff6ff', color: '#1d4ed8', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
-                              Purchases
-                            </span>
-                          )}
-                          {t.is_sales_applicable && (
-                            <span style={{ fontSize: '0.6875rem', backgroundColor: '#f0fdf4', color: '#15803d', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
-                              Sales
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td style={{ padding: '0.875rem 1rem' }}>
-                        {t.is_active ? (
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#16a34a', fontSize: '0.8125rem' }}>
-                            <CheckCircle2 size={14} /> Active
-                          </span>
-                        ) : (
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#94a3b8', fontSize: '0.8125rem' }}>
-                            <XCircle size={14} /> Inactive
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '0.875rem 1.25rem', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenRateModal(t)}
-                            style={{
-                              padding: '0.375rem 0.625rem',
-                              border: '1px solid #bfdbfe',
-                              borderRadius: '6px',
-                              backgroundColor: '#eff6ff',
-                              color: '#2563eb',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.25rem',
-                              fontSize: '0.75rem',
-                              fontWeight: 500,
-                            }}
-                          >
-                            <Plus size={13} />
-                            Add Rate
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenTreatmentModal(t)}
-                            style={{
-                              padding: '0.375rem 0.625rem',
-                              border: '1px solid #cbd5e1',
-                              borderRadius: '6px',
-                              backgroundColor: '#ffffff',
-                              color: '#334155',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.25rem',
-                              fontSize: '0.75rem',
-                            }}
-                          >
-                            <Edit2 size={13} />
-                            Edit
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-
-                    {/* Rate Versions Detail Accordion */}
-                    {isExpanded && (
-                      <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                        <td colSpan={7} style={{ padding: '1.25rem 2rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                            <h4 style={{ margin: 0, fontSize: '0.875rem', fontWeight: 600, color: '#334155' }}>
-                              Effective Rate Versions for "{t.name}"
-                            </h4>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenRateModal(t)}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.25rem',
-                                padding: '0.25rem 0.625rem',
-                                fontSize: '0.75rem',
-                                borderRadius: '6px',
-                                border: '1px solid #2563eb',
-                                backgroundColor: '#2563eb',
-                                color: '#ffffff',
-                                cursor: 'pointer',
-                              }}
-                            >
-                              <Plus size={13} />
-                              New Rate Version
-                            </button>
-                          </div>
-
-                          {t.rates && t.rates.length > 0 ? (
-                            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#ffffff' }}>
-                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8125rem' }}>
-                                <thead>
-                                  <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
-                                    <th style={{ padding: '0.5rem 1rem', fontWeight: 600, color: '#475569' }}>Effective Window</th>
-                                    <th style={{ padding: '0.5rem 1rem', fontWeight: 600, color: '#475569' }}>Rates / Levies</th>
-                                    <th style={{ padding: '0.5rem 1rem', fontWeight: 600, color: '#475569' }}>Multi-Components</th>
-                                    <th style={{ padding: '0.5rem 1rem', fontWeight: 600, color: '#475569' }}>Audit Status</th>
-                                    <th style={{ padding: '0.5rem 1rem', fontWeight: 600, color: '#475569', textAlign: 'right' }}>Actions</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {t.rates.map((r) => (
-                                    <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                      <td style={{ padding: '0.625rem 1rem' }}>
-                                        <span style={{ fontWeight: 500, color: '#1e293b' }}>
-                                          {r.effective_from}
-                                        </span>
-                                        <span style={{ color: '#64748b' }}>
-                                          {r.effective_to ? ` to ${r.effective_to}` : ' (Active)'}
-                                        </span>
-                                      </td>
-                                      <td style={{ padding: '0.625rem 1rem' }}>
-                                        {t.tax_regime === 'gst' ? (
-                                          <span>
-                                            GST: {r.gst_rate}%
-                                            {parseFloat(r.cess_rate) > 0 && `, Cess: ${r.cess_rate}%`}
-                                            {parseFloat(r.cess_per_unit) > 0 && `, ₹${r.cess_per_unit}/unit`}
-                                          </span>
-                                        ) : (
-                                          <span style={{ color: '#64748b' }}>Non-GST Levies</span>
-                                        )}
-                                      </td>
-                                      <td style={{ padding: '0.625rem 1rem' }}>
-                                        {r.components && r.components.length > 0 ? (
-                                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                                            {r.components.map((c, i) => (
-                                              <span
-                                                key={i}
-                                                style={{
-                                                  fontSize: '0.6875rem',
-                                                  backgroundColor: '#fef3c7',
-                                                  color: '#92400e',
-                                                  padding: '0.1rem 0.35rem',
-                                                  borderRadius: '4px',
-                                                }}
-                                              >
-                                                {c.name}: {c.rate_value}
-                                                {c.calculation_type === 'percentage' ? '%' : '/unit'}
-                                              </span>
-                                            ))}
-                                          </div>
-                                        ) : (
-                                          <span style={{ color: '#94a3b8' }}>-</span>
-                                        )}
-                                      </td>
-                                      <td style={{ padding: '0.625rem 1rem' }}>
-                                        {r.is_locked ? (
-                                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#64748b', fontSize: '0.75rem' }}>
-                                            <Lock size={12} /> Locked by Bills
-                                          </span>
-                                        ) : (
-                                          <span style={{ color: '#16a34a', fontSize: '0.75rem' }}>Draft / Editable</span>
-                                        )}
-                                      </td>
-                                      <td style={{ padding: '0.625rem 1rem', textAlign: 'right' }}>
-                                        {!r.is_locked && (
-                                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                                            <button
-                                              type="button"
-                                              onClick={() => handleOpenRateModal(t, r)}
-                                              style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: '0.15rem' }}
-                                            >
-                                              <Edit2 size={13} />
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => handleDeleteRate(t.id, r.id)}
-                                              style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: '0.15rem' }}
-                                            >
-                                              <Trash2 size={13} />
-                                            </button>
-                                          </div>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          ) : (
-                            <p style={{ margin: 0, fontSize: '0.8125rem', color: '#94a3b8' }}>
-                              No rate versions have been defined for this treatment.
-                            </p>
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })
-            )}
+            {loading ? <tr><td colSpan={6} style={{ padding: '2rem', textAlign: 'center' }}>Loading…</td></tr> : sortedTreatments.map((treatment) => {
+              const expanded = expandedId === treatment.id;
+              const currentRate = treatment.rates?.[0];
+              return <React.Fragment key={treatment.id}>
+                <tr>
+                  <td><button type="button" className="btn btn-ghost btn-sm" onClick={() => setExpandedId(expanded ? null : treatment.id)}>{expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</button></td>
+                  <td><strong>{treatment.name}</strong><div style={{ color: '#64748b', fontSize: '0.73rem' }}>{treatment.code}</div></td>
+                  <td>{regimeLabels[treatment.tax_regime]}</td>
+                  <td>{treatment.tax_regime === 'gst' ? `${currentRate?.gst_rate || '—'}%` : 'No GST'}</td>
+                  <td>{treatment.is_active ? <span style={{ color: '#15803d', display: 'inline-flex', gap: 4, alignItems: 'center' }}><CheckCircle2 size={14} /> Active</span> : <span style={{ color: '#94a3b8' }}>Inactive</span>}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    {treatment.tax_regime === 'gst' && treatment.is_active && <button type="button" className="btn btn-secondary btn-sm" onClick={() => openRate(treatment)}><Percent size={14} /> New Rate</button>}
+                    {treatment.is_active && <button type="button" className="btn btn-ghost btn-sm" onClick={() => deactivate(treatment)}>Deactivate</button>}
+                  </td>
+                </tr>
+                {expanded && <tr><td></td><td colSpan={5} style={{ background: '#f8fafc', padding: '0.8rem 1rem' }}><div style={{ color: '#475569', marginBottom: 6 }}>{regimeHelp[treatment.tax_regime]}</div>{treatment.rates?.length ? treatment.rates.map((row) => <span key={row.id} style={{ display: 'inline-block', marginRight: 8, padding: '0.25rem 0.5rem', border: '1px solid #cbd5e1', borderRadius: 5, background: '#fff', fontSize: '0.75rem' }}>{treatment.tax_regime === 'gst' ? `${row.gst_rate}%` : '0% GST'} from {row.effective_from}</span>) : <span style={{ color: '#b45309' }}>No effective rate configured.</span>}</td></tr>}
+              </React.Fragment>;
+            })}
           </tbody>
         </table>
       </div>
-
-      {/* Tax Treatment Create/Edit Modal */}
-      {treatmentModalOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(15, 23, 42, 0.5)',
-            backdropFilter: 'blur(4px)',
-            zIndex: 1100,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '1rem',
-          }}
-          onClick={() => setTreatmentModalOpen(false)}
-        >
-          <div
-            style={{
-              width: '100%',
-              maxWidth: '540px',
-              backgroundColor: '#ffffff',
-              borderRadius: '16px',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-              overflow: 'hidden',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f8fafc' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <Percent size={20} className="text-blue-600" />
-                <h3 style={{ margin: 0, fontSize: '1.125rem', fontWeight: 600, color: '#0f172a' }}>
-                  {editingTreatment ? 'Edit Tax Treatment' : 'New Tax Treatment'}
-                </h3>
-              </div>
-              <button onClick={() => setTreatmentModalOpen(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
-                <X size={20} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveTreatment} style={{ padding: '1.5rem' }}>
-              {modalError && (
-                <div style={{ marginBottom: '1rem', padding: '0.75rem 1rem', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#b91c1c', fontSize: '0.875rem' }}>
-                  {modalError}
-                </div>
-              )}
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '0.75rem', marginBottom: '1rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#475569', marginBottom: '0.25rem' }}>
-                    Code *
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. GST-18"
-                    value={treatmentFormData.code}
-                    onChange={(e) => setTreatmentFormData({ ...treatmentFormData, code: e.target.value })}
-                    required
-                    style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.875rem' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#475569', marginBottom: '0.25rem' }}>
-                    Treatment Name *
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. GST 18% (Standard)"
-                    value={treatmentFormData.name}
-                    onChange={(e) => setTreatmentFormData({ ...treatmentFormData, name: e.target.value })}
-                    required
-                    style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.875rem' }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#475569', marginBottom: '0.25rem' }}>
-                  Tax Regime *
-                </label>
-                <select
-                  value={treatmentFormData.tax_regime}
-                  onChange={(e: any) => setTreatmentFormData({ ...treatmentFormData, tax_regime: e.target.value })}
-                  style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.875rem' }}
-                >
-                  <option value="gst">GST (Goods and Services Tax)</option>
-                  <option value="exempt">Exempt</option>
-                  <option value="nil_rated">Nil-Rated</option>
-                  <option value="out_of_scope">Out of Scope</option>
-                </select>
-              </div>
-
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#475569', marginBottom: '0.25rem' }}>
-                  Description / Legal Reference
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Schedule II statutory GST rate"
-                  value={treatmentFormData.description}
-                  onChange={(e) => setTreatmentFormData({ ...treatmentFormData, description: e.target.value })}
-                  style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.875rem' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '1.5rem', padding: '0.75rem', backgroundColor: '#f8fafc', borderRadius: '8px', marginBottom: '1rem' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.8125rem', color: '#334155' }}>
-                  <input
-                    type="checkbox"
-                    checked={treatmentFormData.is_purchase_applicable}
-                    onChange={(e) => setTreatmentFormData({ ...treatmentFormData, is_purchase_applicable: e.target.checked })}
-                    style={{ accentColor: '#2563eb' }}
-                  />
-                  Applicable to Purchases
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.8125rem', color: '#334155' }}>
-                  <input
-                    type="checkbox"
-                    checked={treatmentFormData.is_sales_applicable}
-                    onChange={(e) => setTreatmentFormData({ ...treatmentFormData, is_sales_applicable: e.target.checked })}
-                    style={{ accentColor: '#2563eb' }}
-                  />
-                  Applicable to Sales
-                </label>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid #e2e8f0', paddingTop: '1rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setTreatmentModalOpen(false)}
-                  style={{ padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'none', cursor: 'pointer', color: '#64748b' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: 'none', backgroundColor: '#2563eb', color: '#ffffff', fontWeight: 600, cursor: 'pointer' }}
-                >
-                  {saving ? 'Saving...' : editingTreatment ? 'Update Treatment' : 'Create Treatment'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Rate Version Create/Edit Modal */}
-      {rateModalOpen && activeTreatmentForRate && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(15, 23, 42, 0.5)',
-            backdropFilter: 'blur(4px)',
-            zIndex: 1100,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '1rem',
-          }}
-          onClick={() => setRateModalOpen(false)}
-        >
-          <div
-            style={{
-              width: '100%',
-              maxWidth: '620px',
-              maxHeight: '90vh',
-              overflowY: 'auto',
-              backgroundColor: '#ffffff',
-              borderRadius: '16px',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f8fafc' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.125rem', fontWeight: 600, color: '#0f172a' }}>
-                  {editingRate ? 'Edit Rate Version' : 'New Effective Rate Version'}
-                </h3>
-                <p style={{ margin: 0, fontSize: '0.8125rem', color: '#64748b' }}>
-                  Statutory rates for "{activeTreatmentForRate.name}"
-                </p>
-              </div>
-              <button onClick={() => setRateModalOpen(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
-                <X size={20} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveRate} style={{ padding: '1.5rem' }}>
-              {modalError && (
-                <div style={{ marginBottom: '1rem', padding: '0.75rem 1rem', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#b91c1c', fontSize: '0.875rem' }}>
-                  {modalError}
-                </div>
-              )}
-
-              {/* Effective Dates */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#475569', marginBottom: '0.25rem' }}>
-                    Effective From *
-                  </label>
-                  <input
-                    type="date"
-                    value={rateFormData.effective_from}
-                    onChange={(e) => setRateFormData({ ...rateFormData, effective_from: e.target.value })}
-                    required
-                    style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.875rem' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#475569', marginBottom: '0.25rem' }}>
-                    Effective To (Leave blank for ongoing)
-                  </label>
-                  <input
-                    type="date"
-                    value={rateFormData.effective_to}
-                    onChange={(e) => setRateFormData({ ...rateFormData, effective_to: e.target.value })}
-                    style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.875rem' }}
-                  />
-                </div>
-              </div>
-
-              {/* GST Fields */}
-              {activeTreatmentForRate.tax_regime === 'gst' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', marginBottom: '1rem', padding: '1rem', backgroundColor: '#eff6ff', borderRadius: '8px' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#1e40af', marginBottom: '0.25rem' }}>
-                      GST Rate (%) *
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={rateFormData.gst_rate}
-                      onChange={(e) => setRateFormData({ ...rateFormData, gst_rate: e.target.value })}
-                      required
-                      style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #bfdbfe', fontSize: '0.875rem', backgroundColor: '#ffffff' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#1e40af', marginBottom: '0.25rem' }}>
-                      Cess Rate (%)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={rateFormData.cess_rate}
-                      onChange={(e) => setRateFormData({ ...rateFormData, cess_rate: e.target.value })}
-                      style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #bfdbfe', fontSize: '0.875rem', backgroundColor: '#ffffff' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#1e40af', marginBottom: '0.25rem' }}>
-                      Cess / Unit (₹)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={rateFormData.cess_per_unit}
-                      onChange={(e) => setRateFormData({ ...rateFormData, cess_per_unit: e.target.value })}
-                      style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #bfdbfe', fontSize: '0.875rem', backgroundColor: '#ffffff' }}
-                    />
-                  </div>
-                </div>
-              )}
-
-
-
-              {/* Notes */}
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#475569', marginBottom: '0.25rem' }}>
-                  Gazette / Notification Reference Notes
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Kerala Finance Act 2024 revision"
-                  value={rateFormData.notes}
-                  onChange={(e) => setRateFormData({ ...rateFormData, notes: e.target.value })}
-                  style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.875rem' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid #e2e8f0', paddingTop: '1rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setRateModalOpen(false)}
-                  style={{ padding: '0.5rem 1rem', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'none', cursor: 'pointer', color: '#64748b' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', border: 'none', backgroundColor: '#2563eb', color: '#ffffff', fontWeight: 600, cursor: 'pointer' }}
-                >
-                  {saving ? 'Saving...' : editingRate ? 'Update Rate' : 'Save Rate Version'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
