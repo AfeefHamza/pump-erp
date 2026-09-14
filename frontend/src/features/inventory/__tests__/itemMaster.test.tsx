@@ -228,7 +228,7 @@ describe('Item Master & Settings Tax Treatments Frontend', () => {
     expect(screen.getByText('Engine Oil 20W40 1L')).toBeInTheDocument();
   });
 
-  it('4. Renders Tax Treatments page with statutory regimes and rate versions', async () => {
+  it('4. Renders simplified Tax Treatments with clear GST and non-GST categories', async () => {
     renderComponent(<TaxTreatmentsPage />);
 
     await waitFor(() => {
@@ -236,18 +236,20 @@ describe('Item Master & Settings Tax Treatments Frontend', () => {
       expect(screen.getByText('Exempt Supplies')).toBeInTheDocument();
     });
 
-    // Check codes and regimes
+    // Existing treatments remain visible, while the simple guide keeps petroleum
+    // separate from exempt and nil-rated GST supplies.
     expect(screen.getByText('GST-18')).toBeInTheDocument();
     expect(screen.getByText('EXEMPT-0')).toBeInTheDocument();
-    expect(screen.getAllByText('GST').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('EXEMPT').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Non-GST Petroleum')).toBeInTheDocument();
+    expect(screen.getByText(/Petrol and diesel; not GST-exempt/i)).toBeInTheDocument();
+    expect(screen.getByText('GST Exempt')).toBeInTheDocument();
 
     // Check active rates
-    expect(screen.getByText(/18.*% GST/i)).toBeInTheDocument();
-    expect(screen.getByText(/0% \(Exempted\)/i)).toBeInTheDocument();
+    expect(screen.getByText('18.00%')).toBeInTheDocument();
+    expect(screen.getByText('No GST')).toBeInTheDocument();
   });
 
-  it('5. Filters Tax Treatments by regime', async () => {
+  it('5. Keeps treatment management on one compact page', async () => {
     renderComponent(<TaxTreatmentsPage />);
 
     await waitFor(() => {
@@ -255,10 +257,8 @@ describe('Item Master & Settings Tax Treatments Frontend', () => {
       expect(screen.getByText('EXEMPT-0')).toBeInTheDocument();
     });
 
-    const gstFilter = screen.getByRole('button', { name: /^GST$/i });
-    fireEvent.click(gstFilter);
-
     expect(screen.getByText('GST 18%')).toBeInTheDocument();
-    expect(screen.queryByText('EXEMPT-0')).not.toBeInTheDocument();
+    expect(screen.getByText('EXEMPT-0')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Add Treatment/i })).toBeInTheDocument();
   });
 });

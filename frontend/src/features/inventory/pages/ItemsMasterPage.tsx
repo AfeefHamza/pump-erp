@@ -1,6 +1,6 @@
 // frontend/src/features/inventory/pages/ItemsMasterPage.tsx
-import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppSelector } from '@/app/store';
 import {
   fetchItems,
@@ -8,7 +8,6 @@ import {
 } from '@/api/client';
 import type { Item, ItemType } from '@/features/inventory/types';
 import { PageHeader } from '@/components/navigation/PageHeader';
-import { ItemDrawer } from '@/features/inventory/components/ItemDrawer';
 import { UnitManagementModal } from '@/features/inventory/components/UnitManagementModal';
 import {
   Package,
@@ -27,6 +26,7 @@ import {
 
 export const ItemsMasterPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const selectedOrgId = useAppSelector((state) => state.ui.selectedOrganizationId);
 
   const typeParam = searchParams.get('type') as ItemType | null;
@@ -38,13 +38,10 @@ export const ItemsMasterPage: React.FC = () => {
   const [selectedType, setSelectedType] = useState<string>(typeParam || 'all');
   const [activeOnly, setActiveOnly] = useState(true);
 
-  // Drawer & Modal states
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<Item | null>(null);
-  const [drawerInitialType, setDrawerInitialType] = useState<ItemType>('stock_item');
+  // Unit setup remains a small supporting dialog; item creation is a full page.
   const [unitModalOpen, setUnitModalOpen] = useState(false);
 
-  const loadItems = async () => {
+  const loadItems = useCallback(async () => {
     if (!selectedOrgId) return;
     setLoading(true);
     setError(null);
@@ -57,11 +54,11 @@ export const ItemsMasterPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedOrgId]);
 
   useEffect(() => {
     loadItems();
-  }, [selectedOrgId]);
+  }, [loadItems]);
 
   useEffect(() => {
     if (typeParam) {
@@ -80,22 +77,17 @@ export const ItemsMasterPage: React.FC = () => {
   };
 
   const handleOpenCreate = (type?: ItemType) => {
-    setEditingItem(null);
-    setDrawerInitialType(type || (selectedType !== 'all' ? (selectedType as ItemType) : 'stock_item'));
-    setDrawerOpen(true);
+    const initialType = type || (selectedType !== 'all' ? (selectedType as ItemType) : 'stock_item');
+    navigate(`/app/inventory/items/new?type=${initialType}`);
   };
 
   const handleOpenEdit = (item: Item) => {
-    setEditingItem(item);
-    setDrawerOpen(true);
+    navigate(`/app/inventory/items/${item.id}/edit`);
   };
 
   const handleDeactivate = async (item: Item) => {
-    if (!selectedOrgId) return;
-    const confirmText = item.is_active
-      ? `Deactivate item "${item.name}" (${item.code})? It will no longer appear on new transaction selectors.`
-      : `Reactivate item "${item.name}"?`;
-    if (!window.confirm(confirmText)) return;
+    if (!selectedOrgId || !item.is_active) return;
+    if (!window.confirm(`Deactivate item "${item.name}" (${item.code})? It will no longer appear on new transaction selectors.`)) return;
 
     try {
       await deactivateItem(selectedOrgId, item.id);
@@ -545,22 +537,22 @@ export const ItemsMasterPage: React.FC = () => {
                           <Edit2 size={13} />
                           Edit
                         </button>
-                        <button
+                        {it.is_active && <button
                           onClick={() => handleDeactivate(it)}
-                          title={it.is_active ? 'Deactivate item' : 'Activate item'}
+                          title="Deactivate item"
                           style={{
                             padding: '0.375rem',
                             border: '1px solid #cbd5e1',
                             borderRadius: '6px',
                             backgroundColor: '#ffffff',
-                            color: it.is_active ? '#dc2626' : '#16a34a',
+                            color: '#dc2626',
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
                           }}
                         >
                           <PowerOff size={13} />
-                        </button>
+                        </button>}
                       </div>
                     </td>
                   </tr>
@@ -570,15 +562,6 @@ export const ItemsMasterPage: React.FC = () => {
           </tbody>
         </table>
       </div>
-
-      {/* Item Drawer */}
-      <ItemDrawer
-        isOpen={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        item={editingItem}
-        initialType={drawerInitialType}
-        onSaved={loadItems}
-      />
 
       {/* Unit Management Modal */}
       <UnitManagementModal

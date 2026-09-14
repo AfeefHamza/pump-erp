@@ -93,9 +93,9 @@ def _resolve_active_tax_treatment(item: Item, on_date: date = None):
 
         if mapping and mapping.tax_treatment:
             return {
-                'id': str(mapping.tax_treatment.id),
-                'code': mapping.tax_treatment.code,
-                'name': mapping.tax_treatment.name,
+                'tax_treatment_id': str(mapping.tax_treatment.id),
+                'tax_treatment_code': mapping.tax_treatment.code,
+                'tax_treatment_name': mapping.tax_treatment.name,
                 'tax_regime': mapping.tax_treatment.tax_regime,
                 'default_itc_classification': mapping.default_itc_classification,
                 'effective_from': mapping.effective_from.isoformat(),
@@ -109,7 +109,7 @@ def _resolve_active_tax_treatment(item: Item, on_date: date = None):
 class ItemListSerializer(serializers.ModelSerializer):
     base_unit_code = serializers.CharField(source='base_unit.code', read_only=True)
     base_unit_name = serializers.CharField(source='base_unit.name', read_only=True)
-    tax_treatment = serializers.SerializerMethodField()
+    current_purchase_tax_treatment = serializers.SerializerMethodField()
     has_conflict = serializers.SerializerMethodField()
 
     class Meta:
@@ -119,11 +119,11 @@ class ItemListSerializer(serializers.ModelSerializer):
             'category', 'base_unit', 'base_unit_code', 'base_unit_name',
             'hsn_sac', 'barcode', 'is_purchasable', 'is_sellable',
             'inventory_tracking_mode', 'is_active', 'display_order',
-            'tax_treatment', 'has_conflict', 'created_at', 'updated_at'
+            'current_purchase_tax_treatment', 'has_conflict', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
-    def get_tax_treatment(self, obj):
+    def get_current_purchase_tax_treatment(self, obj):
         return _resolve_active_tax_treatment(obj)
 
     def get_has_conflict(self, obj):
@@ -134,7 +134,7 @@ class ItemDetailSerializer(ItemListSerializer):
     fuel_profile = FuelItemProfileSerializer(read_only=True)
     stock_profile = StockItemProfileSerializer(read_only=True)
     aliases = ItemCodeAliasSerializer(many=True, read_only=True)
-    conversions = UnitConversionSerializer(source='conversions_from', many=True, read_only=True)
+    conversions = UnitConversionSerializer(source='unit_conversions', many=True, read_only=True)
 
     class Meta(ItemListSerializer.Meta):
         fields = ItemListSerializer.Meta.fields + [
@@ -147,18 +147,19 @@ class ItemOptionSerializer(serializers.ModelSerializer):
     """
     Lightweight serializer for comboboxes and selection grids (e.g. Purchase Bill workspace).
     """
-    unit = serializers.CharField(source='base_unit.code', read_only=True)
+    base_unit_id = serializers.UUIDField(source='base_unit.id', read_only=True)
+    base_unit_code = serializers.CharField(source='base_unit.code', read_only=True)
     base_unit_name = serializers.CharField(source='base_unit.name', read_only=True)
-    tax_treatment = serializers.SerializerMethodField()
+    current_purchase_tax_treatment = serializers.SerializerMethodField()
 
     class Meta:
         model = Item
         fields = [
             'id', 'code', 'name', 'short_name', 'item_type',
-            'unit', 'base_unit_name', 'hsn_sac', 'barcode',
+            'base_unit_id', 'base_unit_code', 'base_unit_name', 'hsn_sac', 'barcode',
             'is_purchasable', 'is_sellable', 'inventory_tracking_mode',
-            'is_active', 'tax_treatment'
+            'is_active', 'current_purchase_tax_treatment'
         ]
 
-    def get_tax_treatment(self, obj):
+    def get_current_purchase_tax_treatment(self, obj):
         return _resolve_active_tax_treatment(obj)

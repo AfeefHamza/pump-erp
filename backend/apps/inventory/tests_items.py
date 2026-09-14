@@ -363,6 +363,10 @@ class CanonicalItemMasterTestCase(TestCase):
         codes = [item['code'] for item in res.json()]
         self.assertIn("OPT-ACTIVE", codes)
         self.assertNotIn("OPT-INACTIVE", codes)
+        active_option = next(item for item in res.json() if item['code'] == "OPT-ACTIVE")
+        self.assertEqual(active_option['base_unit_id'], str(self.unit_pcs.id))
+        self.assertEqual(active_option['base_unit_code'], "PCS")
+        self.assertIn('current_purchase_tax_treatment', active_option)
 
     def test_tax_treatment_and_purchase_bill_canonical_item(self):
         """13. Purchase bill creation using canonical item_id resolves tax treatment and snapshots properly."""
@@ -391,8 +395,19 @@ class CanonicalItemMasterTestCase(TestCase):
             item_type=Item.ITEM_TYPE_STOCK,
             base_unit=self.unit_pcs,
             tax_treatment_id=str(tax_treatment.id),
-            default_itc_classification=ItemPurchaseTaxTreatment.ITC_ELIGIBLE_INPUTS
+            default_itc_classification=ItemPurchaseTaxTreatment.ITC_ELIGIBLE_INPUTS,
+            effective_from=date(2026, 1, 1),
         )
+
+        # The single Item Master API exposes the same tax-default contract used
+        # by the purchase bill item selector.
+        item_detail_url = f"/api/v1/organisations/{self.org.id}/inventory/items/{lube_item.id}/"
+        item_res = self.client.get(item_detail_url)
+        self.assertEqual(item_res.status_code, status.HTTP_200_OK)
+        resolved = item_res.json()['current_purchase_tax_treatment']
+        self.assertEqual(resolved['tax_treatment_id'], str(tax_treatment.id))
+        self.assertEqual(resolved['tax_treatment_code'], "GST_18_STD")
+        self.assertEqual(resolved['tax_regime'], "gst")
 
         # Create Supplier
         supplier = create_supplier(
@@ -448,17 +463,17 @@ class CanonicalItemMasterTestCase(TestCase):
 
         # POST
         payload = {
-            'code': 'OUT_OF_SCOPE_FUEL',
+            'code': 'NON_GST_PETROLEUM',
             'name': 'Non-GST Fuel Treatment',
-            'tax_regime': 'out_of_scope',
-            'description': 'Out of scope non-GST petroleum supplies',
+            'tax_regime': 'non_gst_petroleum',
+            'description': 'Petroleum products outside GST',
             'is_purchase_applicable': True,
             'is_sales_applicable': True
         }
         res = self.client.post(list_url, payload, format='json')
         self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
         treatment_id = res.json()['id']
-        self.assertEqual(res.json()['code'], 'OUT_OF_SCOPE_FUEL')
+        self.assertEqual(res.json()['code'], 'NON_GST_PETROLEUM')
 
         # GET detail
         detail_url = f"/api/v1/organisations/{self.org.id}/tax-treatments/{treatment_id}/"

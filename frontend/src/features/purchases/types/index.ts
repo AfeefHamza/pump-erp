@@ -190,7 +190,7 @@ export interface PurchaseTaxCode {
   id: string;
   code: string;
   name: string;
-  tax_regime: 'gst' | 'non_gst_petroleum' | 'exempt' | 'nil_rated' | 'out_of_scope';
+  tax_regime: 'gst' | 'non_gst_petroleum' | 'non_gst' | 'exempt' | 'nil_rated' | 'out_of_scope';
   description?: string | null;
   is_active: boolean;
   rates: PurchaseTaxCodeRate[];
@@ -587,4 +587,3 @@ export interface PurchaseBillCalculationPreview {
   lines: any[];
   other_charges: any[];
 }
-

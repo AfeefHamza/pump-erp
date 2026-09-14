@@ -24,7 +24,6 @@ import {
   type ItemOption,
   type TaxTreatment
 } from '@/api/client';
-import { ItemDrawer } from '@/features/inventory/components/ItemDrawer';
 import type {
   Supplier,
   PurchaseBillDetail,
@@ -77,7 +76,6 @@ export const PurchaseBillWorkspace: React.FC = () => {
   const [canonicalItems, setCanonicalItems] = useState<ItemOption[]>([]);
   const [taxTreatments, setTaxTreatments] = useState<TaxTreatment[]>([]);
   const [availableReceipts, setAvailableReceipts] = useState<AvailableTankerReceipt[]>([]);
-  const [itemDrawerOpen, setItemDrawerOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -163,20 +161,15 @@ export const PurchaseBillWorkspace: React.FC = () => {
   const { confirmNavigation } = useUnsavedChanges(isDirty && !isVoided);
 
   const showToast = useCallback((message: any, type: 'success' | 'error') => {
-    let msgStr = '';
-    if (typeof message === 'string') {
-      msgStr = message;
-    } else if (message && typeof message === 'object') {
-      if (message.detail) {
-        msgStr = typeof message.detail === 'string'
+    const msgStr = typeof message === 'string'
+      ? message
+      : message && typeof message === 'object'
+        ? message.detail
+          ? typeof message.detail === 'string'
           ? message.detail
-          : Object.entries(message.detail).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' | ');
-      } else {
-        msgStr = Object.entries(message).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' | ');
-      }
-    } else {
-      msgStr = String(message || 'An error occurred');
-    }
+            : Object.entries(message.detail).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' | ')
+          : Object.entries(message).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' | ')
+        : String(message || 'An error occurred');
     setToast({ message: msgStr, type });
     setTimeout(() => setToast(null), 4000);
   }, []);
@@ -388,6 +381,19 @@ export const PurchaseBillWorkspace: React.FC = () => {
   useEffect(() => {
     loadInitialData();
   }, [loadInitialData]);
+
+  // Item creation opens in a separate ERP page so the current bill remains
+  // untouched. Refresh only the canonical selector when the user returns.
+  useEffect(() => {
+    const refreshItems = () => {
+      if (!activeOrgId) return;
+      fetchItemOptions(activeOrgId, { purchasable_only: 'true' })
+        .then(setCanonicalItems)
+        .catch(() => undefined);
+    };
+    window.addEventListener('focus', refreshItems);
+    return () => window.removeEventListener('focus', refreshItems);
+  }, [activeOrgId]);
 
   // Load available tanker receipts when supplier changes
   const loadAvailableReceipts = useCallback(async () => {
@@ -747,14 +753,9 @@ export const PurchaseBillWorkspace: React.FC = () => {
     lines.forEach((l) => {
       const q = parseFloat(l.quantity) || 0;
       const r = parseFloat(l.unit_rate) || 0;
-      let d = 0;
-      if (l.discount_method === 'fixed_amount') {
-        d = parseFloat(l.discount_amount || '0') || 0;
-      } else if (l.discount_method === 'percentage') {
-        d = (q * r * (parseFloat(l.discount_percentage || '0') || 0)) / 100;
-      } else {
-        d = parseFloat(l.discount_amount || '0') || 0;
-      }
+      const d = l.discount_method === 'percentage'
+        ? (q * r * (parseFloat(l.discount_percentage || '0') || 0)) / 100
+        : parseFloat(l.discount_amount || '0') || 0;
       grossSubtotal += q * r;
       lineDiscountsTotal += d;
     });
@@ -1696,7 +1697,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
           onUpdateLine={handleUpdateProductLine}
           onRemoveLine={handleRemoveProductLine}
           onAddLine={handleAddProductLine}
-          onCreateItem={() => setItemDrawerOpen(true)}
+          onCreateItem={() => window.open('/app/inventory/items/new', '_blank', 'noopener,noreferrer')}
         />
       </div>
 
@@ -2232,17 +2233,6 @@ export const PurchaseBillWorkspace: React.FC = () => {
           </div>
         </div>
       )}
-      {/* Canonical Item Drawer (Quick Create without losing bill state) */}
-      <ItemDrawer
-        isOpen={itemDrawerOpen}
-        onClose={() => setItemDrawerOpen(false)}
-        onSaved={async () => {
-          if (activeOrgId) {
-            const updated = await fetchItemOptions(activeOrgId, { purchasable_only: 'true' }).catch(() => []);
-            setCanonicalItems(updated);
-          }
-        }}
-      />
     </div>
   );
 };

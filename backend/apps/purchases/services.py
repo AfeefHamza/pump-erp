@@ -1077,14 +1077,16 @@ def calculate_bill_totals_v2(
                 if not l.get('itc_classification'):
                     itc_classification = mapping.default_itc_classification
                 if not tax_treatment:
-                    tax_treatment = 'non_gst_petroleum' if tax_code.tax_regime in ('petroleum', 'non_gst') else 'gst'
-
-        if not tax_treatment:
-            tax_treatment = 'gst'
+                    tax_treatment = tax_code.tax_regime
 
         if tax_code_id and not tax_code:
             tax_code = PurchaseTaxCode.objects.get(id=tax_code_id, organisation=organisation)
             rate_version = resolve_tax_code_rate_version(tax_code, invoice_date, organisation)
+            if not tax_treatment:
+                tax_treatment = tax_code.tax_regime
+
+        if not tax_treatment:
+            tax_treatment = 'gst'
 
         if tax_treatment == 'gst' and supplier.gst_registration_type in ('unregistered', 'composition'):
             if (rate_version and rate_version.gst_rate > Decimal('0.00')) or Decimal(str(l.get('gst_rate', '0'))) > Decimal('0.00'):
@@ -1191,7 +1193,7 @@ def calculate_bill_totals_v2(
 
             line_total = taxable_amount + petroleum_tax_amount
             itc_classification = PurchaseItem.ITC_NOT_APPLICABLE
-        elif tax_treatment in ['exempt', 'nil_rated', 'out_of_scope']:
+        elif tax_treatment in ['non_gst', 'exempt', 'nil_rated', 'out_of_scope']:
             taxable_amount = Decimal('0.00')
             line_total = net_after_discount
             itc_classification = PurchaseItem.ITC_NOT_APPLICABLE
@@ -2273,4 +2275,3 @@ def upload_bill_attachment(
     )
 
     return att
-

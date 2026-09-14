@@ -138,9 +138,10 @@ export interface UnitMaster {
   id: string;
   code: string;
   name: string;
-  unit_type: 'volume' | 'weight' | 'quantity' | 'service';
+  symbol?: string | null;
+  unit_type?: 'volume' | 'weight' | 'quantity' | 'service';
   is_active: boolean;
-  created_at: string;
+  created_at?: string;
 }
 
 export interface UnitConversion {
@@ -159,17 +160,27 @@ export interface UnitConversion {
 
 export interface FuelItemProfile {
   id?: string;
-  fuel_type: 'motor_spirit' | 'high_speed_diesel' | 'cng' | 'lpg' | 'other';
-  density_standard?: string | null;
-  color_code?: string | null;
+  fuel_category: 'petrol' | 'diesel' | 'premium_petrol' | 'premium_diesel' | 'cng' | 'lpg' | 'other';
+  custom_category_name?: string | null;
+  short_code?: string | null;
+  stock_unit?: string | null;
+  stock_unit_code?: string | null;
+  density_std?: string | null;
+  density_min?: string | null;
+  density_max?: string | null;
+  price_configuration_eligible?: boolean;
+  forecourt_display_order?: number;
 }
 
 export interface StockItemProfile {
   id?: string;
+  brand?: string | null;
   reorder_level?: string | null;
-  reorder_quantity?: string | null;
-  barcode?: string | null;
-  storage_location?: string | null;
+  preferred_purchase_unit?: string | null;
+  preferred_purchase_unit_code?: string | null;
+  sales_unit?: string | null;
+  sales_unit_code?: string | null;
+  valuation_method?: 'fifo' | 'weighted_average';
 }
 
 export interface ResolvedTaxTreatment {
@@ -185,13 +196,16 @@ export interface Item {
   id: string;
   code: string;
   name: string;
+  short_name?: string | null;
   item_type: ItemType;
+  category?: string | null;
   inventory_tracking_mode: InventoryTrackingMode;
   base_unit: string;
   base_unit_code?: string;
   base_unit_name?: string;
   base_unit_type?: string;
   hsn_sac?: string | null;
+  barcode?: string | null;
   description?: string | null;
   is_active: boolean;
   is_purchasable: boolean;
@@ -249,7 +263,7 @@ export interface TaxTreatment {
   id: string;
   code: string;
   name: string;
-  tax_regime: 'gst' | 'non_gst_petroleum' | 'exempt' | 'nil_rated' | 'out_of_scope';
+  tax_regime: 'gst' | 'non_gst_petroleum' | 'non_gst' | 'exempt' | 'nil_rated' | 'out_of_scope';
   description?: string | null;
   is_active: boolean;
   is_purchase_applicable: boolean;
@@ -270,4 +284,3 @@ export interface ItemPurchaseTaxTreatment {
   effective_from: string;
   effective_to?: string | null;
 }
-
