@@ -175,6 +175,7 @@ export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
         <input
           ref={inputRef}
+          autoFocus={autoFocus}
           id={inputId}
           type="text"
           role="combobox"

@@ -3546,6 +3546,74 @@ export async function fetchSupplierStatement(
   );
 }
 
+// ==========================================
+// Milestone 13: Payment Accounts & Supplier Payments
+// ==========================================
+import type {
+  OpenPurchaseBill,
+  PaymentAccount,
+  PaymentAccountInput,
+  SupplierPayment,
+  SupplierPaymentInput,
+  SupplierPaymentListResponse,
+} from '@/features/finance/types';
+
+export async function fetchPaymentAccounts(orgId: string, outletId?: string): Promise<PaymentAccount[]> {
+  const query = outletId ? `?outlet=${encodeURIComponent(outletId)}` : '';
+  return apiRequest<PaymentAccount[]>(`/organisations/${orgId}/payment-accounts/${query}`);
+}
+
+export async function fetchPaymentAccountOptions(orgId: string, outletId: string): Promise<PaymentAccount[]> {
+  return apiRequest<PaymentAccount[]>(`/organisations/${orgId}/outlets/${outletId}/payment-accounts/options/`);
+}
+
+export async function createPaymentAccount(orgId: string, data: PaymentAccountInput): Promise<PaymentAccount> {
+  return apiRequest<PaymentAccount>(`/organisations/${orgId}/payment-accounts/`, {
+    method: 'POST', body: JSON.stringify(data),
+  });
+}
+
+export async function updatePaymentAccount(orgId: string, accountId: string, data: Partial<PaymentAccountInput>): Promise<PaymentAccount> {
+  return apiRequest<PaymentAccount>(`/organisations/${orgId}/payment-accounts/${accountId}/`, {
+    method: 'PATCH', body: JSON.stringify(data),
+  });
+}
+
+export async function deactivatePaymentAccount(orgId: string, accountId: string): Promise<PaymentAccount> {
+  return apiRequest<PaymentAccount>(`/organisations/${orgId}/payment-accounts/${accountId}/deactivate/`, { method: 'POST' });
+}
+
+export async function fetchSupplierPayments(orgId: string, outletId: string, params?: Record<string, string>): Promise<SupplierPaymentListResponse> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<SupplierPaymentListResponse>(`/organisations/${orgId}/outlets/${outletId}/supplier-payments/${query}`);
+}
+
+export async function fetchSupplierPayment(orgId: string, outletId: string, paymentId: string): Promise<SupplierPayment> {
+  return apiRequest<SupplierPayment>(`/organisations/${orgId}/outlets/${outletId}/supplier-payments/${paymentId}/`);
+}
+
+export async function createSupplierPayment(orgId: string, outletId: string, data: SupplierPaymentInput): Promise<SupplierPayment> {
+  return apiRequest<SupplierPayment>(`/organisations/${orgId}/outlets/${outletId}/supplier-payments/`, {
+    method: 'POST', body: JSON.stringify(data),
+  });
+}
+
+export async function allocateSupplierPayment(orgId: string, outletId: string, paymentId: string, allocations: SupplierPaymentInput['allocations']): Promise<SupplierPayment> {
+  return apiRequest<SupplierPayment>(`/organisations/${orgId}/outlets/${outletId}/supplier-payments/${paymentId}/allocations/`, {
+    method: 'POST', body: JSON.stringify({ allocations }),
+  });
+}
+
+export async function voidSupplierPayment(orgId: string, outletId: string, paymentId: string, voidReason: string): Promise<SupplierPayment> {
+  return apiRequest<SupplierPayment>(`/organisations/${orgId}/outlets/${outletId}/supplier-payments/${paymentId}/void/`, {
+    method: 'POST', body: JSON.stringify({ void_reason: voidReason }),
+  });
+}
+
+export async function fetchSupplierOpenBills(orgId: string, outletId: string, supplierId: string): Promise<OpenPurchaseBill[]> {
+  return apiRequest<OpenPurchaseBill[]>(`/organisations/${orgId}/outlets/${outletId}/suppliers/${supplierId}/open-purchase-bills/`);
+}
+
 
 // ==========================================
 // Milestone 11: Inventory & Fuel Stock

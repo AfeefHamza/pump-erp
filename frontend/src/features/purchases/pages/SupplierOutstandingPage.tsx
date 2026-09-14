@@ -18,7 +18,7 @@ import {
   FileText,
   RefreshCw,
   ShoppingBag,
-  Info,
+  Plus,
   XCircle
 } from 'lucide-react';
 import { PageHeader } from '@/components/navigation/PageHeader';
@@ -86,6 +86,7 @@ export const SupplierOutstandingPage: React.FC = () => {
         subtitle="Track accounts payable, invoice ageing buckets (Not Due, 1–30, 31–60, 61–90, >90), and view supplier ledger statements."
         actions={
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+            <button onClick={() => navigate('/app/purchases/supplier-payments/new')} className="btn btn-primary"><Plus size={16}/> Record Payment</button>
             <button
               onClick={() => navigate('/app/purchases/purchase-bills')}
               className="btn btn-secondary"
@@ -126,6 +127,12 @@ export const SupplierOutstandingPage: React.FC = () => {
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 'var(--space-xs)' }}>
             Cumulative purchases to date
           </div>
+        </div>
+
+        <div className="card" style={{ padding: 'var(--space-md)' }}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Supplier Advances</div>
+          <div style={{ fontSize: '1.5rem', fontWeight: 700, marginTop: 'var(--space-xs)' }}>Rs. {formatRs(summary?.total_unallocated_advances)}</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 'var(--space-xs)' }}>Payments not yet allocated</div>
         </div>
 
         <div className="card" style={{ padding: 'var(--space-md)' }}>
@@ -289,6 +296,7 @@ export const SupplierOutstandingPage: React.FC = () => {
                       >
                         <FileText size={12} /> Statement
                       </button>
+                      <button onClick={() => navigate(`/app/purchases/supplier-payments/new?supplier=${item.supplier_id}`)} className="btn btn-primary btn-sm" style={{ marginLeft: 6 }}><Plus size={12}/> Pay</button>
                     </td>
                   </tr>
                 ))}
@@ -320,14 +328,6 @@ export const SupplierOutstandingPage: React.FC = () => {
               </button>
             </div>
 
-            {/* Disclaimer Banner */}
-            <div className="alert alert-info" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)', padding: 'var(--space-sm) var(--space-md)' }}>
-              <Info size={18} style={{ flexShrink: 0 }} />
-              <div style={{ fontSize: '0.8rem' }}>
-                <strong>Notice: </strong>Supplier payment disbursements and allocation will be introduced in the upcoming Payments milestone. Running balance currently reflects all active purchase bills.
-              </div>
-            </div>
-
             {statementLoading ? (
               <div style={{ padding: 'var(--space-xl)', textAlign: 'center', color: 'var(--text-muted)' }}>
                 <RefreshCw size={24} className="spin" style={{ margin: '0 auto var(--space-sm)' }} />
@@ -340,7 +340,7 @@ export const SupplierOutstandingPage: React.FC = () => {
             ) : statement ? (
               <div>
                 {/* Statement Summary */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)', background: 'var(--bg-main)', padding: 'var(--space-md)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)', background: 'var(--bg-main)', padding: 'var(--space-md)', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
                   <div>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>Total Invoiced</span>
                     <span style={{ fontSize: '1rem', fontWeight: 700, fontFamily: 'monospace' }}>Rs. {formatRs(statement.total_billed)}</span>
@@ -353,6 +353,7 @@ export const SupplierOutstandingPage: React.FC = () => {
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>Net Outstanding</span>
                     <span style={{ fontSize: '1rem', fontWeight: 700, fontFamily: 'monospace', color: 'var(--color-warning-text)' }}>Rs. {formatRs(statement.total_outstanding)}</span>
                   </div>
+                  <div><span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>Unallocated Advance</span><span style={{ fontSize: '1rem', fontWeight: 700, fontFamily: 'monospace' }}>Rs. {formatRs(statement.total_unallocated_advances)}</span></div>
                 </div>
 
                 {/* Ledger Transactions Table */}
@@ -378,18 +379,18 @@ export const SupplierOutstandingPage: React.FC = () => {
                         </tr>
                       ) : (
                         statement.lines.map((line) => (
-                          <tr key={line.bill_id}>
-                            <td style={{ fontFamily: 'inherit' }}>{line.invoice_date}</td>
+                          <tr key={`${line.line_type}-${line.document_id || line.bill_id}`}>
+                            <td style={{ fontFamily: 'inherit' }}>{line.date || line.invoice_date}</td>
                             <td>
                               <button
                                 onClick={() => {
                                   setStatementSupplierId(null);
-                                  navigate(`/app/purchases/purchase-bills/${line.bill_id}`);
+                                  navigate(line.line_type === 'supplier_payment' ? `/app/purchases/supplier-payments/${line.document_id}` : `/app/purchases/purchase-bills/${line.bill_id}`);
                                 }}
                                 className="btn-link"
                                 style={{ fontWeight: 600, color: 'var(--color-accent)', cursor: 'pointer', border: 'none', background: 'none', padding: 0 }}
                               >
-                                {line.bill_number}
+                                {line.document_number || line.bill_number}
                               </button>
                               {line.status === 'voided' && (
                                 <span className="badge badge-danger" style={{ fontSize: '0.65rem', marginLeft: '4px' }}>
@@ -397,8 +398,8 @@ export const SupplierOutstandingPage: React.FC = () => {
                                 </span>
                               )}
                             </td>
-                            <td>{line.supplier_invoice_number}</td>
-                            <td style={{ fontFamily: 'inherit' }}>{line.due_date}</td>
+                            <td>{line.reference || line.supplier_invoice_number || '—'}</td>
+                            <td style={{ fontFamily: 'inherit' }}>{line.due_date || '—'}</td>
                             <td style={{ textAlign: 'right' }}>
                               {line.debit_amount !== '0.00' ? `Rs. ${formatRs(line.debit_amount)}` : '—'}
                             </td>

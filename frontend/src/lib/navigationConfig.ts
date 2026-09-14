@@ -12,6 +12,8 @@ import {
   BookOpen,
   ClipboardList,
   Settings,
+  Landmark,
+  WalletCards,
 } from 'lucide-react';
 import { type MenuSection, type MenuItem } from '@/types/navigation';
 
@@ -42,6 +44,7 @@ export const navigationMenu: MenuSection[] = [
     items: [
       { name: 'Tanker Receipts', path: '/app/purchases/tanker-receipts', icon: Truck },
       { name: 'Purchase Bills', path: '/app/purchases/purchase-bills', icon: ShoppingBag },
+      { name: 'Supplier Payments', path: '/app/purchases/supplier-payments', icon: WalletCards },
       { name: 'Suppliers', path: '/app/purchases/suppliers', icon: Briefcase },
       { name: 'Supplier Outstanding', path: '/app/purchases/supplier-outstanding', icon: DollarSign },
     ],
@@ -51,6 +54,12 @@ export const navigationMenu: MenuSection[] = [
     items: [
       { name: 'Items', path: '/app/inventory/items', icon: BookOpen },
       { name: 'Fuel Stock', path: '/app/inventory/fuel-stock', icon: Layers },
+    ],
+  },
+  {
+    title: 'FINANCE',
+    items: [
+      { name: 'Cash & Banking', path: '/app/finance/cash-banking', icon: Landmark },
     ],
   },
 ];
