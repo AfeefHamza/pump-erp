@@ -59,7 +59,7 @@ class SupplierPaymentAllocationSerializer(serializers.ModelSerializer):
 class PaymentAccountMovementSerializer(serializers.ModelSerializer):
     class Meta:
         model = PaymentAccountMovement
-        fields = ['id', 'effective_date', 'signed_amount', 'movement_type', 'reversal_of', 'description', 'created_at']
+        fields = ['id', 'effective_date', 'signed_amount', 'movement_type', 'source_type', 'source_id', 'reversal_of', 'description', 'created_at']
 
 
 class SupplierPaymentAuditSerializer(serializers.ModelSerializer):

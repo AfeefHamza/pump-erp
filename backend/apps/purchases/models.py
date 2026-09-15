@@ -551,7 +551,8 @@ class PurchaseTaxCodeRate(models.Model):
         super().delete(*args, **kwargs)
 
     def is_locked(self):
-        return self.bill_lines.exists() or self.other_charges.exists()
+        sales_used = hasattr(self, 'sales_invoice_lines') and self.sales_invoice_lines.exists()
+        return self.bill_lines.exists() or self.other_charges.exists() or sales_used
 
     def __str__(self):
         to_str = self.effective_to.isoformat() if self.effective_to else 'present'
@@ -1548,4 +1549,3 @@ class PurchaseBillAuditLog(models.Model):
 
     def __str__(self):
         return f"Audit {self.event_type} on Bill {self.purchase_bill.bill_number} at {self.occurred_at}"
-

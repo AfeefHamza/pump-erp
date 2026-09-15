@@ -1,5 +1,15 @@
 // frontend/src/api/client.ts
 
+import type {
+  CustomerOutstandingResponse,
+  CustomerReceipt,
+  ItemStockSummary,
+  SalesInvoice,
+  SalesPreparation,
+  OpenSalesInvoice,
+  UnbilledCreditSlip,
+} from '@/features/sales/types';
+
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
 
 let cachedCsrfToken: string | null = null;
@@ -3883,4 +3893,58 @@ export async function createItemPurchaseTaxTreatment(
     method: 'POST',
     body: JSON.stringify(data),
   });
+}
+
+// ==========================================
+// Sales Invoices & Ordinary Item Stock
+// ==========================================
+
+export async function fetchSalesInvoices(orgId: string, outletId: string, params?: Record<string,string>): Promise<SalesInvoice[]> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<SalesInvoice[]>(`/organisations/${orgId}/outlets/${outletId}/sales-invoices/${query}`);
+}
+export async function fetchSalesInvoice(orgId:string,outletId:string,invoiceId:string):Promise<SalesInvoice>{
+  return apiRequest<SalesInvoice>(`/organisations/${orgId}/outlets/${outletId}/sales-invoices/${invoiceId}/`);
+}
+export async function createSalesInvoice(orgId:string,outletId:string,data:any):Promise<SalesInvoice>{
+  return apiRequest<SalesInvoice>(`/organisations/${orgId}/outlets/${outletId}/sales-invoices/`,{method:'POST',body:JSON.stringify(data)});
+}
+export async function voidSalesInvoice(orgId:string,outletId:string,invoiceId:string,void_reason:string):Promise<SalesInvoice>{
+  return apiRequest<SalesInvoice>(`/organisations/${orgId}/outlets/${outletId}/sales-invoices/${invoiceId}/void/`,{method:'POST',body:JSON.stringify({void_reason})});
+}
+export async function fetchSalesPreparation(orgId:string,outletId:string,invoiceDate:string):Promise<SalesPreparation>{
+  return apiRequest<SalesPreparation>(`/organisations/${orgId}/outlets/${outletId}/sales-invoices/prepare/?invoice_date=${invoiceDate}`);
+}
+export async function fetchUnbilledCreditSlips(orgId:string,outletId:string,customerId:string):Promise<UnbilledCreditSlip[]>{
+  return apiRequest<UnbilledCreditSlip[]>(`/organisations/${orgId}/outlets/${outletId}/customers/${customerId}/unbilled-credit-slips/`);
+}
+export async function fetchCustomerOutstanding(orgId:string,outletId:string):Promise<CustomerOutstandingResponse>{
+  return apiRequest<CustomerOutstandingResponse>(`/organisations/${orgId}/outlets/${outletId}/customer-outstanding/`);
+}
+export async function fetchItemStockSummary(orgId:string,outletId:string):Promise<ItemStockSummary[]>{
+  return apiRequest<ItemStockSummary[]>(`/organisations/${orgId}/outlets/${outletId}/item-stock/summary/`);
+}
+export async function fetchItemStockLedger(orgId:string,outletId:string,itemId:string):Promise<any[]>{
+  return apiRequest<any[]>(`/organisations/${orgId}/outlets/${outletId}/item-stock/items/${itemId}/ledger/`);
+}
+export async function createItemStockAdjustment(orgId:string,outletId:string,data:any):Promise<any>{
+  return apiRequest<any>(`/organisations/${orgId}/outlets/${outletId}/item-stock/adjustments/`,{method:'POST',body:JSON.stringify(data)});
+}
+export async function reverseItemStockAdjustment(orgId:string,outletId:string,adjustmentId:string,reason:string):Promise<any>{
+  return apiRequest<any>(`/organisations/${orgId}/outlets/${outletId}/item-stock/adjustments/${adjustmentId}/reverse/`,{method:'POST',body:JSON.stringify({reason})});
+}
+export async function fetchCustomerReceipts(orgId:string,outletId:string):Promise<CustomerReceipt[]>{
+  return apiRequest<CustomerReceipt[]>(`/organisations/${orgId}/outlets/${outletId}/customer-receipts/`);
+}
+export async function fetchCustomerReceipt(orgId:string,outletId:string,receiptId:string):Promise<CustomerReceipt>{
+  return apiRequest<CustomerReceipt>(`/organisations/${orgId}/outlets/${outletId}/customer-receipts/${receiptId}/`);
+}
+export async function createCustomerReceipt(orgId:string,outletId:string,data:any):Promise<CustomerReceipt>{
+  return apiRequest<CustomerReceipt>(`/organisations/${orgId}/outlets/${outletId}/customer-receipts/`,{method:'POST',body:JSON.stringify(data)});
+}
+export async function voidCustomerReceipt(orgId:string,outletId:string,receiptId:string,void_reason:string):Promise<CustomerReceipt>{
+  return apiRequest<CustomerReceipt>(`/organisations/${orgId}/outlets/${outletId}/customer-receipts/${receiptId}/void/`,{method:'POST',body:JSON.stringify({void_reason})});
+}
+export async function fetchCustomerOpenSalesInvoices(orgId:string,outletId:string,customerId:string):Promise<OpenSalesInvoice[]>{
+  return apiRequest<OpenSalesInvoice[]>(`/organisations/${orgId}/outlets/${outletId}/customers/${customerId}/open-sales-invoices/`);
 }

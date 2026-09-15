@@ -117,18 +117,24 @@ Financial invoice tracking for fuel deliveries and goods, strictly isolated from
 
 ---
 
-## Planned Business Modules (Postponed)
+## Latest Implemented Milestone
 
-### 1. Sales
-- **Cash Sales**: Real-time sales transactions paid via cash, credit cards, or digital wallets.
-- **Invoices**: Tax invoices generated for corporate customer bill cycles.
-- **Receipts**: Record incoming customer payments against outstanding invoices.
+### 9. Sales Invoices, Customer Receipts & Item Stock (Milestone 14, Implemented)
+- **Backend (`apps/sales/`)**: Immutable cash/credit Sales Invoices, server-calculated effective-dated Tax Treatments, customer receipts and invoice allocations, unallocated customer advances, customer outstanding selectors, controlled void/reversal services, and idempotent document numbering.
+- **Inventory (`apps/inventory/`)**: Ordinary quantity-ledger stock for stock items and lubricants, append-only item movements, balance projections, direct stock adjustments, and exact reversal entries. Product sales reduce this ledger; services and non-stock items do not.
+- **Fuel safety**: Petrol/diesel cannot be entered as a direct product line. Existing meter-linked Credit Slips are selected for billing and do not create a second sale or tank-stock movement. Non-GST Petroleum remains distinct from Exempt and Out of Scope.
+- **Finance integration**: Cash invoices and customer receipts create positive Cash/Bank account movements. Voiding creates equal reversal movements and restores invoice allocations.
+- **Frontend**: Full-page Sales Invoice and Customer Receipt workspaces, invoice list/detail/print, Customer Outstanding, and Item Stock ledger/adjustment pages.
+
+---
+
+## Planned Business Modules (Remaining)
 
 ### 3. Purchases (Remaining)
 - **Debit/Credit Notes**: Supplier debit notes, credits and return reconciliation.
 
 ### 4. Inventory (Remaining)
-- **Lubricants**: Manage retail items, lubricants, inventory levels, and sales margins.
+- **Sales Margins**: Cost/valuation-based product margin reporting.
 - **Stock Transfers**: Move inventory between stations and bulk depots.
 
 ### 5. Finance

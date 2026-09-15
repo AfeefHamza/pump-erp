@@ -577,6 +577,10 @@ class Item(models.Model):
             raise ValidationError("Cannot delete an item referenced in tanker receipts. Deactivate it instead.")
         if hasattr(self, 'stock_movements') and self.stock_movements.exists():
             raise ValidationError("Cannot delete an item with inventory ledger history. Deactivate it instead.")
+        if hasattr(self, 'quantity_movements') and self.quantity_movements.exists():
+            raise ValidationError("Cannot delete an item with quantity-ledger history. Deactivate it instead.")
+        if hasattr(self, 'sales_invoice_lines') and self.sales_invoice_lines.exists():
+            raise ValidationError("Cannot delete an item referenced by sales invoices. Deactivate it instead.")
         super().delete(*args, **kwargs)
 
     def __str__(self):
@@ -717,3 +721,141 @@ class ItemCodeAlias(models.Model):
 
     def __str__(self):
         return f"Alias {self.alias_code} -> {self.item.code} ({'CONFLICT' if self.is_conflict else 'OK'})"
+
+
+class ItemStockMovement(models.Model):
+    """Append-only quantity ledger for ordinary stock items (never fuel tanks)."""
+    TYPE_OPENING = 'opening_balance'
+    TYPE_ADJUSTMENT_IN = 'adjustment_in'
+    TYPE_ADJUSTMENT_OUT = 'adjustment_out'
+    TYPE_SALE = 'sales_invoice'
+    TYPE_REVERSAL = 'reversal'
+    TYPE_CHOICES = [
+        (TYPE_OPENING, 'Opening Balance'),
+        (TYPE_ADJUSTMENT_IN, 'Stock Adjustment In'),
+        (TYPE_ADJUSTMENT_OUT, 'Stock Adjustment Out'),
+        (TYPE_SALE, 'Sales Invoice'),
+        (TYPE_REVERSAL, 'Reversal'),
+    ]
+    DIR_IN = 'IN'
+    DIR_OUT = 'OUT'
+    DIRECTION_CHOICES = [(DIR_IN, 'Inward'), (DIR_OUT, 'Outward')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(Organisation, on_delete=models.PROTECT, related_name='item_stock_movements')
+    outlet = models.ForeignKey(Outlet, on_delete=models.PROTECT, related_name='item_stock_movements')
+    item = models.ForeignKey(Item, on_delete=models.PROTECT, related_name='quantity_movements')
+    item_code_snapshot = models.CharField(max_length=50)
+    item_name_snapshot = models.CharField(max_length=255)
+    unit_code_snapshot = models.CharField(max_length=20)
+    movement_type = models.CharField(max_length=30, choices=TYPE_CHOICES)
+    direction = models.CharField(max_length=3, choices=DIRECTION_CHOICES)
+    quantity = models.DecimalField(max_digits=15, decimal_places=4)
+    effective_date = models.DateField(db_index=True)
+    source_type = models.CharField(max_length=50)
+    source_id = models.UUIDField(db_index=True)
+    source_line_id = models.UUIDField(null=True, blank=True)
+    reversal_of = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT, related_name='reversals')
+    reason = models.TextField(blank=True, null=True)
+    idempotency_key = models.CharField(max_length=200, unique=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='created_item_stock_movements')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['effective_date', 'created_at', 'id']
+        indexes = [models.Index(fields=['outlet', 'item', 'effective_date'])]
+        constraints = [models.CheckConstraint(condition=models.Q(quantity__gt=0), name='item_stock_movement_qty_positive')]
+
+    def clean(self):
+        super().clean()
+        if self.outlet_id and self.outlet.organisation_id != self.organisation_id:
+            raise ValidationError('Stock movement outlet must belong to the organisation.')
+        if self.item_id:
+            if self.item.organisation_id != self.organisation_id:
+                raise ValidationError('Stock movement item must belong to the organisation.')
+            if self.item.item_type != Item.ITEM_TYPE_STOCK or self.item.inventory_tracking_mode != Item.TRACKING_QUANTITY:
+                raise ValidationError('Only quantity-tracked stock items use the ordinary item ledger.')
+        if self.reversal_of_id:
+            original = self.reversal_of
+            if original.outlet_id != self.outlet_id or original.item_id != self.item_id:
+                raise ValidationError('A stock reversal must match the original outlet and item.')
+            if self.quantity != original.quantity or self.direction == original.direction:
+                raise ValidationError('A stock reversal must exactly offset the original movement.')
+
+    def save(self, *args, **kwargs):
+        if self.pk and ItemStockMovement.objects.filter(pk=self.pk).exists():
+            raise ValidationError('Item stock movements are immutable.')
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Item stock movements cannot be deleted.')
+
+
+class ItemStockBalanceProjection(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name='item_stock_projections')
+    outlet = models.ForeignKey(Outlet, on_delete=models.CASCADE, related_name='item_stock_projections')
+    item = models.ForeignKey(Item, on_delete=models.PROTECT, related_name='stock_projections')
+    current_quantity = models.DecimalField(max_digits=15, decimal_places=4, default=Decimal('0.0000'))
+    last_movement_date = models.DateField(null=True, blank=True)
+    has_negative_balance_history = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['outlet', 'item'], name='unique_outlet_item_stock_projection')]
+        ordering = ['item__name']
+
+    def clean(self):
+        super().clean()
+        if self.outlet_id and self.outlet.organisation_id != self.organisation_id:
+            raise ValidationError('Stock projection outlet must belong to the organisation.')
+        if self.item_id and self.item.organisation_id != self.organisation_id:
+            raise ValidationError('Stock projection item must belong to the organisation.')
+
+
+class ItemStockAdjustment(models.Model):
+    STATUS_ACTIVE = 'active'
+    STATUS_REVERSED = 'reversed'
+    STATUS_CHOICES = [(STATUS_ACTIVE, 'Active'), (STATUS_REVERSED, 'Reversed')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(Organisation, on_delete=models.PROTECT, related_name='item_stock_adjustments')
+    outlet = models.ForeignKey(Outlet, on_delete=models.PROTECT, related_name='item_stock_adjustments')
+    item = models.ForeignKey(Item, on_delete=models.PROTECT, related_name='stock_adjustments')
+    adjustment_date = models.DateField(db_index=True)
+    direction = models.CharField(max_length=3, choices=ItemStockMovement.DIRECTION_CHOICES)
+    quantity = models.DecimalField(max_digits=15, decimal_places=4)
+    reason = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='created_item_stock_adjustments')
+    created_at = models.DateTimeField(auto_now_add=True)
+    reversed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='reversed_item_stock_adjustments')
+    reversed_at = models.DateTimeField(null=True, blank=True)
+    reversal_reason = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-adjustment_date', '-created_at']
+        constraints = [models.CheckConstraint(condition=models.Q(quantity__gt=0), name='item_stock_adjustment_qty_positive')]
+
+    def clean(self):
+        super().clean()
+        if self.outlet_id and self.outlet.organisation_id != self.organisation_id:
+            raise ValidationError('Stock adjustment outlet must belong to the organisation.')
+        if self.item_id:
+            if self.item.organisation_id != self.organisation_id:
+                raise ValidationError('Stock adjustment item must belong to the organisation.')
+            if self.item.item_type != Item.ITEM_TYPE_STOCK or self.item.inventory_tracking_mode != Item.TRACKING_QUANTITY:
+                raise ValidationError('Only quantity-tracked stock items can be adjusted here.')
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            previous = ItemStockAdjustment.objects.filter(pk=self.pk).first()
+            if previous and not getattr(self, '_allow_reversal_transition', False):
+                raise ValidationError('Stock adjustments are immutable. Reverse the adjustment instead.')
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Stock adjustments cannot be deleted. Reverse the adjustment instead.')

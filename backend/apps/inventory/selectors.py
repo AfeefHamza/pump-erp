@@ -8,9 +8,41 @@ from apps.shifts.models import ShiftTankDipObservation
 from apps.operations.models import TankOpeningBalance, OpeningBalanceBatch
 from .models import (
     TankStockMovement, TankStockBalanceProjection,
-    StockAdjustment
+    StockAdjustment, ItemStockMovement, ItemStockBalanceProjection, Item
 )
 from .services import get_or_create_tank_projection, recalculate_tank_projection
+
+
+def get_item_stock_summary(organisation, outlet, search=None):
+    items = Item.objects.filter(
+        organisation=organisation, item_type=Item.ITEM_TYPE_STOCK,
+        inventory_tracking_mode=Item.TRACKING_QUANTITY, is_active=True,
+    ).select_related('base_unit', 'stock_profile')
+    if search:
+        items = items.filter(models.Q(name__icontains=search) | models.Q(code__icontains=search))
+    projections = {p.item_id: p for p in ItemStockBalanceProjection.objects.filter(outlet=outlet, item__in=items)}
+    return [{
+        'item_id': str(item.id), 'item_code': item.code, 'item_name': item.name,
+        'unit': item.base_unit.code,
+        'current_quantity': str(projections[item.id].current_quantity if item.id in projections else Decimal('0.0000')),
+        'reorder_level': str(item.stock_profile.reorder_level if hasattr(item, 'stock_profile') else Decimal('0.0000')),
+        'has_negative_balance_history': bool(item.id in projections and projections[item.id].has_negative_balance_history),
+    } for item in items]
+
+
+def get_item_stock_ledger(organisation, outlet, item):
+    running = Decimal('0.0000')
+    rows = []
+    for movement in ItemStockMovement.objects.filter(organisation=organisation, outlet=outlet, item=item).order_by('effective_date', 'created_at', 'id'):
+        running += movement.quantity if movement.direction == ItemStockMovement.DIR_IN else -movement.quantity
+        rows.append({
+            'id': str(movement.id), 'effective_date': movement.effective_date.isoformat(),
+            'movement_type': movement.movement_type, 'direction': movement.direction,
+            'quantity': str(movement.quantity), 'running_balance': str(running),
+            'description': movement.reason or movement.item_name_snapshot,
+            'source_type': movement.source_type, 'source_id': str(movement.source_id),
+        })
+    return rows
 
 
 def get_latest_physical_dip_for_tank(tank: Tank, at_datetime=None) -> dict | None:

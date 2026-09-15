@@ -8,8 +8,102 @@ from apps.forecourt.models import Tank, FuelProduct, Nozzle
 from apps.organizations.permissions import require_permission, has_permission
 from .models import (
     TankStockMovement, TankStockBalanceProjection,
-    StockAdjustment, StockAdjustmentAttachment
+    StockAdjustment, StockAdjustmentAttachment, ItemStockMovement,
+    ItemStockBalanceProjection, ItemStockAdjustment, Item
 )
+
+
+def recalculate_item_stock_projection(outlet: Outlet, item: Item) -> ItemStockBalanceProjection:
+    projection, _ = ItemStockBalanceProjection.objects.select_for_update().get_or_create(
+        organisation=outlet.organisation, outlet=outlet, item=item
+    )
+    running = Decimal('0.0000')
+    has_negative = False
+    last_date = None
+    for movement in ItemStockMovement.objects.filter(outlet=outlet, item=item).order_by('effective_date', 'created_at', 'id'):
+        running += movement.quantity if movement.direction == ItemStockMovement.DIR_IN else -movement.quantity
+        has_negative = has_negative or running < 0
+        last_date = movement.effective_date
+    projection.current_quantity = running.quantize(Decimal('0.0001'))
+    projection.last_movement_date = last_date
+    projection.has_negative_balance_history = has_negative
+    projection.save()
+    return projection
+
+
+@transaction.atomic
+def post_item_stock_movement(*, organisation, outlet, item, movement_type, direction, quantity,
+                             effective_date, source_type, source_id, idempotency_key,
+                             source_line_id=None, reversal_of=None, reason=None, created_by=None,
+                             metadata=None, allow_negative=False):
+    quantity = Decimal(str(quantity)).quantize(Decimal('0.0001'))
+    if quantity <= 0:
+        raise ValidationError({'quantity': 'Quantity must be greater than zero.'})
+    existing = ItemStockMovement.objects.filter(idempotency_key=idempotency_key).first()
+    if existing:
+        return existing
+    movement = ItemStockMovement.objects.create(
+        organisation=organisation, outlet=outlet, item=item,
+        item_code_snapshot=item.code, item_name_snapshot=item.name,
+        unit_code_snapshot=item.base_unit.code, movement_type=movement_type,
+        direction=direction, quantity=quantity, effective_date=effective_date,
+        source_type=source_type, source_id=source_id, source_line_id=source_line_id,
+        reversal_of=reversal_of, reason=reason, idempotency_key=idempotency_key,
+        metadata=metadata or {}, created_by=created_by,
+    )
+    projection = recalculate_item_stock_projection(outlet, item)
+    if projection.has_negative_balance_history and not allow_negative:
+        raise ValidationError({'quantity': f'Insufficient stock for {item.name}. This transaction would create negative stock.'})
+    return movement
+
+
+@transaction.atomic
+def create_item_stock_adjustment(*, organisation, outlet, item, adjustment_date, direction,
+                                 quantity, reason, user, allow_negative=False):
+    require_permission(user, organisation, 'item_stock.adjust', outlet=outlet)
+    if len((reason or '').strip()) < 5:
+        raise ValidationError({'reason': 'Provide a reason of at least 5 characters.'})
+    adjustment = ItemStockAdjustment.objects.create(
+        organisation=organisation, outlet=outlet, item=item,
+        adjustment_date=adjustment_date, direction=direction,
+        quantity=quantity, reason=reason.strip(), created_by=user,
+    )
+    movement_type = ItemStockMovement.TYPE_ADJUSTMENT_IN if direction == ItemStockMovement.DIR_IN else ItemStockMovement.TYPE_ADJUSTMENT_OUT
+    post_item_stock_movement(
+        organisation=organisation, outlet=outlet, item=item, movement_type=movement_type,
+        direction=direction, quantity=quantity, effective_date=adjustment_date,
+        source_type='item_stock_adjustment', source_id=adjustment.id,
+        source_line_id=adjustment.id, idempotency_key=f'item-adjustment:{adjustment.id}',
+        reason=reason, created_by=user, allow_negative=allow_negative,
+    )
+    return adjustment
+
+
+@transaction.atomic
+def reverse_item_stock_adjustment(adjustment, reason, user, allow_negative=False):
+    adjustment = ItemStockAdjustment.objects.select_for_update().select_related('organisation', 'outlet', 'item').get(pk=adjustment.pk)
+    require_permission(user, adjustment.organisation, 'item_stock.reverse', outlet=adjustment.outlet)
+    if adjustment.status == ItemStockAdjustment.STATUS_REVERSED:
+        return adjustment
+    if len((reason or '').strip()) < 5:
+        raise ValidationError({'reason': 'Provide a reversal reason of at least 5 characters.'})
+    original = ItemStockMovement.objects.get(source_type='item_stock_adjustment', source_id=adjustment.id, movement_type__in=[ItemStockMovement.TYPE_ADJUSTMENT_IN, ItemStockMovement.TYPE_ADJUSTMENT_OUT])
+    post_item_stock_movement(
+        organisation=adjustment.organisation, outlet=adjustment.outlet, item=adjustment.item,
+        movement_type=ItemStockMovement.TYPE_REVERSAL,
+        direction=ItemStockMovement.DIR_OUT if original.direction == ItemStockMovement.DIR_IN else ItemStockMovement.DIR_IN,
+        quantity=original.quantity, effective_date=timezone.localdate(), source_type='item_stock_adjustment_reversal',
+        source_id=adjustment.id, source_line_id=adjustment.id, reversal_of=original,
+        idempotency_key=f'item-adjustment-reversal:{adjustment.id}', reason=reason,
+        created_by=user, allow_negative=allow_negative,
+    )
+    adjustment.status = ItemStockAdjustment.STATUS_REVERSED
+    adjustment.reversed_by = user
+    adjustment.reversed_at = timezone.now()
+    adjustment.reversal_reason = reason.strip()
+    adjustment._allow_reversal_transition = True
+    adjustment.save(update_fields=['status', 'reversed_by', 'reversed_at', 'reversal_reason'])
+    return adjustment
 
 
 def get_or_create_tank_projection(tank: Tank) -> TankStockBalanceProjection:
