@@ -94,6 +94,14 @@ Fuel billing deliberately follows a separate source path. Petrol and diesel reve
 
 Cash Sales Invoices post a positive Cash/Bank account movement immediately. Credit invoices remain outstanding until a direct-save Customer Receipt is allocated. Any unallocated receipt value remains a customer advance. Receipt and invoice voids retain the original document and post exact financial, receivable and stock reversals as applicable.
 
+## Accounting Core Architecture
+
+`apps.accounting` owns the organisation Chart of Accounts and the immutable double-entry journal. Journal posting is an atomic service command: every entry must contain at least two active non-group accounts, total debits must equal total credits exactly, and the entry date must belong to an open Financial Year and an unlocked accounting month. Posted entries and lines cannot be edited or deleted; corrections create a linked reversal entry with swapped amounts and a required reason.
+
+Accounting periods are month-level finance controls and may cover one outlet or the whole organisation. Unlocking retains the original lock record and adds the responsible user, timestamp and reason. Operational backdating remains available while the Financial Year and month are open, so this mechanism does not introduce a Day Close workflow.
+
+Trial Balance and account ledgers are projections over posted journal lines. Operational modules will be connected to the journal through idempotent source references in later milestones; the existing Cash/Bank movement ledger remains operationally authoritative until each integration is completed.
+
 ---
 
 ## Session-Based Authentication
@@ -273,6 +281,5 @@ Both tanker receipts and stock adjustments utilize private file storage models w
 ### 5. Document Numbering & Duplicate Invoice Safety
 - **Atomic Sequences**: `PurchaseBillSequence` uses `select_for_update()` inside database transactions to safely generate contiguous `PB-YYYY-XXXX` identifiers under high concurrency.
 - **Duplicate Prevention**: Invoices are normalized (stripping whitespace, hyphens, slashes) and checked against active bills for that supplier. Duplicate override requires permission, existing conflicting bill ID, mandatory reason ($\ge 5$ chars), and produces an audit entry.
-
 
 

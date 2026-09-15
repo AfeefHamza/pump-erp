@@ -53,6 +53,12 @@ import { PaymentAccountsPage } from '@/features/finance/pages/PaymentAccountsPag
 import { SupplierPaymentsPage } from '@/features/finance/pages/SupplierPaymentsPage';
 import { SupplierPaymentFormPage } from '@/features/finance/pages/SupplierPaymentFormPage';
 import { SupplierPaymentDetailPage } from '@/features/finance/pages/SupplierPaymentDetailPage';
+import { ChartOfAccountsPage } from '@/features/accounting/pages/ChartOfAccountsPage';
+import { LedgerAccountFormPage } from '@/features/accounting/pages/LedgerAccountFormPage';
+import { JournalVoucherListPage } from '@/features/accounting/pages/JournalVoucherListPage';
+import { JournalVoucherFormPage } from '@/features/accounting/pages/JournalVoucherFormPage';
+import { JournalVoucherDetailPage } from '@/features/accounting/pages/JournalVoucherDetailPage';
+import { AccountingPeriodsPage } from '@/features/accounting/pages/AccountingPeriodsPage';
 import { useParams, useLocation } from 'react-router-dom';
 
 const RedirectWithSearchAndHash: React.FC<{ getDest: (params: Record<string, string | undefined>) => string }> = ({ getDest }) => {
@@ -348,11 +354,31 @@ export const router = createBrowserRouter([
       },
       {
         path: 'finance/vouchers',
-        element: <ComingSoonPage title="Vouchers" />,
+        element: <JournalVoucherListPage />,
+      },
+      {
+        path: 'finance/vouchers/new',
+        element: <JournalVoucherFormPage />,
+      },
+      {
+        path: 'finance/vouchers/:journalId',
+        element: <JournalVoucherDetailPage />,
       },
       {
         path: 'finance/chart-of-accounts',
-        element: <ComingSoonPage title="Chart of Accounts" />,
+        element: <ChartOfAccountsPage />,
+      },
+      {
+        path: 'finance/chart-of-accounts/new',
+        element: <LedgerAccountFormPage />,
+      },
+      {
+        path: 'finance/chart-of-accounts/:accountId/edit',
+        element: <LedgerAccountFormPage />,
+      },
+      {
+        path: 'finance/accounting-periods',
+        element: <AccountingPeriodsPage />,
       },
       // Employees Redirects for backward compatibility
       {
