@@ -31,6 +31,12 @@ import { DipReadingsPage } from '@/features/operations/pages/DipReadingsPage';
 import { CustomersPage } from '@/features/sales/pages/CustomersPage';
 import { CustomerDetailPage } from '@/features/sales/pages/CustomerDetailPage';
 import { CreditSlipsPage } from '@/features/sales/pages/CreditSlipsPage';
+import { SalesInvoiceListPage } from '@/features/sales/pages/SalesInvoiceListPage';
+import { SalesInvoiceFormPage } from '@/features/sales/pages/SalesInvoiceFormPage';
+import { SalesInvoiceDetailPage } from '@/features/sales/pages/SalesInvoiceDetailPage';
+import { CustomerOutstandingPage } from '@/features/sales/pages/CustomerOutstandingPage';
+import { CustomerReceiptsPage } from '@/features/sales/pages/CustomerReceiptsPage';
+import { CustomerReceiptFormPage } from '@/features/sales/pages/CustomerReceiptFormPage';
 import { TankerReceiptListPage } from '@/features/purchases/pages/TankerReceiptListPage';
 import { TankerReceiptWorkspace } from '@/features/purchases/pages/TankerReceiptWorkspace';
 import { PurchaseBillListPage } from '@/features/purchases/pages/PurchaseBillListPage';
@@ -42,6 +48,7 @@ import { ItemFormPage } from '@/features/inventory/pages/ItemFormPage';
 import { TaxTreatmentsPage } from '@/features/settings/pages/TaxTreatmentsPage';
 import { FuelStockDashboardPage } from '@/features/inventory/pages/FuelStockDashboardPage';
 import { TankLedgerPage } from '@/features/inventory/pages/TankLedgerPage';
+import { ItemStockPage } from '@/features/inventory/pages/ItemStockPage';
 import { PaymentAccountsPage } from '@/features/finance/pages/PaymentAccountsPage';
 import { SupplierPaymentsPage } from '@/features/finance/pages/SupplierPaymentsPage';
 import { SupplierPaymentFormPage } from '@/features/finance/pages/SupplierPaymentFormPage';
@@ -182,15 +189,27 @@ export const router = createBrowserRouter([
       },
       {
         path: 'sales/cash-sales',
-        element: <ComingSoonPage title="Cash Sales" />,
+        element: <Navigate to="/app/sales/invoices/new?type=cash" replace />,
       },
       {
         path: 'sales/invoices',
-        element: <ComingSoonPage title="Invoices" />,
+        element: <SalesInvoiceListPage />,
+      },
+      {
+        path: 'sales/invoices/new',
+        element: <SalesInvoiceFormPage />,
+      },
+      {
+        path: 'sales/invoices/:invoiceId',
+        element: <SalesInvoiceDetailPage />,
       },
       {
         path: 'sales/receipts',
-        element: <ComingSoonPage title="Receipts" />,
+        element: <CustomerReceiptsPage />,
+      },
+      {
+        path: 'sales/receipts/new',
+        element: <CustomerReceiptFormPage />,
       },
       {
         path: 'sales/customers',
@@ -199,6 +218,10 @@ export const router = createBrowserRouter([
       {
         path: 'sales/customers/:customerId',
         element: <CustomerDetailPage />,
+      },
+      {
+        path: 'sales/customer-outstanding',
+        element: <CustomerOutstandingPage />,
       },
       // Purchases
       {
@@ -275,6 +298,10 @@ export const router = createBrowserRouter([
         element: <TankLedgerPage />,
       },
       {
+        path: 'inventory/item-stock',
+        element: <ItemStockPage />,
+      },
+      {
         path: 'inventory/tanks',
         element: <RedirectWithSearchAndHash getDest={() => '/app/settings/tanks'} />,
       },
@@ -296,7 +323,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'inventory/lubricants',
-        element: <ComingSoonPage title="Lubricants" />,
+        element: <Navigate to="/app/inventory/items?type=stock_item" replace />,
       },
       {
         path: 'inventory/stock-transfers',
@@ -304,7 +331,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'inventory/stock-adjustments',
-        element: <Navigate to="/app/inventory/fuel-stock" replace />,
+        element: <Navigate to="/app/inventory/item-stock" replace />,
       },
       // Finance
       {

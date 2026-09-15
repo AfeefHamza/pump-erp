@@ -14,6 +14,8 @@ import {
   Settings,
   Landmark,
   WalletCards,
+  ReceiptText,
+  PackageCheck,
 } from 'lucide-react';
 import { type MenuSection, type MenuItem } from '@/types/navigation';
 
@@ -35,8 +37,11 @@ export const navigationMenu: MenuSection[] = [
   {
     title: 'SALES',
     items: [
+      { name: 'Sales Invoices', path: '/app/sales/invoices', icon: ReceiptText },
+      { name: 'Customer Receipts', path: '/app/sales/receipts', icon: WalletCards },
       { name: 'Credit Slips', path: '/app/sales/credit-slips', icon: FileText },
       { name: 'Customers', path: '/app/sales/customers', icon: Users },
+      { name: 'Customer Outstanding', path: '/app/sales/customer-outstanding', icon: DollarSign },
     ],
   },
   {
@@ -53,6 +58,7 @@ export const navigationMenu: MenuSection[] = [
     title: 'INVENTORY',
     items: [
       { name: 'Items', path: '/app/inventory/items', icon: BookOpen },
+      { name: 'Item Stock', path: '/app/inventory/item-stock', icon: PackageCheck },
       { name: 'Fuel Stock', path: '/app/inventory/fuel-stock', icon: Layers },
     ],
   },

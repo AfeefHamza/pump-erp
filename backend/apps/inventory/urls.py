@@ -3,7 +3,9 @@ from django.urls import path
 from .views import (
     FuelStockSummaryView, TankStockLedgerView,
     StockAdjustmentListCreateView, StockAdjustmentReverseView,
-    StockAdjustmentAttachmentDownloadView, TankChronologyRecalculateView
+    StockAdjustmentAttachmentDownloadView, TankChronologyRecalculateView,
+    ItemStockSummaryView, ItemStockLedgerView,
+    ItemStockAdjustmentListCreateView, ItemStockAdjustmentReverseView
 )
 from .views_item import (
     ItemListCreateView, ItemDetailView, ItemDeactivateView,
@@ -39,4 +41,8 @@ urlpatterns = [
     path('<uuid:org_id>/outlets/<uuid:outlet_id>/fuel-stock/adjustments/<uuid:adj_id>/reverse/', StockAdjustmentReverseView.as_view(), name='stock_adjustment_reverse'),
     path('<uuid:org_id>/outlets/<uuid:outlet_id>/fuel-stock/adjustments/<uuid:adj_id>/attachment/', StockAdjustmentAttachmentDownloadView.as_view(), name='stock_adjustment_attachment_download'),
     path('<uuid:org_id>/outlets/<uuid:outlet_id>/fuel-stock/tanks/<uuid:tank_id>/recalculate/', TankChronologyRecalculateView.as_view(), name='tank_chronology_recalculate'),
+    path('<uuid:org_id>/outlets/<uuid:outlet_id>/item-stock/summary/', ItemStockSummaryView.as_view(), name='item_stock_summary'),
+    path('<uuid:org_id>/outlets/<uuid:outlet_id>/item-stock/items/<uuid:item_id>/ledger/', ItemStockLedgerView.as_view(), name='item_stock_ledger'),
+    path('<uuid:org_id>/outlets/<uuid:outlet_id>/item-stock/adjustments/', ItemStockAdjustmentListCreateView.as_view(), name='item_stock_adjustments'),
+    path('<uuid:org_id>/outlets/<uuid:outlet_id>/item-stock/adjustments/<uuid:adjustment_id>/reverse/', ItemStockAdjustmentReverseView.as_view(), name='item_stock_adjustment_reverse'),
 ]

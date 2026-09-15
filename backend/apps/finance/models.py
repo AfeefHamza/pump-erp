@@ -229,9 +229,17 @@ class SupplierPaymentAllocation(models.Model):
 class PaymentAccountMovement(models.Model):
     TYPE_SUPPLIER_PAYMENT = 'supplier_payment'
     TYPE_SUPPLIER_PAYMENT_REVERSAL = 'supplier_payment_reversal'
+    TYPE_SALES_RECEIPT = 'sales_invoice_receipt'
+    TYPE_SALES_RECEIPT_REVERSAL = 'sales_invoice_receipt_reversal'
+    TYPE_CUSTOMER_RECEIPT = 'customer_receipt'
+    TYPE_CUSTOMER_RECEIPT_REVERSAL = 'customer_receipt_reversal'
     TYPE_CHOICES = [
         (TYPE_SUPPLIER_PAYMENT, 'Supplier Payment'),
         (TYPE_SUPPLIER_PAYMENT_REVERSAL, 'Supplier Payment Reversal'),
+        (TYPE_SALES_RECEIPT, 'Sales Invoice Receipt'),
+        (TYPE_SALES_RECEIPT_REVERSAL, 'Sales Invoice Receipt Reversal'),
+        (TYPE_CUSTOMER_RECEIPT, 'Customer Receipt'),
+        (TYPE_CUSTOMER_RECEIPT_REVERSAL, 'Customer Receipt Reversal'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -241,7 +249,9 @@ class PaymentAccountMovement(models.Model):
     effective_date = models.DateField(db_index=True)
     signed_amount = models.DecimalField(max_digits=15, decimal_places=2)
     movement_type = models.CharField(max_length=40, choices=TYPE_CHOICES)
-    payment = models.ForeignKey(SupplierPayment, on_delete=models.PROTECT, related_name='account_movements')
+    payment = models.ForeignKey(SupplierPayment, on_delete=models.PROTECT, null=True, blank=True, related_name='account_movements')
+    source_type = models.CharField(max_length=50, default='supplier_payment')
+    source_id = models.UUIDField(null=True, blank=True, db_index=True)
     reversal_of = models.OneToOneField('self', on_delete=models.PROTECT, null=True, blank=True, related_name='reversal')
     idempotency_key = models.CharField(max_length=150, unique=True)
     description = models.CharField(max_length=255)
@@ -265,6 +275,8 @@ class PaymentAccountMovement(models.Model):
                 or self.payment.payment_account_id != self.account_id
             ):
                 raise ValidationError('Payment account movement does not match its supplier payment.')
+        if self.movement_type in (self.TYPE_SUPPLIER_PAYMENT, self.TYPE_SUPPLIER_PAYMENT_REVERSAL) and not self.payment_id:
+            raise ValidationError('Supplier payment movements must reference a supplier payment.')
         if self.movement_type == self.TYPE_SUPPLIER_PAYMENT:
             if self.reversal_of_id:
                 raise ValidationError('An original supplier payment movement cannot reverse another movement.')
@@ -277,6 +289,22 @@ class PaymentAccountMovement(models.Model):
                 original = self.reversal_of
                 if original.payment_id != self.payment_id or self.signed_amount != -original.signed_amount:
                     raise ValidationError('A reversal must exactly offset the original payment movement.')
+        elif self.movement_type == self.TYPE_SALES_RECEIPT:
+            if self.signed_amount <= 0 or self.reversal_of_id:
+                raise ValidationError('A sales receipt must be a positive original account movement.')
+            if self.source_type != 'sales_invoice' or not self.source_id:
+                raise ValidationError('A sales receipt must reference its sales invoice source.')
+        elif self.movement_type == self.TYPE_SALES_RECEIPT_REVERSAL:
+            if not self.reversal_of_id or self.signed_amount != -self.reversal_of.signed_amount:
+                raise ValidationError('A sales receipt reversal must exactly offset the original receipt.')
+            if self.source_id != self.reversal_of.source_id:
+                raise ValidationError('A sales receipt reversal must retain the original source.')
+        elif self.movement_type == self.TYPE_CUSTOMER_RECEIPT:
+            if self.signed_amount <= 0 or self.reversal_of_id or self.source_type != 'customer_receipt' or not self.source_id:
+                raise ValidationError('A customer receipt must be a positive original movement with a receipt source.')
+        elif self.movement_type == self.TYPE_CUSTOMER_RECEIPT_REVERSAL:
+            if not self.reversal_of_id or self.signed_amount != -self.reversal_of.signed_amount:
+                raise ValidationError('A customer receipt reversal must exactly offset the original receipt.')
 
     def save(self, *args, **kwargs):
         if self.pk and PaymentAccountMovement.objects.filter(pk=self.pk).exists():

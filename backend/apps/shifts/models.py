@@ -1280,7 +1280,7 @@ class Customer(models.Model):
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        if self.credit_slips.exists():
+        if self.credit_slips.exists() or (hasattr(self, 'sales_invoices') and self.sales_invoices.exists()) or (hasattr(self, 'receipts') and self.receipts.exists()):
             raise ValidationError("Used customers cannot be deleted. Deactivate them instead.")
         super().delete(*args, **kwargs)
 
@@ -2090,4 +2090,3 @@ class CollectionAuditLog(models.Model):
 
     def __str__(self):
         return f"CollectionAudit: {self.event_type} on {self.shift} at {self.occurred_at}"
-

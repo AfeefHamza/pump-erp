@@ -67,3 +67,23 @@ class StockAdjustmentCreateSerializer(serializers.Serializer):
 
 class StockAdjustmentReverseSerializer(serializers.Serializer):
     reversal_reason = serializers.CharField(min_length=5)
+
+
+class ItemStockAdjustmentInputSerializer(serializers.Serializer):
+    item_id = serializers.UUIDField()
+    adjustment_date = serializers.DateField()
+    direction = serializers.ChoiceField(choices=['IN', 'OUT'])
+    quantity = serializers.DecimalField(max_digits=15, decimal_places=4, min_value=Decimal('0.0001'))
+    reason = serializers.CharField(min_length=5)
+
+
+class ItemStockAdjustmentSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    item_id = serializers.UUIDField()
+    item_name = serializers.CharField(source='item.name')
+    adjustment_date = serializers.DateField()
+    direction = serializers.CharField()
+    quantity = serializers.DecimalField(max_digits=15, decimal_places=4)
+    reason = serializers.CharField()
+    status = serializers.CharField()
+    created_at = serializers.DateTimeField()

@@ -86,6 +86,14 @@ Backend business logic must remain decoupled from views and serializers:
 
 Supplier payments are direct-save financial documents owned by `apps.finance`. A payment creates immutable allocations to active Purchase Bills and one append-only negative cash/bank movement. Unallocated value remains a supplier advance and is not silently applied to bill ageing. Voiding retains the document and allocations, posts one equal reversal movement, and rebuilds affected Purchase Bill payment projections. This operational money ledger will integrate with the future double-entry general ledger; it does not claim to be the Chart of Accounts.
 
+## Sales Invoice and Item Stock Architecture
+
+Sales Invoices are direct-save, immutable documents owned by `apps.sales`. All line calculations, effective-dated Tax Treatment resolution, stock checks and totals are server-authoritative. Stock-item lines create idempotent append-only ordinary item movements; service and non-stock lines create no quantity movement. Corrections use invoice voids and exact reversal movements.
+
+Fuel billing deliberately follows a separate source path. Petrol and diesel revenue and tank depletion originate in meter/shift operations. A corporate fuel invoice therefore selects existing unbilled Credit Slips and only formalises the customer receivable; it never creates another fuel sale or stock movement. The stored regime remains `non_gst_petroleum`, distinct from GST Exempt, Nil-Rated and Out of Scope.
+
+Cash Sales Invoices post a positive Cash/Bank account movement immediately. Credit invoices remain outstanding until a direct-save Customer Receipt is allocated. Any unallocated receipt value remains a customer advance. Receipt and invoice voids retain the original document and post exact financial, receivable and stock reversals as applicable.
+
 ---
 
 ## Session-Based Authentication
@@ -265,7 +273,6 @@ Both tanker receipts and stock adjustments utilize private file storage models w
 ### 5. Document Numbering & Duplicate Invoice Safety
 - **Atomic Sequences**: `PurchaseBillSequence` uses `select_for_update()` inside database transactions to safely generate contiguous `PB-YYYY-XXXX` identifiers under high concurrency.
 - **Duplicate Prevention**: Invoices are normalized (stripping whitespace, hyphens, slashes) and checked against active bills for that supplier. Duplicate override requires permission, existing conflicting bill ID, mandatory reason ($\ge 5$ chars), and produces an audit entry.
-
 
 
 

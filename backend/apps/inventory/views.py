@@ -14,17 +14,20 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from apps.organizations.models import Organisation, Outlet
 from apps.forecourt.models import Tank
 from apps.organizations.permissions import require_permission, has_permission
-from .models import StockAdjustment, StockAdjustmentAttachment
+from .models import StockAdjustment, StockAdjustmentAttachment, ItemStockAdjustment, Item
 from .serializers import (
     StockAdjustmentSerializer, StockAdjustmentCreateSerializer,
-    StockAdjustmentReverseSerializer
+    StockAdjustmentReverseSerializer, ItemStockAdjustmentInputSerializer,
+    ItemStockAdjustmentSerializer
 )
 from .selectors import (
-    get_tank_stock_summary, get_tank_movement_ledger
+    get_tank_stock_summary, get_tank_movement_ledger,
+    get_item_stock_summary, get_item_stock_ledger
 )
 from .services import (
     record_stock_adjustment, reverse_stock_adjustment,
-    recalculate_tank_projection
+    recalculate_tank_projection, create_item_stock_adjustment,
+    reverse_item_stock_adjustment
 )
 
 
@@ -190,3 +193,57 @@ class TankChronologyRecalculateView(APIView):
             'recalculated_at': projection.recalculated_at
         }, status=status.HTTP_200_OK)
 
+
+class ItemStockSummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id):
+        org, outlet = _get_org_and_outlet(org_id, outlet_id)
+        require_permission(request.user, org, 'item_stock.view', outlet=outlet)
+        return Response(get_item_stock_summary(org, outlet, request.query_params.get('search')))
+
+
+class ItemStockLedgerView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, item_id):
+        org, outlet = _get_org_and_outlet(org_id, outlet_id)
+        require_permission(request.user, org, 'item_stock.view', outlet=outlet)
+        item = get_object_or_404(Item, id=item_id, organisation=org)
+        return Response(get_item_stock_ledger(org, outlet, item))
+
+
+class ItemStockAdjustmentListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id):
+        org, outlet = _get_org_and_outlet(org_id, outlet_id)
+        require_permission(request.user, org, 'item_stock.view', outlet=outlet)
+        rows = ItemStockAdjustment.objects.filter(organisation=org, outlet=outlet).select_related('item')[:100]
+        return Response(ItemStockAdjustmentSerializer(rows, many=True).data)
+
+    def post(self, request, org_id, outlet_id):
+        org, outlet = _get_org_and_outlet(org_id, outlet_id)
+        serializer = ItemStockAdjustmentInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        item = get_object_or_404(Item, id=data.pop('item_id'), organisation=org)
+        try:
+            adjustment = create_item_stock_adjustment(organisation=org, outlet=outlet, item=item, user=request.user, **data)
+        except DjangoValidationError as exc:
+            return _handle_validation_error(exc)
+        return Response(ItemStockAdjustmentSerializer(adjustment).data, status=status.HTTP_201_CREATED)
+
+
+class ItemStockAdjustmentReverseView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, outlet_id, adjustment_id):
+        org, outlet = _get_org_and_outlet(org_id, outlet_id)
+        adjustment = get_object_or_404(ItemStockAdjustment, id=adjustment_id, organisation=org, outlet=outlet)
+        reason = request.data.get('reason', '')
+        try:
+            adjustment = reverse_item_stock_adjustment(adjustment, reason, request.user)
+        except DjangoValidationError as exc:
+            return _handle_validation_error(exc)
+        return Response(ItemStockAdjustmentSerializer(adjustment).data)
