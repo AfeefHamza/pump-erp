@@ -1,5 +1,6 @@
 # Python Virtual Environment
 backend/.venv/
+backend/.venv-linux/
 .venv/
 env/
 venv/

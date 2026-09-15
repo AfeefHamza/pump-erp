@@ -9,6 +9,14 @@ import type {
   OpenSalesInvoice,
   UnbilledCreditSlip,
 } from '@/features/sales/types';
+import type {
+  AccountingPeriodLock,
+  JournalEntry,
+  JournalEntryInput,
+  LedgerAccount,
+  LedgerAccountInput,
+  TrialBalance,
+} from '@/features/accounting/types';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
 
@@ -3947,4 +3955,63 @@ export async function voidCustomerReceipt(orgId:string,outletId:string,receiptId
 }
 export async function fetchCustomerOpenSalesInvoices(orgId:string,outletId:string,customerId:string):Promise<OpenSalesInvoice[]>{
   return apiRequest<OpenSalesInvoice[]>(`/organisations/${orgId}/outlets/${outletId}/customers/${customerId}/open-sales-invoices/`);
+}
+
+// ==========================================
+// Accounting Core
+// ==========================================
+
+export async function fetchLedgerAccounts(orgId: string, params?: Record<string, string>): Promise<LedgerAccount[]> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<LedgerAccount[]>(`/organisations/${orgId}/accounting/accounts/${query}`);
+}
+
+export async function fetchLedgerAccount(orgId: string, accountId: string): Promise<LedgerAccount> {
+  return apiRequest<LedgerAccount>(`/organisations/${orgId}/accounting/accounts/${accountId}/`);
+}
+
+export async function createLedgerAccount(orgId: string, data: LedgerAccountInput): Promise<LedgerAccount> {
+  return apiRequest<LedgerAccount>(`/organisations/${orgId}/accounting/accounts/`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updateLedgerAccount(orgId: string, accountId: string, data: Partial<LedgerAccountInput>): Promise<LedgerAccount> {
+  return apiRequest<LedgerAccount>(`/organisations/${orgId}/accounting/accounts/${accountId}/`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export async function deactivateLedgerAccount(orgId: string, accountId: string): Promise<LedgerAccount> {
+  return apiRequest<LedgerAccount>(`/organisations/${orgId}/accounting/accounts/${accountId}/deactivate/`, { method: 'POST' });
+}
+
+export async function fetchJournalEntries(orgId: string, outletId: string, params?: Record<string, string>): Promise<JournalEntry[]> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<JournalEntry[]>(`/organisations/${orgId}/outlets/${outletId}/accounting/journals/${query}`);
+}
+
+export async function fetchJournalEntry(orgId: string, outletId: string, journalId: string): Promise<JournalEntry> {
+  return apiRequest<JournalEntry>(`/organisations/${orgId}/outlets/${outletId}/accounting/journals/${journalId}/`);
+}
+
+export async function createJournalEntry(orgId: string, outletId: string, data: JournalEntryInput): Promise<JournalEntry> {
+  return apiRequest<JournalEntry>(`/organisations/${orgId}/outlets/${outletId}/accounting/journals/`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function reverseJournalEntry(orgId: string, outletId: string, journalId: string, reason: string, reversalDate?: string): Promise<JournalEntry> {
+  return apiRequest<JournalEntry>(`/organisations/${orgId}/outlets/${outletId}/accounting/journals/${journalId}/reverse/`, { method: 'POST', body: JSON.stringify({ reason, ...(reversalDate ? { reversal_date: reversalDate } : {}) }) });
+}
+
+export async function fetchTrialBalance(orgId: string, outletId: string, params?: Record<string, string>): Promise<TrialBalance> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<TrialBalance>(`/organisations/${orgId}/outlets/${outletId}/accounting/trial-balance/${query}`);
+}
+
+export async function fetchAccountingPeriodLocks(orgId: string): Promise<AccountingPeriodLock[]> {
+  return apiRequest<AccountingPeriodLock[]>(`/organisations/${orgId}/accounting/period-locks/`);
+}
+
+export async function createAccountingPeriodLock(orgId: string, data: { month: string; outlet_id?: string | null; reason: string }): Promise<AccountingPeriodLock> {
+  return apiRequest<AccountingPeriodLock>(`/organisations/${orgId}/accounting/period-locks/`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function unlockAccountingPeriod(orgId: string, lockId: string, reason: string): Promise<AccountingPeriodLock> {
+  return apiRequest<AccountingPeriodLock>(`/organisations/${orgId}/accounting/period-locks/${lockId}/unlock/`, { method: 'POST', body: JSON.stringify({ reason }) });
 }

@@ -126,6 +126,13 @@ Financial invoice tracking for fuel deliveries and goods, strictly isolated from
 - **Finance integration**: Cash invoices and customer receipts create positive Cash/Bank account movements. Voiding creates equal reversal movements and restores invoice allocations.
 - **Frontend**: Full-page Sales Invoice and Customer Receipt workspaces, invoice list/detail/print, Customer Outstanding, and Item Stock ledger/adjustment pages.
 
+### 10. Accounting Core (Milestone 15, Implemented)
+- **Chart of Accounts**: Organisation-scoped account hierarchy with standard system accounts, posting controls, safe deactivation and structural locking after use.
+- **General Ledger**: Exact double-entry Journal Vouchers with immutable account snapshots, idempotent numbering, tenant/outlet validation and reversal-only correction.
+- **Reports**: Outlet Trial Balance and individual account-ledger selectors are derived from posted journal lines.
+- **Period control**: Open Financial Year validation plus audited organisation-wide or outlet-month locks. This is not an operational Day Close.
+- **Frontend**: Chart of Accounts and Trial Balance, full-page Journal Voucher entry, read-only voucher detail/reversal, and Accounting Period controls under Finance.
+
 ---
 
 ## Planned Business Modules (Remaining)
@@ -140,7 +147,7 @@ Financial invoice tracking for fuel deliveries and goods, strictly isolated from
 ### 5. Finance
 - **Cash & Banking**: Manage cash safe vaults, bank deposits, and credit card settlements.
 - **Expenses**: Record daily station operating expenses.
-- **Chart of Accounts**: Double-entry ledger core accounts setup.
+- **Automatic postings**: Connect sales, purchases, receipts, payments, stock valuation and tax totals to the General Ledger.
 
 ### 6. Employees
 - **Shift Assignments**: Track roster schedules.
