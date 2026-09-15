@@ -22,7 +22,7 @@ if env_file.exists():
     environ.Env.read_env(str(env_file))
 
 # Security keys and debug
-SECRET_KEY = env('DJANGO_SECRET_KEY', default='django-insecure-default-secret-key-pump-erp')
+SECRET_KEY = env('DJANGO_SECRET_KEY')
 DEBUG = env('DJANGO_DEBUG')
 ALLOWED_HOSTS = env('DJANGO_ALLOWED_HOSTS')
 
@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'apps.operations.apps.OperationsConfig',
     'apps.purchases.apps.PurchasesConfig',
     'apps.inventory.apps.InventoryConfig',
+    'apps.finance.apps.FinanceConfig',
 ]
 
 MIDDLEWARE = [
@@ -166,4 +167,3 @@ REST_FRAMEWORK = {
 # Media Storage Settings
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
-

@@ -42,6 +42,10 @@ import { ItemFormPage } from '@/features/inventory/pages/ItemFormPage';
 import { TaxTreatmentsPage } from '@/features/settings/pages/TaxTreatmentsPage';
 import { FuelStockDashboardPage } from '@/features/inventory/pages/FuelStockDashboardPage';
 import { TankLedgerPage } from '@/features/inventory/pages/TankLedgerPage';
+import { PaymentAccountsPage } from '@/features/finance/pages/PaymentAccountsPage';
+import { SupplierPaymentsPage } from '@/features/finance/pages/SupplierPaymentsPage';
+import { SupplierPaymentFormPage } from '@/features/finance/pages/SupplierPaymentFormPage';
+import { SupplierPaymentDetailPage } from '@/features/finance/pages/SupplierPaymentDetailPage';
 import { useParams, useLocation } from 'react-router-dom';
 
 const RedirectWithSearchAndHash: React.FC<{ getDest: (params: Record<string, string | undefined>) => string }> = ({ getDest }) => {
@@ -230,6 +234,18 @@ export const router = createBrowserRouter([
         element: <SuppliersPage />,
       },
       {
+        path: 'purchases/supplier-payments',
+        element: <SupplierPaymentsPage />,
+      },
+      {
+        path: 'purchases/supplier-payments/new',
+        element: <SupplierPaymentFormPage />,
+      },
+      {
+        path: 'purchases/supplier-payments/:paymentId',
+        element: <SupplierPaymentDetailPage />,
+      },
+      {
         path: 'purchases/items',
         element: <RedirectWithSearchAndHash getDest={() => '/app/inventory/items'} />,
       },
@@ -293,7 +309,7 @@ export const router = createBrowserRouter([
       // Finance
       {
         path: 'finance/cash-banking',
-        element: <ComingSoonPage title="Cash & Banking" />,
+        element: <PaymentAccountsPage />,
       },
       {
         path: 'finance/settlements',

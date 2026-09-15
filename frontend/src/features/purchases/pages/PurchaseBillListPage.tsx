@@ -405,13 +405,16 @@ export const PurchaseBillListPage: React.FC = () => {
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-xs)' }}>
+                        {bill.status === 'active' && Number(bill.outstanding_amount) > 0 && (
+                          <button onClick={() => navigate(`/app/purchases/supplier-payments/new?supplier=${bill.supplier}&bill=${bill.id}`)} className="btn btn-primary btn-sm">Pay</button>
+                        )}
                         <button
                           onClick={() => navigate(`/app/purchases/purchase-bills/${bill.id}`)}
                           className="btn btn-secondary btn-sm"
                         >
                           View / Edit
                         </button>
-                        {bill.status === 'active' && (
+                        {bill.status === 'active' && Number(bill.amount_paid) === 0 && (
                           <button
                             onClick={() => handleOpenVoidModal(bill)}
                             className="btn btn-outline-danger btn-sm"

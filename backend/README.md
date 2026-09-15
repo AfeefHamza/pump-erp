@@ -6,15 +6,19 @@ This is the Python Django backend for the Pump ERP SaaS system.
 - Python 3.14.7
 - Django 5.2
 - Django REST Framework 3.15
-- PostgreSQL 16 (production/dev database)
-- SQLite (only automatically fallback during tests to enable database-independent local verification checks)
+- PostgreSQL 16 for development and tests
 
 ## Folder Structure
 - `config/`: Global project configurations (`settings.py`, `urls.py`).
 - `apps/`: Application modules namespace.
   - `core/`: Health check, reusable views, utilities, base classes.
-  - `organizations/`: Multi-tenant organization boundaries.
-  - `users/`: User profiles and core roles (placeholder).
+  - `users/`: Custom users and session authentication.
+  - `organizations/`: Organisations, outlets, memberships, roles and permissions.
+  - `forecourt/`: Fuel compatibility, prices, tanks, dispensers and nozzles.
+  - `inventory/`: Canonical Item Master and fuel-stock ledger.
+  - `shifts/`: Shift Cards, readings, collections and reconciliation.
+  - `purchases/`: Suppliers, tanker receipts, Purchase Bills and taxation.
+  - `finance/`: Payment Accounts, Supplier Payments, allocations and money movements.
 
 ## Quick Start
 
@@ -58,4 +62,3 @@ This is the Python Django backend for the Pump ERP SaaS system.
 The project is configured to use the Django **console email backend** for local development. 
 When you trigger a password reset request via the `POST /api/v1/auth/password-reset/request/` endpoint, the reset email is printed directly into your running `runserver` terminal. 
 Copy the generated URL (e.g., `http://localhost:5173/reset-password?uid={uid}&token={token}`) and paste it into your browser to verify the password reset confirmation form interface.
-

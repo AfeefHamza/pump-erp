@@ -278,6 +278,13 @@ def get_supplier_outstanding_summary(organisation: Organisation, outlet: Outlet)
     bucket_over_90 = Decimal('0.00')
 
     supplier_map = {}
+    from apps.finance.models import SupplierPayment
+    active_payments = SupplierPayment.objects.filter(
+        organisation=organisation, outlet=outlet, status=SupplierPayment.STATUS_ACTIVE
+    ).select_related('supplier')
+    total_unallocated_advances = sum(
+        (payment.unallocated_amount for payment in active_payments), Decimal('0.00')
+    )
 
     for bill in active_bills:
         total_billed += bill.grand_total
@@ -303,7 +310,8 @@ def get_supplier_outstanding_summary(organisation: Organisation, outlet: Outlet)
                 'bucket_61_90': Decimal('0.00'),
                 'bucket_over_90': Decimal('0.00'),
                 'oldest_unpaid_invoice_date': bill.invoice_date.isoformat() if outstanding > 0 else None,
-                'unpaid_bills_count': 0
+                'unpaid_bills_count': 0,
+                'unallocated_advance': Decimal('0.00'),
             }
 
         s_entry = supplier_map[sup_id]
@@ -332,6 +340,22 @@ def get_supplier_outstanding_summary(organisation: Organisation, outlet: Outlet)
                 bucket_over_90 += outstanding
                 s_entry['bucket_over_90'] += outstanding
 
+    for payment in active_payments:
+        sup_id = str(payment.supplier_id)
+        if sup_id not in supplier_map:
+            supplier_map[sup_id] = {
+                'supplier_id': sup_id,
+                'supplier_name': payment.supplier_name_snapshot,
+                'supplier_code': payment.supplier_code_snapshot,
+                'total_billed': Decimal('0.00'), 'total_paid': Decimal('0.00'),
+                'total_outstanding': Decimal('0.00'), 'not_due': Decimal('0.00'),
+                'overdue_total': Decimal('0.00'), 'bucket_1_30': Decimal('0.00'),
+                'bucket_31_60': Decimal('0.00'), 'bucket_61_90': Decimal('0.00'),
+                'bucket_over_90': Decimal('0.00'), 'oldest_unpaid_invoice_date': None,
+                'unpaid_bills_count': 0, 'unallocated_advance': Decimal('0.00'),
+            }
+        supplier_map[sup_id]['unallocated_advance'] += payment.unallocated_amount
+
     # Convert supplier map values to string representations
     suppliers_list = []
     for sup in supplier_map.values():
@@ -349,7 +373,8 @@ def get_supplier_outstanding_summary(organisation: Organisation, outlet: Outlet)
             'bucket_61_90': str(sup['bucket_61_90'].quantize(Decimal('0.01'))),
             'bucket_over_90': str(sup['bucket_over_90'].quantize(Decimal('0.01'))),
             'oldest_unpaid_invoice_date': sup['oldest_unpaid_invoice_date'],
-            'unpaid_bills_count': sup['unpaid_bills_count']
+            'unpaid_bills_count': sup['unpaid_bills_count'],
+            'unallocated_advance': str(sup['unallocated_advance'].quantize(Decimal('0.01'))),
         })
 
     return {
@@ -357,6 +382,7 @@ def get_supplier_outstanding_summary(organisation: Organisation, outlet: Outlet)
         'total_billed': str(total_billed.quantize(Decimal('0.01'))),
         'total_paid': str(total_paid.quantize(Decimal('0.01'))),
         'total_outstanding': str(total_outstanding.quantize(Decimal('0.01'))),
+        'total_unallocated_advances': str(total_unallocated_advances.quantize(Decimal('0.01'))),
         'not_due': str(not_due_total.quantize(Decimal('0.01'))),
         'overdue_total': str(overdue_total.quantize(Decimal('0.01'))),
         'ageing_buckets': {
@@ -376,13 +402,18 @@ def get_supplier_statement(organisation: Organisation, outlet: Outlet, supplier:
     """
     today = to_outlet_business_date(timezone.now(), outlet=outlet, organisation=organisation)
 
-    bills = PurchaseBill.objects.filter(
+    bills = list(PurchaseBill.objects.filter(
         organisation=organisation,
         outlet=outlet,
         supplier=supplier
     ).prefetch_related(
         'receipt_links__tanker_receipt'
-    ).order_by('invoice_date', 'created_at')
+    ).order_by('invoice_date', 'created_at'))
+
+    from apps.finance.models import SupplierPayment
+    payments = list(SupplierPayment.objects.filter(
+        organisation=organisation, outlet=outlet, supplier=supplier
+    ).prefetch_related('allocations__purchase_bill').order_by('payment_date', 'created_at'))
 
     running_balance = Decimal('0.00')
     statement_lines = []
@@ -396,14 +427,44 @@ def get_supplier_statement(organisation: Organisation, outlet: Outlet, supplier:
     bucket_61_90 = Decimal('0.00')
     bucket_over_90 = Decimal('0.00')
 
-    for bill in bills:
+    events = [(bill.invoice_date, bill.created_at, 'purchase_bill', bill) for bill in bills]
+    events += [(payment.payment_date, payment.created_at, 'supplier_payment', payment) for payment in payments]
+    events.sort(key=lambda row: (row[0], row[1]))
+
+    total_unallocated_advances = Decimal('0.00')
+    for _, _, event_type, document in events:
+        if event_type == 'supplier_payment':
+            payment = document
+            credit = payment.amount if payment.status == SupplierPayment.STATUS_ACTIVE else Decimal('0.00')
+            if payment.status == SupplierPayment.STATUS_ACTIVE:
+                running_balance -= credit
+                total_unallocated_advances += payment.unallocated_amount
+            statement_lines.append({
+                'line_type': 'supplier_payment',
+                'document_id': str(payment.id),
+                'document_number': payment.payment_number,
+                'date': payment.payment_date.isoformat(),
+                'reference': payment.reference_number or payment.cheque_number or '',
+                'status': payment.status,
+                'debit_amount': '0.00',
+                'credit_amount': str(credit.quantize(Decimal('0.01'))),
+                'outstanding_amount': '0.00',
+                'unallocated_amount': str(payment.unallocated_amount.quantize(Decimal('0.01'))),
+                'running_balance': str(running_balance.quantize(Decimal('0.01'))),
+                'allocations': [
+                    {'bill_id': str(a.purchase_bill_id), 'bill_number': a.purchase_bill.bill_number, 'amount': str(a.amount)}
+                    for a in payment.allocations.all()
+                ],
+            })
+            continue
+
+        bill = document
         debit = bill.grand_total if bill.status == PurchaseBill.STATUS_ACTIVE else Decimal('0.00')
-        credit = bill.amount_paid if bill.status == PurchaseBill.STATUS_ACTIVE else Decimal('0.00')
 
         if bill.status == PurchaseBill.STATUS_ACTIVE:
-            running_balance += debit - credit
+            running_balance += debit
             total_billed += debit
-            total_paid += credit
+            total_paid += bill.amount_paid
             total_outstanding += bill.outstanding_amount
 
             days_overdue = (today - bill.due_date).days if bill.due_date else 0
@@ -424,6 +485,11 @@ def get_supplier_statement(organisation: Organisation, outlet: Outlet, supplier:
         ]))
 
         statement_lines.append({
+            'line_type': 'purchase_bill',
+            'document_id': str(bill.id),
+            'document_number': bill.bill_number,
+            'date': bill.invoice_date.isoformat(),
+            'reference': bill.supplier_invoice_number,
             'bill_id': str(bill.id),
             'bill_number': bill.bill_number,
             'supplier_invoice_number': bill.supplier_invoice_number,
@@ -431,7 +497,7 @@ def get_supplier_statement(organisation: Organisation, outlet: Outlet, supplier:
             'due_date': bill.due_date.isoformat(),
             'status': bill.status,
             'debit_amount': str(debit.quantize(Decimal('0.01'))),
-            'credit_amount': str(credit.quantize(Decimal('0.01'))),
+            'credit_amount': '0.00',
             'outstanding_amount': str(bill.outstanding_amount.quantize(Decimal('0.01'))),
             'running_balance': str(running_balance.quantize(Decimal('0.01'))),
             'linked_receipt_numbers': linked_receipt_numbers
@@ -445,6 +511,7 @@ def get_supplier_statement(organisation: Organisation, outlet: Outlet, supplier:
         'total_billed': str(total_billed.quantize(Decimal('0.01'))),
         'total_paid': str(total_paid.quantize(Decimal('0.01'))),
         'total_outstanding': str(total_outstanding.quantize(Decimal('0.01'))),
+        'total_unallocated_advances': str(total_unallocated_advances.quantize(Decimal('0.01'))),
         'ageing_buckets': {
             'not_due': str(bucket_not_due.quantize(Decimal('0.01'))),
             'bucket_1_30': str(bucket_1_30.quantize(Decimal('0.01'))),
@@ -501,4 +568,3 @@ def list_product_tax_mappings(organisation: Organisation):
     return ProductPurchaseTaxMapping.objects.filter(
         organisation=organisation
     ).select_related('fuel_product', 'purchase_item', 'purchase_tax_code').order_by('fuel_product__name', 'purchase_item__name')
-

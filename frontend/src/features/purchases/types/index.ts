@@ -358,6 +358,7 @@ export interface PurchaseBillListItem {
   grand_total: string;
   amount_paid: string;
   outstanding_amount: string;
+  payment_status?: 'unpaid' | 'partially_paid' | 'paid' | 'voided';
   status: 'active' | 'voided';
   is_overdue: boolean;
   days_overdue: number;
@@ -367,6 +368,12 @@ export interface PurchaseBillListItem {
 }
 
 export interface PurchaseBillDetail extends PurchaseBillListItem {
+  payment_allocations?: Array<{
+    payment_id: string;
+    payment_number: string;
+    payment_date: string;
+    amount: string;
+  }>;
   normalized_supplier_invoice_number: string;
   is_duplicate_override: boolean;
   duplicate_override_reason?: string | null;
@@ -514,6 +521,7 @@ export interface SupplierOutstandingItem {
   bucket_over_90: string;
   oldest_unpaid_invoice_date?: string | null;
   unpaid_bills_count: number;
+  unallocated_advance: string;
 }
 
 export interface SupplierOutstandingSummary {
@@ -521,6 +529,7 @@ export interface SupplierOutstandingSummary {
   total_billed: string;
   total_paid: string;
   total_outstanding: string;
+  total_unallocated_advances: string;
   not_due: string;
   overdue_total: string;
   ageing_buckets: {
@@ -534,17 +543,24 @@ export interface SupplierOutstandingSummary {
 }
 
 export interface SupplierStatementLine {
-  bill_id: string;
-  bill_number: string;
-  supplier_invoice_number: string;
-  invoice_date: string;
-  due_date: string;
+  line_type?: 'purchase_bill' | 'supplier_payment';
+  document_id?: string;
+  document_number?: string;
+  date?: string;
+  reference?: string;
+  bill_id?: string;
+  bill_number?: string;
+  supplier_invoice_number?: string;
+  invoice_date?: string;
+  due_date?: string;
   status: 'active' | 'voided';
   debit_amount: string;
   credit_amount: string;
   outstanding_amount: string;
   running_balance: string;
-  linked_receipt_numbers: string[];
+  linked_receipt_numbers?: string[];
+  unallocated_amount?: string;
+  allocations?: Array<{ bill_id: string; bill_number: string; amount: string }>;
 }
 
 export interface SupplierStatement {
@@ -555,6 +571,7 @@ export interface SupplierStatement {
   total_billed: string;
   total_paid: string;
   total_outstanding: string;
+  total_unallocated_advances: string;
   ageing_buckets: {
     not_due: string;
     bucket_1_30: string;

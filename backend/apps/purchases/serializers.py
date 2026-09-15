@@ -467,6 +467,7 @@ class PurchaseBillListSerializer(serializers.ModelSerializer):
     days_overdue = serializers.SerializerMethodField()
     linked_tanker_receipts = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
+    payment_status = serializers.SerializerMethodField()
 
     class Meta:
         model = PurchaseBill
@@ -479,7 +480,7 @@ class PurchaseBillListSerializer(serializers.ModelSerializer):
             'igst_total', 'gst_cess_total', 'petroleum_tax_total',
             'other_charges_subtotal', 'other_charges_tax_total',
             'round_off_amount', 'grand_total', 'amount_paid',
-            'outstanding_amount', 'status', 'is_overdue', 'days_overdue',
+            'outstanding_amount', 'payment_status', 'status', 'is_overdue', 'days_overdue',
             'linked_tanker_receipts', 'created_by_name', 'created_at'
         ]
 
@@ -507,6 +508,13 @@ class PurchaseBillListSerializer(serializers.ModelSerializer):
     def get_created_by_name(self, obj):
         return obj.created_by.display_name if obj.created_by else None
 
+    def get_payment_status(self, obj):
+        if obj.status == PurchaseBill.STATUS_VOIDED:
+            return 'voided'
+        if obj.outstanding_amount <= Decimal('0.00'):
+            return 'paid'
+        return 'partially_paid' if obj.amount_paid > Decimal('0.00') else 'unpaid'
+
 
 class PurchaseBillDetailSerializer(serializers.ModelSerializer):
     supplier_name = serializers.CharField(source='supplier_name_snapshot', read_only=True)
@@ -527,6 +535,8 @@ class PurchaseBillDetailSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
     updated_by_name = serializers.SerializerMethodField()
     voided_by_name = serializers.SerializerMethodField()
+    payment_status = serializers.SerializerMethodField()
+    payment_allocations = serializers.SerializerMethodField()
 
     class Meta:
         model = PurchaseBill
@@ -545,7 +555,7 @@ class PurchaseBillDetailSerializer(serializers.ModelSerializer):
             'igst_total', 'gst_cess_total', 'petroleum_tax_total',
             'other_charges_subtotal', 'other_charges_tax_total',
             'round_off_amount', 'grand_total', 'amount_paid',
-            'outstanding_amount', 'status', 'is_overdue', 'days_overdue',
+            'outstanding_amount', 'payment_status', 'payment_allocations', 'status', 'is_overdue', 'days_overdue',
             'notes', 'created_by_name', 'updated_by_name', 'voided_by_name',
             'voided_at', 'void_reason', 'lines', 'adjustments', 'other_charges',
             'receipt_links', 'attachments', 'audit_logs',
@@ -590,6 +600,24 @@ class PurchaseBillDetailSerializer(serializers.ModelSerializer):
 
     def get_voided_by_name(self, obj):
         return obj.voided_by.display_name if obj.voided_by else None
+
+    def get_payment_status(self, obj):
+        if obj.status == PurchaseBill.STATUS_VOIDED:
+            return 'voided'
+        if obj.outstanding_amount <= Decimal('0.00'):
+            return 'paid'
+        return 'partially_paid' if obj.amount_paid > Decimal('0.00') else 'unpaid'
+
+    def get_payment_allocations(self, obj):
+        return [
+            {
+                'payment_id': str(allocation.payment_id),
+                'payment_number': allocation.payment.payment_number,
+                'payment_date': allocation.payment.payment_date.isoformat(),
+                'amount': str(allocation.amount),
+            }
+            for allocation in obj.payment_allocations.select_related('payment').filter(payment__status='active')
+        ]
 
 
 class PurchaseBillLineInputSerializer(serializers.Serializer):
@@ -810,4 +838,3 @@ class PurchaseBillCreateUpdateSerializer(serializers.Serializer):
 
 class PurchaseBillVoidSerializer(serializers.Serializer):
     void_reason = serializers.CharField(min_length=5)
-

@@ -82,6 +82,10 @@ Backend business logic must remain decoupled from views and serializers:
 ### 11. Postponements
 - **Reports**: Postponed for the core ERP development phase. Currently represented by placeholder pages.
 
+## Supplier Payment Architecture
+
+Supplier payments are direct-save financial documents owned by `apps.finance`. A payment creates immutable allocations to active Purchase Bills and one append-only negative cash/bank movement. Unallocated value remains a supplier advance and is not silently applied to bill ageing. Voiding retains the document and allocations, posts one equal reversal movement, and rebuilds affected Purchase Bill payment projections. This operational money ledger will integrate with the future double-entry general ledger; it does not claim to be the Chart of Accounts.
+
 ---
 
 ## Session-Based Authentication
@@ -261,7 +265,6 @@ Both tanker receipts and stock adjustments utilize private file storage models w
 ### 5. Document Numbering & Duplicate Invoice Safety
 - **Atomic Sequences**: `PurchaseBillSequence` uses `select_for_update()` inside database transactions to safely generate contiguous `PB-YYYY-XXXX` identifiers under high concurrency.
 - **Duplicate Prevention**: Invoices are normalized (stripping whitespace, hyphens, slashes) and checked against active bills for that supplier. Duplicate override requires permission, existing conflicting bill ID, mandatory reason ($\ge 5$ chars), and produces an audit entry.
-
 
 
 

@@ -103,6 +103,18 @@ Financial invoice tracking for fuel deliveries and goods, strictly isolated from
   - Purchase Bill Workspace at `/app/purchases/purchase-bills/new` and `/app/purchases/purchase-bills/:billId` with 9 sections (Supplier/Invoice, Link Receipts, Product Lines, Adjustments, Server-Managed Totals, Due Date, Attachments, Notes, Audit Timeline).
   - Supplier Outstanding & Ageing at `/app/purchases/supplier-outstanding` with 5-bucket ageing breakdown and chronological statement drawer.
 
+### 8. Cash/Bank Accounts & Supplier Payments (Milestone 13, Implemented)
+- **Backend (`apps/finance/`)**:
+  - Cash and bank payment-account master with organisation-wide or outlet-specific scope.
+  - Direct-save Supplier Payments with immutable Purchase Bill allocations and unapplied supplier advances.
+  - Append-only account movements; voiding creates an equal reversal and restores affected bill projections.
+  - Server-derived `amount_paid` and `outstanding_amount`, open-bill selectors, supplier statement credits, permissions and reconciliation command.
+- **Frontend**:
+  - Cash & Banking account master at `/app/finance/cash-banking`.
+  - Supplier Payments list at `/app/purchases/supplier-payments`.
+  - Full-page payment entry at `/app/purchases/supplier-payments/new` with oldest-first auto-allocation.
+  - Read-only payment detail, additional allocation and controlled void workflow.
+
 ---
 
 ## Planned Business Modules (Postponed)
@@ -113,7 +125,7 @@ Financial invoice tracking for fuel deliveries and goods, strictly isolated from
 - **Receipts**: Record incoming customer payments against outstanding invoices.
 
 ### 3. Purchases (Remaining)
-- **Supplier Payments & Allocations**: Disburse vendor payments, allocate credits against outstanding purchase bills, and debit note reconciliations.
+- **Debit/Credit Notes**: Supplier debit notes, credits and return reconciliation.
 
 ### 4. Inventory (Remaining)
 - **Lubricants**: Manage retail items, lubricants, inventory levels, and sales margins.
@@ -127,4 +139,3 @@ Financial invoice tracking for fuel deliveries and goods, strictly isolated from
 ### 6. Employees
 - **Shift Assignments**: Track roster schedules.
 - **Employee Accounts**: Ledger postings for salary deductions and permanent employee recovery.
-
