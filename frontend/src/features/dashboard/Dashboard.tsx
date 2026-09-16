@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/navigation/PageHeader';
 import { StatCard } from '@/components/data-display/StatCard';
 import { checkHealth } from '@/api/client';
@@ -40,6 +41,7 @@ interface Tank {
 }
 
 export const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
   // Backend connection status state
   const [dbStatus, setDbStatus] = React.useState<'db-connected' | 'api-only' | 'unavailable' | 'loading'>('loading');
 
@@ -125,6 +127,10 @@ export const Dashboard: React.FC = () => {
   ];
 
   const handleActionClick = (actionName: string) => {
+    if (actionName === 'Record Expense') {
+      navigate('/app/finance/expenses/new');
+      return;
+    }
     alert(`"${actionName}" is a demonstration placeholder. ERP workflows will be implemented in a future phase.`);
   };
 

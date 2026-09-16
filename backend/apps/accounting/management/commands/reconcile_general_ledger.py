@@ -6,12 +6,14 @@ from django.db.models import Exists, OuterRef
 from apps.accounting.models import JournalEntry
 from apps.accounting.posting import (
     post_customer_receipt,
+    post_cash_bank_transfer,
+    post_expense,
     post_purchase_bill,
     post_sales_invoice,
     post_supplier_payment,
     post_supplier_payment_allocation,
 )
-from apps.finance.models import SupplierPayment, SupplierPaymentAllocation
+from apps.finance.models import CashBankTransfer, Expense, SupplierPayment, SupplierPaymentAllocation
 from apps.organizations.models import Organisation
 from apps.purchases.models import PurchaseBill
 from apps.sales.models import CustomerReceipt, SalesInvoice
@@ -63,6 +65,12 @@ class Command(BaseCommand):
             ('Supplier Payments', 'supplier_payment', SupplierPayment.objects.filter(
                 organisation=organisation, status=SupplierPayment.STATUS_ACTIVE,
             ), post_supplier_payment),
+            ('Expenses', 'expense', Expense.objects.filter(
+                organisation=organisation, status=Expense.STATUS_ACTIVE,
+            ), post_expense),
+            ('Cash/Bank Transfers', 'cash_bank_transfer', CashBankTransfer.objects.filter(
+                organisation=organisation, status=CashBankTransfer.STATUS_ACTIVE,
+            ), post_cash_bank_transfer),
         ]
         if outlet:
             sources = [(label, kind, qs.filter(outlet=outlet), poster) for label, kind, qs, poster in sources]

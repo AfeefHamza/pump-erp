@@ -1,6 +1,16 @@
 from django.urls import path
 
 from .views import (
+    CashBankTransferDetailView,
+    CashBankTransferListCreateView,
+    CashBankTransferVoidView,
+    ExpenseCategoryDeactivateView,
+    ExpenseCategoryDetailView,
+    ExpenseCategoryListCreateView,
+    ExpenseDetailView,
+    ExpenseListCreateView,
+    ExpenseVoidView,
+    PaymentAccountBookView,
     PaymentAccountDeactivateView,
     PaymentAccountDetailView,
     PaymentAccountListCreateView,
@@ -13,10 +23,20 @@ from .views import (
 )
 
 urlpatterns = [
+    path('<uuid:org_id>/expense-categories/', ExpenseCategoryListCreateView.as_view(), name='expense_category_list_create'),
+    path('<uuid:org_id>/expense-categories/<uuid:category_id>/', ExpenseCategoryDetailView.as_view(), name='expense_category_detail'),
+    path('<uuid:org_id>/expense-categories/<uuid:category_id>/deactivate/', ExpenseCategoryDeactivateView.as_view(), name='expense_category_deactivate'),
     path('<uuid:org_id>/payment-accounts/', PaymentAccountListCreateView.as_view(), name='payment_account_list_create'),
     path('<uuid:org_id>/payment-accounts/<uuid:account_id>/', PaymentAccountDetailView.as_view(), name='payment_account_detail'),
     path('<uuid:org_id>/payment-accounts/<uuid:account_id>/deactivate/', PaymentAccountDeactivateView.as_view(), name='payment_account_deactivate'),
     path('<uuid:org_id>/outlets/<uuid:outlet_id>/payment-accounts/options/', PaymentAccountOptionsView.as_view(), name='payment_account_options'),
+    path('<uuid:org_id>/outlets/<uuid:outlet_id>/payment-accounts/<uuid:account_id>/book/', PaymentAccountBookView.as_view(), name='payment_account_book'),
+    path('<uuid:org_id>/outlets/<uuid:outlet_id>/expenses/', ExpenseListCreateView.as_view(), name='expense_list_create'),
+    path('<uuid:org_id>/outlets/<uuid:outlet_id>/expenses/<uuid:expense_id>/', ExpenseDetailView.as_view(), name='expense_detail'),
+    path('<uuid:org_id>/outlets/<uuid:outlet_id>/expenses/<uuid:expense_id>/void/', ExpenseVoidView.as_view(), name='expense_void'),
+    path('<uuid:org_id>/outlets/<uuid:outlet_id>/cash-bank-transfers/', CashBankTransferListCreateView.as_view(), name='cash_bank_transfer_list_create'),
+    path('<uuid:org_id>/outlets/<uuid:outlet_id>/cash-bank-transfers/<uuid:transfer_id>/', CashBankTransferDetailView.as_view(), name='cash_bank_transfer_detail'),
+    path('<uuid:org_id>/outlets/<uuid:outlet_id>/cash-bank-transfers/<uuid:transfer_id>/void/', CashBankTransferVoidView.as_view(), name='cash_bank_transfer_void'),
     path('<uuid:org_id>/outlets/<uuid:outlet_id>/supplier-payments/', SupplierPaymentListCreateView.as_view(), name='supplier_payment_list_create'),
     path('<uuid:org_id>/outlets/<uuid:outlet_id>/supplier-payments/<uuid:payment_id>/', SupplierPaymentDetailView.as_view(), name='supplier_payment_detail'),
     path('<uuid:org_id>/outlets/<uuid:outlet_id>/supplier-payments/<uuid:payment_id>/allocations/', SupplierPaymentAllocateView.as_view(), name='supplier_payment_allocate'),

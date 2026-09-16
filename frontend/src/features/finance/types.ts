@@ -120,3 +120,128 @@ export interface SupplierPaymentListResponse {
     total_unallocated: string;
   };
 }
+
+export interface ExpenseCategory {
+  id: string;
+  code: string;
+  name: string;
+  ledger_account: string;
+  ledger_account_code: string;
+  ledger_account_name: string;
+  description?: string | null;
+  display_order: number;
+  is_active: boolean;
+}
+
+export interface ExpenseCategoryInput {
+  code: string;
+  name: string;
+  ledger_account_id: string;
+  description?: string;
+  display_order?: number;
+  is_active?: boolean;
+}
+
+export interface AccountMovement {
+  id: string;
+  effective_date: string;
+  signed_amount: string;
+  movement_type: string;
+  source_type: string;
+  source_id?: string | null;
+  reversal_of?: string | null;
+  description: string;
+  account_name?: string;
+}
+
+export interface Expense {
+  id: string;
+  expense_number: string;
+  expense_date: string;
+  category: string;
+  category_name: string;
+  category_code_snapshot: string;
+  ledger_account: string;
+  ledger_code_snapshot: string;
+  ledger_name_snapshot: string;
+  payment_account: string;
+  payment_account_name: string;
+  payment_account_type: PaymentAccountType;
+  payee?: string | null;
+  amount: string;
+  reference_number?: string | null;
+  notes?: string | null;
+  attachment?: string | null;
+  status: 'active' | 'voided';
+  accounting_journal_id?: string | null;
+  account_movements: AccountMovement[];
+  created_by_name?: string | null;
+  created_at: string;
+  voided_at?: string | null;
+  void_reason?: string | null;
+}
+
+export interface ExpenseInput {
+  client_request_id?: string;
+  expense_date: string;
+  category_id: string;
+  payment_account_id: string;
+  payee?: string;
+  amount: string;
+  reference_number?: string;
+  notes?: string;
+  attachment?: File | null;
+}
+
+export interface ExpenseListResponse {
+  results: Expense[];
+  summary: { active_total: string };
+}
+
+export interface CashBankTransfer {
+  id: string;
+  transfer_number: string;
+  transfer_date: string;
+  transfer_type: 'cash_deposit' | 'bank_withdrawal' | 'account_transfer';
+  from_account: string;
+  from_account_name: string;
+  to_account: string;
+  to_account_name: string;
+  amount: string;
+  reference_number?: string | null;
+  notes?: string | null;
+  status: 'active' | 'voided';
+  accounting_journal_id?: string | null;
+  account_movements: AccountMovement[];
+  created_by_name?: string | null;
+  created_at: string;
+  voided_at?: string | null;
+  void_reason?: string | null;
+}
+
+export interface CashBankTransferInput {
+  client_request_id?: string;
+  transfer_date: string;
+  from_account_id: string;
+  to_account_id: string;
+  amount: string;
+  reference_number?: string;
+  notes?: string;
+}
+
+export interface PaymentAccountBook {
+  account: PaymentAccount;
+  opening_balance: string;
+  closing_balance: string;
+  results: Array<{
+    id: string;
+    effective_date: string;
+    movement_type: string;
+    description: string;
+    source_type: string;
+    source_id?: string | null;
+    debit: string;
+    credit: string;
+    running_balance: string;
+  }>;
+}

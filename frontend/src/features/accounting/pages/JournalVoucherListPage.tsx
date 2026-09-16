@@ -11,6 +11,7 @@ const sourceLabels: Record<string, string> = {
   manual_journal: 'Manual Journal', journal_reversal: 'Reversal', sales_invoice: 'Sales Invoice',
   purchase_bill: 'Purchase Bill', customer_receipt: 'Customer Receipt', supplier_payment: 'Supplier Payment',
   supplier_payment_allocation: 'Supplier Advance Allocation',
+  expense: 'Expense', cash_bank_transfer: 'Cash / Bank Transfer',
 };
 const sourceLabel = (source: string) => sourceLabels[source] || source.replaceAll('_', ' ');
 

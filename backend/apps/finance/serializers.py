@@ -2,7 +2,16 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from .models import PaymentAccount, PaymentAccountMovement, SupplierPayment, SupplierPaymentAllocation, SupplierPaymentAuditLog
+from .models import (
+    CashBankTransfer,
+    Expense,
+    ExpenseCategory,
+    PaymentAccount,
+    PaymentAccountMovement,
+    SupplierPayment,
+    SupplierPaymentAllocation,
+    SupplierPaymentAuditLog,
+)
 
 
 class PaymentAccountSerializer(serializers.ModelSerializer):
@@ -142,3 +151,122 @@ class OpenPurchaseBillSerializer(serializers.Serializer):
         if obj.outstanding_amount <= 0:
             return 'paid'
         return 'partially_paid' if obj.amount_paid > 0 else 'unpaid'
+
+
+class ExpenseCategorySerializer(serializers.ModelSerializer):
+    ledger_account_code = serializers.CharField(source='ledger_account.code', read_only=True)
+    ledger_account_name = serializers.CharField(source='ledger_account.name', read_only=True)
+
+    class Meta:
+        model = ExpenseCategory
+        fields = ['id', 'organisation', 'code', 'name', 'ledger_account', 'ledger_account_code',
+                  'ledger_account_name', 'description', 'display_order', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'organisation', 'created_at', 'updated_at']
+
+
+class ExpenseCategoryInputSerializer(serializers.Serializer):
+    code = serializers.CharField(max_length=50)
+    name = serializers.CharField(max_length=150)
+    ledger_account_id = serializers.UUIDField()
+    description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    display_order = serializers.IntegerField(required=False, min_value=0, default=0)
+    is_active = serializers.BooleanField(required=False, default=True)
+
+
+class ExpenseSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source='category_name_snapshot', read_only=True)
+    payment_account_name = serializers.CharField(source='payment_account.name', read_only=True)
+    payment_account_type = serializers.CharField(source='payment_account.account_type', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.display_name', read_only=True, allow_null=True)
+    accounting_journal_id = serializers.SerializerMethodField()
+    account_movements = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Expense
+        fields = ['id', 'organisation', 'outlet', 'expense_number', 'expense_date', 'category',
+                  'category_name', 'category_code_snapshot', 'ledger_account', 'ledger_code_snapshot',
+                  'ledger_name_snapshot', 'payment_account', 'payment_account_name', 'payment_account_type',
+                  'payee', 'amount', 'reference_number', 'notes', 'attachment', 'status',
+                  'accounting_journal_id', 'account_movements', 'created_by_name', 'created_at',
+                  'voided_at', 'void_reason']
+
+    def get_accounting_journal_id(self, obj):
+        from apps.accounting.posting import journal_id_for_source
+        return journal_id_for_source(obj.organisation_id, obj.outlet_id, 'expense', obj.id)
+
+    def get_account_movements(self, obj):
+        rows = PaymentAccountMovement.objects.filter(source_type='expense', source_id=obj.id).order_by('created_at')
+        return PaymentAccountMovementSerializer(rows, many=True).data
+
+
+class ExpenseInputSerializer(serializers.Serializer):
+    client_request_id = serializers.UUIDField(required=False, allow_null=True)
+    expense_date = serializers.DateField()
+    category_id = serializers.UUIDField()
+    payment_account_id = serializers.UUIDField()
+    payee = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=200)
+    amount = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=Decimal('0.01'))
+    reference_number = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=100)
+    notes = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    attachment = serializers.FileField(required=False, allow_null=True)
+
+    def validate_attachment(self, value):
+        if not value:
+            return value
+        if value.size > 10 * 1024 * 1024:
+            raise serializers.ValidationError('Attachment must be 10 MB or smaller.')
+        allowed = {'application/pdf', 'image/jpeg', 'image/png', 'image/webp'}
+        if getattr(value, 'content_type', None) not in allowed:
+            raise serializers.ValidationError('Attach a PDF, JPG, PNG or WebP file.')
+        return value
+
+
+class CashBankTransferSerializer(serializers.ModelSerializer):
+    from_account_name = serializers.CharField(source='from_account.name', read_only=True)
+    to_account_name = serializers.CharField(source='to_account.name', read_only=True)
+    transfer_type = serializers.CharField(read_only=True)
+    created_by_name = serializers.CharField(source='created_by.display_name', read_only=True, allow_null=True)
+    accounting_journal_id = serializers.SerializerMethodField()
+    account_movements = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CashBankTransfer
+        fields = ['id', 'organisation', 'outlet', 'transfer_number', 'transfer_date', 'transfer_type',
+                  'from_account', 'from_account_name', 'to_account', 'to_account_name', 'amount',
+                  'reference_number', 'notes', 'status', 'accounting_journal_id', 'account_movements',
+                  'created_by_name', 'created_at', 'voided_at', 'void_reason']
+
+    def get_accounting_journal_id(self, obj):
+        from apps.accounting.posting import journal_id_for_source
+        return journal_id_for_source(obj.organisation_id, obj.outlet_id, 'cash_bank_transfer', obj.id)
+
+    def get_account_movements(self, obj):
+        rows = PaymentAccountMovement.objects.filter(
+            source_type='cash_bank_transfer', source_id=obj.id,
+        ).select_related('account').order_by('created_at')
+        data = PaymentAccountMovementSerializer(rows, many=True).data
+        for row, movement in zip(data, rows):
+            row['account_name'] = movement.account.name
+        return data
+
+
+class CashBankTransferInputSerializer(serializers.Serializer):
+    client_request_id = serializers.UUIDField(required=False, allow_null=True)
+    transfer_date = serializers.DateField()
+    from_account_id = serializers.UUIDField()
+    to_account_id = serializers.UUIDField()
+    amount = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=Decimal('0.01'))
+    reference_number = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=100)
+    notes = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+
+class PaymentAccountBookRowSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    effective_date = serializers.DateField()
+    movement_type = serializers.CharField()
+    description = serializers.CharField()
+    source_type = serializers.CharField()
+    source_id = serializers.UUIDField(allow_null=True)
+    debit = serializers.DecimalField(max_digits=15, decimal_places=2)
+    credit = serializers.DecimalField(max_digits=15, decimal_places=2)
+    running_balance = serializers.DecimalField(max_digits=15, decimal_places=2)

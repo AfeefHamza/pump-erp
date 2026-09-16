@@ -68,6 +68,7 @@ export const navigationMenu: MenuSection[] = [
     title: 'FINANCE',
     items: [
       { name: 'Cash & Banking', path: '/app/finance/cash-banking', icon: Landmark },
+      { name: 'Expenses', path: '/app/finance/expenses', icon: DollarSign },
       { name: 'Chart of Accounts', path: '/app/finance/chart-of-accounts', icon: BookOpen },
       { name: 'Journal Vouchers', path: '/app/finance/vouchers', icon: BookOpenCheck },
       { name: 'Accounting Periods', path: '/app/finance/accounting-periods', icon: CalendarClock },
