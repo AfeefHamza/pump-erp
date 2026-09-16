@@ -8,10 +8,14 @@ from django.utils import timezone
 from apps.core.timezone_utils import to_outlet_business_date
 from apps.organizations.permissions import require_permission
 from apps.purchases.models import PurchaseBill
+from apps.shifts.models import EmployeeShiftCollection
 
 from .models import (
     CashBankTransfer,
     CashBankTransferSequence,
+    DigitalSettlement,
+    DigitalSettlementAllocation,
+    DigitalSettlementSequence,
     Expense,
     ExpenseCategory,
     ExpenseSequence,
@@ -263,6 +267,124 @@ def void_cash_bank_transfer(transfer, reason, user):
         source_id=transfer.id, reason=reason, user=user,
     )
     return transfer
+
+
+@transaction.atomic
+def create_digital_settlement(*, organisation, outlet, payment_account, settlement_date,
+                              collection_ids, charges_amount, tds_amount, bank_reference,
+                              user, batch_reference=None, notes=None, client_request_id=None):
+    require_permission(user, organisation, 'digital_settlement.create', outlet=outlet)
+    if client_request_id:
+        existing = DigitalSettlement.objects.select_for_update().filter(
+            organisation=organisation, outlet=outlet, client_request_id=client_request_id,
+        ).first()
+        if existing:
+            return existing
+    _validate_account(payment_account, organisation, outlet, 'payment_account')
+    if payment_account.account_type != PaymentAccount.TYPE_BANK:
+        raise ValidationError({'payment_account': 'Digital settlements require a bank account.'})
+    ids = list(dict.fromkeys(collection_ids or []))
+    if not ids:
+        raise ValidationError({'collection_ids': 'Select at least one pending digital collection.'})
+    collections = list(EmployeeShiftCollection.objects.select_for_update().select_related(
+        'employee', 'shift_card', 'operational_shift',
+    ).filter(id__in=ids))
+    if len(collections) != len(ids):
+        raise ValidationError({'collection_ids': 'One or more selected collections were not found.'})
+    allowed_methods = {DigitalSettlement.METHOD_CARD, DigitalSettlement.METHOD_UPI, DigitalSettlement.METHOD_FLEET_CARD}
+    methods = {row.collection_method for row in collections}
+    providers = {(row.provider_name or 'Unspecified').strip().casefold() for row in collections}
+    if len(methods) != 1 or not methods.issubset(allowed_methods):
+        raise ValidationError({'collection_ids': 'A settlement batch must contain one digital payment method.'})
+    if len(providers) != 1:
+        raise ValidationError({'collection_ids': 'A settlement batch must contain collections from one provider.'})
+    for row in collections:
+        if row.organisation_id != organisation.id or row.outlet_id != outlet.id or row.status != EmployeeShiftCollection.STATUS_ACTIVE:
+            raise ValidationError({'collection_ids': 'Select active collections from this organisation and outlet.'})
+        if row.shift_card_id and row.shift_card.status != row.shift_card.STATUS_ACTIVE:
+            raise ValidationError({'collection_ids': 'Voided Shift Card collections cannot be settled.'})
+    already_settled = DigitalSettlementAllocation.objects.filter(
+        collection_id__in=ids, settlement__status=DigitalSettlement.STATUS_ACTIVE,
+    ).exists()
+    if already_settled:
+        raise ValidationError({'collection_ids': 'One or more selected collections are already settled.'})
+    gross = sum((row.amount for row in collections), Decimal('0.00')).quantize(MONEY)
+    charges = _money(charges_amount, 'charges_amount')
+    tds = _money(tds_amount, 'tds_amount')
+    if charges < 0 or tds < 0:
+        raise ValidationError({'charges_amount': 'Charges and TDS cannot be negative.'})
+    net = (gross - charges - tds).quantize(MONEY)
+    if net <= 0:
+        raise ValidationError({'net_amount': 'Net bank credit must be greater than zero.'})
+    number = _next_number(DigitalSettlementSequence, outlet, settlement_date.year, 'SET')
+    first = collections[0]
+    settlement = DigitalSettlement.objects.create(
+        organisation=organisation, outlet=outlet, settlement_number=number,
+        client_request_id=client_request_id, settlement_date=settlement_date,
+        collection_method=first.collection_method,
+        provider_name=(first.provider_name or 'Unspecified').strip() or 'Unspecified',
+        batch_reference=batch_reference, payment_account=payment_account,
+        gross_amount=gross, charges_amount=charges, tds_amount=tds, net_amount=net,
+        bank_reference=bank_reference, notes=notes, created_by=user,
+    )
+    DigitalSettlementAllocation.objects.bulk_create([
+        DigitalSettlementAllocation(
+            settlement=settlement, collection=row, amount=row.amount,
+            employee_name_snapshot=row.employee.display_name,
+            collection_reference_snapshot=row.reference_number,
+            occurred_at_snapshot=row.occurred_at,
+        ) for row in collections
+    ])
+    PaymentAccountMovement.objects.create(
+        organisation=organisation, outlet=outlet, account=payment_account,
+        effective_date=settlement_date, signed_amount=net,
+        movement_type=PaymentAccountMovement.TYPE_DIGITAL_SETTLEMENT,
+        source_type='digital_settlement', source_id=settlement.id,
+        idempotency_key=f'digital-settlement:{settlement.id}',
+        description=f'{number} · {settlement.provider_name}', created_by=user,
+    )
+    from apps.accounting.posting import post_digital_settlement
+    post_digital_settlement(settlement, user)
+    return settlement
+
+
+@transaction.atomic
+def void_digital_settlement(settlement, reason, user):
+    settlement = DigitalSettlement.objects.select_for_update().select_related(
+        'organisation', 'outlet', 'payment_account',
+    ).get(pk=settlement.pk)
+    require_permission(user, settlement.organisation, 'digital_settlement.void', outlet=settlement.outlet)
+    if settlement.status == DigitalSettlement.STATUS_VOIDED:
+        return settlement
+    reason = (reason or '').strip()
+    if len(reason) < 5:
+        raise ValidationError({'void_reason': 'Provide a meaningful reason of at least 5 characters.'})
+    original = PaymentAccountMovement.objects.select_for_update().get(
+        source_type='digital_settlement', source_id=settlement.id,
+        movement_type=PaymentAccountMovement.TYPE_DIGITAL_SETTLEMENT,
+    )
+    settlement.status = DigitalSettlement.STATUS_VOIDED
+    settlement.void_reason = reason
+    settlement.voided_by = user
+    settlement.voided_at = timezone.now()
+    settlement._allow_void_transition = True
+    settlement.save(update_fields=['status', 'void_reason', 'voided_by', 'voided_at'])
+    PaymentAccountMovement.objects.create(
+        organisation=settlement.organisation, outlet=settlement.outlet, account=settlement.payment_account,
+        effective_date=to_outlet_business_date(timezone.now(), outlet=settlement.outlet, organisation=settlement.organisation),
+        signed_amount=-original.signed_amount,
+        movement_type=PaymentAccountMovement.TYPE_DIGITAL_SETTLEMENT_REVERSAL,
+        source_type='digital_settlement', source_id=settlement.id, reversal_of=original,
+        idempotency_key=f'digital-settlement-reversal:{settlement.id}',
+        description=f'Reversal of {settlement.settlement_number}', created_by=user,
+    )
+    from apps.accounting.posting import reverse_source_journal
+    reverse_source_journal(
+        organisation=settlement.organisation, outlet=settlement.outlet,
+        source_type='digital_settlement', source_id=settlement.id,
+        reason=reason, user=user,
+    )
+    return settlement
 
 
 @transaction.atomic

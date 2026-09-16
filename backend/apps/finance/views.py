@@ -13,16 +13,19 @@ from apps.organizations.permissions import require_permission
 from apps.purchases.models import Supplier
 from apps.accounting.models import ChartOfAccount
 
-from .models import CashBankTransfer, Expense, ExpenseCategory, PaymentAccount, SupplierPayment
+from .models import CashBankTransfer, DigitalSettlement, Expense, ExpenseCategory, PaymentAccount, SupplierPayment
 from .selectors import (
     list_cash_bank_transfers,
+    digital_settlement_summary,
     list_expense_categories,
     list_expenses,
+    list_digital_settlements,
     list_payment_accounts,
     list_supplier_payments,
     open_purchase_bills,
     payment_account_book,
     payment_totals,
+    pending_digital_collections,
 )
 from .serializers import (
     AddAllocationsSerializer,
@@ -39,6 +42,9 @@ from .serializers import (
     ExpenseInputSerializer,
     ExpenseSerializer,
     PaymentAccountBookRowSerializer,
+    DigitalSettlementInputSerializer,
+    DigitalSettlementSerializer,
+    PendingDigitalCollectionSerializer,
 )
 from .services import (
     allocate_supplier_payment,
@@ -54,6 +60,8 @@ from .services import (
     update_expense_category,
     void_cash_bank_transfer,
     void_expense,
+    create_digital_settlement,
+    void_digital_settlement,
 )
 
 
@@ -439,3 +447,78 @@ class PaymentAccountBookView(APIView):
             'opening_balance': str(opening), 'closing_balance': str(closing),
             'results': PaymentAccountBookRowSerializer(rows, many=True).data,
         })
+
+
+class PendingDigitalCollectionListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id):
+        organisation, outlet = _org_outlet(org_id, outlet_id)
+        require_permission(request.user, organisation, 'digital_settlement.view', outlet=outlet)
+        rows = pending_digital_collections(organisation, outlet, request.query_params)
+        return Response(PendingDigitalCollectionSerializer(rows, many=True).data)
+
+
+class DigitalSettlementListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id):
+        organisation, outlet = _org_outlet(org_id, outlet_id)
+        require_permission(request.user, organisation, 'digital_settlement.view', outlet=outlet)
+        rows = list_digital_settlements(organisation, outlet, request.query_params)
+        summary = digital_settlement_summary(organisation, outlet)
+        return Response({
+            'results': DigitalSettlementSerializer(rows, many=True).data,
+            'summary': {key: (str(value.quantize(Decimal('0.01'))) if isinstance(value, Decimal) else value) for key, value in summary.items()},
+        })
+
+    def post(self, request, org_id, outlet_id):
+        organisation, outlet = _org_outlet(org_id, outlet_id)
+        serializer = DigitalSettlementInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        account = get_object_or_404(PaymentAccount, id=data.pop('payment_account_id'), organisation=organisation)
+        try:
+            settlement = create_digital_settlement(
+                organisation=organisation, outlet=outlet, payment_account=account,
+                user=request.user, **data,
+            )
+        except DjangoValidationError as error:
+            return _validation_response(error)
+        settlement = DigitalSettlement.objects.select_related('payment_account', 'created_by').prefetch_related(
+            'allocations__collection',
+        ).get(pk=settlement.pk)
+        return Response(DigitalSettlementSerializer(settlement).data, status=status.HTTP_201_CREATED)
+
+
+class DigitalSettlementDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, settlement_id):
+        organisation, outlet = _org_outlet(org_id, outlet_id)
+        require_permission(request.user, organisation, 'digital_settlement.view', outlet=outlet)
+        settlement = get_object_or_404(
+            DigitalSettlement.objects.select_related('payment_account', 'created_by').prefetch_related(
+                'allocations__collection',
+            ), id=settlement_id, organisation=organisation, outlet=outlet,
+        )
+        return Response(DigitalSettlementSerializer(settlement).data)
+
+
+class DigitalSettlementVoidView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, outlet_id, settlement_id):
+        organisation, outlet = _org_outlet(org_id, outlet_id)
+        settlement = get_object_or_404(DigitalSettlement, id=settlement_id, organisation=organisation, outlet=outlet)
+        serializer = VoidPaymentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            settlement = void_digital_settlement(settlement, serializer.validated_data['void_reason'], request.user)
+        except DjangoValidationError as error:
+            return _validation_response(error)
+        return Response(DigitalSettlementSerializer(
+            DigitalSettlement.objects.select_related('payment_account', 'created_by').prefetch_related(
+                'allocations__collection',
+            ).get(pk=settlement.pk)
+        ).data)

@@ -4,7 +4,9 @@ from django.db.models import Q, Sum
 
 from apps.purchases.models import PurchaseBill
 
-from .models import CashBankTransfer, Expense, ExpenseCategory, PaymentAccount, PaymentAccountMovement, SupplierPayment
+from apps.shifts.models import EmployeeShiftCollection
+
+from .models import CashBankTransfer, DigitalSettlement, Expense, ExpenseCategory, PaymentAccount, PaymentAccountMovement, SupplierPayment
 
 
 def list_payment_accounts(organisation, outlet=None, active_only=False, account_type=None, search=None):
@@ -140,3 +142,59 @@ def payment_account_book(account, outlet, filters=None):
             'running_balance': running,
         })
     return opening.quantize(Decimal('0.01')), rows, running.quantize(Decimal('0.01'))
+
+
+def pending_digital_collections(organisation, outlet, filters=None):
+    filters = filters or {}
+    qs = EmployeeShiftCollection.objects.filter(
+        organisation=organisation, outlet=outlet, status=EmployeeShiftCollection.STATUS_ACTIVE,
+        collection_method__in=['card', 'upi', 'fleet_card'],
+    ).filter(Q(shift_card__isnull=True) | Q(shift_card__status='active')).select_related(
+        'employee', 'operational_shift', 'shift_card',
+    ).exclude(digital_settlement_allocations__settlement__status=DigitalSettlement.STATUS_ACTIVE)
+    if filters.get('collection_method'):
+        qs = qs.filter(collection_method=filters['collection_method'])
+    if filters.get('provider_name'):
+        qs = qs.filter(provider_name__iexact=filters['provider_name'])
+    if filters.get('from_date'):
+        qs = qs.filter(occurred_at__date__gte=filters['from_date'])
+    if filters.get('to_date'):
+        qs = qs.filter(occurred_at__date__lte=filters['to_date'])
+    return qs.order_by('occurred_at', 'created_at').distinct()
+
+
+def list_digital_settlements(organisation, outlet, filters=None):
+    filters = filters or {}
+    qs = DigitalSettlement.objects.filter(organisation=organisation, outlet=outlet).select_related(
+        'payment_account', 'created_by',
+    ).prefetch_related('allocations')
+    if filters.get('status') and filters['status'] != 'all':
+        qs = qs.filter(status=filters['status'])
+    if filters.get('collection_method'):
+        qs = qs.filter(collection_method=filters['collection_method'])
+    if filters.get('provider_name'):
+        qs = qs.filter(provider_name__icontains=filters['provider_name'])
+    if filters.get('from_date'):
+        qs = qs.filter(settlement_date__gte=filters['from_date'])
+    if filters.get('to_date'):
+        qs = qs.filter(settlement_date__lte=filters['to_date'])
+    if filters.get('search'):
+        term = filters['search']
+        qs = qs.filter(Q(settlement_number__icontains=term) | Q(bank_reference__icontains=term) |
+                       Q(batch_reference__icontains=term) | Q(provider_name__icontains=term))
+    return qs
+
+
+def digital_settlement_summary(organisation, outlet):
+    pending = pending_digital_collections(organisation, outlet)
+    pending_total = pending.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    active = DigitalSettlement.objects.filter(
+        organisation=organisation, outlet=outlet, status=DigitalSettlement.STATUS_ACTIVE,
+    )
+    values = active.aggregate(gross=Sum('gross_amount'), charges=Sum('charges_amount'), net=Sum('net_amount'))
+    return {
+        'pending_count': pending.count(), 'pending_amount': pending_total,
+        'settled_gross': values['gross'] or Decimal('0.00'),
+        'charges_total': values['charges'] or Decimal('0.00'),
+        'net_received': values['net'] or Decimal('0.00'),
+    }

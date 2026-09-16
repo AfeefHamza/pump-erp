@@ -19,6 +19,7 @@ STANDARD_ACCOUNTS = [
     ('1300', 'Inventory', 'asset', False, 'inventory', 'assets'),
     ('1400', 'Input Tax', 'asset', False, 'input_tax', 'assets'),
     ('1500', 'Supplier Advances', 'asset', False, 'supplier_advances', 'assets'),
+    ('1600', 'TDS Receivable', 'asset', False, 'tds_receivable', 'assets'),
     ('2000', 'Liabilities', 'liability', True, 'liabilities', None),
     ('2100', 'Accounts Payable', 'liability', False, 'accounts_payable', 'liabilities'),
     ('2200', 'Output Tax', 'liability', False, 'output_tax', 'liabilities'),
@@ -34,6 +35,7 @@ STANDARD_ACCOUNTS = [
     ('5200', 'Cost of Goods Sold', 'expense', False, 'cost_of_goods_sold', 'cost_of_sales'),
     ('6000', 'Operating Expenses', 'expense', True, 'operating_expenses', None),
     ('6100', 'General Expenses', 'expense', False, 'general_expenses', 'operating_expenses'),
+    ('6200', 'Payment Gateway Charges', 'expense', False, 'payment_gateway_charges', 'operating_expenses'),
 ]
 
 

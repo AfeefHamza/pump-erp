@@ -56,6 +56,9 @@ import { ExpenseDetailPage } from '@/features/finance/pages/ExpenseDetailPage';
 import { CashBankTransferFormPage } from '@/features/finance/pages/CashBankTransferFormPage';
 import { CashBankTransferDetailPage } from '@/features/finance/pages/CashBankTransferDetailPage';
 import { PaymentAccountBookPage } from '@/features/finance/pages/PaymentAccountBookPage';
+import { DigitalSettlementsPage } from '@/features/finance/pages/DigitalSettlementsPage';
+import { DigitalSettlementFormPage } from '@/features/finance/pages/DigitalSettlementFormPage';
+import { DigitalSettlementDetailPage } from '@/features/finance/pages/DigitalSettlementDetailPage';
 import { SupplierPaymentsPage } from '@/features/finance/pages/SupplierPaymentsPage';
 import { SupplierPaymentFormPage } from '@/features/finance/pages/SupplierPaymentFormPage';
 import { SupplierPaymentDetailPage } from '@/features/finance/pages/SupplierPaymentDetailPage';
@@ -377,7 +380,15 @@ export const router = createBrowserRouter([
       },
       {
         path: 'finance/settlements',
-        element: <Navigate to="/app/finance/cash-banking" replace />,
+        element: <DigitalSettlementsPage />,
+      },
+      {
+        path: 'finance/settlements/new',
+        element: <DigitalSettlementFormPage />,
+      },
+      {
+        path: 'finance/settlements/:settlementId',
+        element: <DigitalSettlementDetailPage />,
       },
       {
         path: 'finance/vouchers',

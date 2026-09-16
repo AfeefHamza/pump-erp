@@ -4,6 +4,8 @@ from rest_framework import serializers
 
 from .models import (
     CashBankTransfer,
+    DigitalSettlement,
+    DigitalSettlementAllocation,
     Expense,
     ExpenseCategory,
     PaymentAccount,
@@ -270,3 +272,66 @@ class PaymentAccountBookRowSerializer(serializers.Serializer):
     debit = serializers.DecimalField(max_digits=15, decimal_places=2)
     credit = serializers.DecimalField(max_digits=15, decimal_places=2)
     running_balance = serializers.DecimalField(max_digits=15, decimal_places=2)
+
+
+class PendingDigitalCollectionSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    collection_method = serializers.CharField()
+    amount = serializers.DecimalField(max_digits=15, decimal_places=2)
+    occurred_at = serializers.DateTimeField()
+    provider_name = serializers.CharField(allow_null=True)
+    reference_number = serializers.CharField(allow_null=True)
+    terminal_or_account_reference = serializers.CharField(allow_null=True)
+    employee_name = serializers.CharField(source='employee.display_name')
+    shift_id = serializers.UUIDField(source='operational_shift_id')
+    shift_card_id = serializers.UUIDField(allow_null=True)
+
+
+class DigitalSettlementAllocationSerializer(serializers.ModelSerializer):
+    collection_method = serializers.CharField(source='collection.collection_method', read_only=True)
+    provider_name = serializers.CharField(source='collection.provider_name', read_only=True, allow_null=True)
+
+    class Meta:
+        model = DigitalSettlementAllocation
+        fields = ['id', 'collection', 'amount', 'employee_name_snapshot',
+                  'collection_reference_snapshot', 'occurred_at_snapshot', 'collection_method', 'provider_name']
+
+
+class DigitalSettlementSerializer(serializers.ModelSerializer):
+    payment_account_name = serializers.CharField(source='payment_account.name', read_only=True)
+    collection_method_display = serializers.CharField(source='get_collection_method_display', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.display_name', read_only=True, allow_null=True)
+    allocations = DigitalSettlementAllocationSerializer(many=True, read_only=True)
+    accounting_journal_id = serializers.SerializerMethodField()
+    account_movements = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DigitalSettlement
+        fields = ['id', 'organisation', 'outlet', 'settlement_number', 'settlement_date',
+                  'collection_method', 'collection_method_display', 'provider_name', 'batch_reference',
+                  'payment_account', 'payment_account_name', 'gross_amount', 'charges_amount',
+                  'tds_amount', 'net_amount', 'bank_reference', 'notes', 'status',
+                  'accounting_journal_id', 'account_movements', 'allocations', 'created_by_name',
+                  'created_at', 'voided_at', 'void_reason']
+
+    def get_accounting_journal_id(self, obj):
+        from apps.accounting.posting import journal_id_for_source
+        return journal_id_for_source(obj.organisation_id, obj.outlet_id, 'digital_settlement', obj.id)
+
+    def get_account_movements(self, obj):
+        rows = PaymentAccountMovement.objects.filter(
+            source_type='digital_settlement', source_id=obj.id,
+        ).order_by('created_at')
+        return PaymentAccountMovementSerializer(rows, many=True).data
+
+
+class DigitalSettlementInputSerializer(serializers.Serializer):
+    client_request_id = serializers.UUIDField(required=False, allow_null=True)
+    settlement_date = serializers.DateField()
+    payment_account_id = serializers.UUIDField()
+    collection_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
+    charges_amount = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=Decimal('0.00'), required=False, default=Decimal('0.00'))
+    tds_amount = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=Decimal('0.00'), required=False, default=Decimal('0.00'))
+    batch_reference = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=100)
+    bank_reference = serializers.CharField(max_length=100)
+    notes = serializers.CharField(required=False, allow_blank=True, allow_null=True)

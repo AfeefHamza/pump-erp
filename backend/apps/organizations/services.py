@@ -227,6 +227,7 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'fuel_stock.view', 'fuel_stock.adjust', 'fuel_stock.override_book_quantity',
                 'item.view', 'item.create', 'item.update', 'item.deactivate',
                 'tax_treatment.view', 'tax_treatment.create', 'tax_treatment.update', 'tax_treatment.deactivate',
+                'digital_settlement.view', 'digital_settlement.create', 'digital_settlement.void',
             ]
         },
         {
@@ -264,6 +265,7 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'fuel_stock.view',
                 'item.view', 'item.create', 'item.update', 'item.deactivate',
                 'tax_treatment.view', 'tax_treatment.create', 'tax_treatment.update',
+                'digital_settlement.view', 'digital_settlement.create', 'digital_settlement.void',
             ]
         },
         {
@@ -295,6 +297,7 @@ def create_default_roles_for_organisation(organisation) -> list[Role]:
                 'reconciliation.view', 'reconciliation.reconcile',
                 'item.view',
                 'tax_treatment.view', 'tax_treatment.create', 'tax_treatment.update',
+                'digital_settlement.view', 'digital_settlement.create', 'digital_settlement.void',
             ]
         },
         {
@@ -737,4 +740,3 @@ def update_outlet_status(outlet: Outlet, status: str) -> Outlet:
     outlet.full_clean()
     outlet.save()
     return outlet
-

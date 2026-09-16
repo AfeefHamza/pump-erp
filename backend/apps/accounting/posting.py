@@ -235,6 +235,30 @@ def post_cash_bank_transfer(transfer, user=None):
 
 
 @transaction.atomic
+def post_digital_settlement(settlement, user=None):
+    if settlement.status != settlement.STATUS_ACTIVE:
+        return None
+    accounts = _accounts(settlement.organisation)
+    bank = ensure_payment_account_ledger(settlement.payment_account, user)
+    return _post(
+        organisation=settlement.organisation, outlet=settlement.outlet,
+        source_type='digital_settlement', source_id=settlement.id,
+        entry_date=settlement.settlement_date, reference=settlement.settlement_number,
+        narration=f'Digital Settlement {settlement.settlement_number} · {settlement.provider_name}', user=user,
+        lines=[
+            {'account_id': bank.id, 'debit': settlement.net_amount, 'credit': 0,
+             'description': settlement.bank_reference},
+            {'account_id': accounts['payment_gateway_charges'].id, 'debit': settlement.charges_amount, 'credit': 0,
+             'description': 'Provider charges'},
+            {'account_id': accounts['tds_receivable'].id, 'debit': settlement.tds_amount, 'credit': 0,
+             'description': 'TDS deducted'},
+            {'account_id': accounts['fuel_sales'].id, 'debit': 0, 'credit': settlement.gross_amount,
+             'description': f'{settlement.get_collection_method_display()} collections'},
+        ],
+    )
+
+
+@transaction.atomic
 def reverse_source_journal(*, organisation, outlet, source_type, source_id, reason, user=None, reversal_date=None):
     journal = _source_journal(organisation, outlet, source_type, source_id)
     if not journal:

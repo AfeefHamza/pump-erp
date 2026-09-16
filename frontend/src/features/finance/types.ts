@@ -245,3 +245,78 @@ export interface PaymentAccountBook {
     running_balance: string;
   }>;
 }
+
+export type DigitalCollectionMethod = 'card' | 'upi' | 'fleet_card';
+
+export interface PendingDigitalCollection {
+  id: string;
+  collection_method: DigitalCollectionMethod;
+  amount: string;
+  occurred_at: string;
+  provider_name?: string | null;
+  reference_number?: string | null;
+  terminal_or_account_reference?: string | null;
+  employee_name: string;
+  shift_id: string;
+  shift_card_id?: string | null;
+}
+
+export interface DigitalSettlementAllocation {
+  id: string;
+  collection: string;
+  amount: string;
+  employee_name_snapshot: string;
+  collection_reference_snapshot?: string | null;
+  occurred_at_snapshot: string;
+  collection_method: DigitalCollectionMethod;
+  provider_name?: string | null;
+}
+
+export interface DigitalSettlement {
+  id: string;
+  settlement_number: string;
+  settlement_date: string;
+  collection_method: DigitalCollectionMethod;
+  collection_method_display: string;
+  provider_name: string;
+  batch_reference?: string | null;
+  payment_account: string;
+  payment_account_name: string;
+  gross_amount: string;
+  charges_amount: string;
+  tds_amount: string;
+  net_amount: string;
+  bank_reference: string;
+  notes?: string | null;
+  status: 'active' | 'voided';
+  accounting_journal_id?: string | null;
+  account_movements: AccountMovement[];
+  allocations: DigitalSettlementAllocation[];
+  created_by_name?: string | null;
+  created_at: string;
+  voided_at?: string | null;
+  void_reason?: string | null;
+}
+
+export interface DigitalSettlementInput {
+  client_request_id?: string;
+  settlement_date: string;
+  payment_account_id: string;
+  collection_ids: string[];
+  charges_amount: string;
+  tds_amount: string;
+  batch_reference?: string;
+  bank_reference: string;
+  notes?: string;
+}
+
+export interface DigitalSettlementListResponse {
+  results: DigitalSettlement[];
+  summary: {
+    pending_count: number;
+    pending_amount: string;
+    settled_gross: string;
+    charges_total: string;
+    net_received: string;
+  };
+}

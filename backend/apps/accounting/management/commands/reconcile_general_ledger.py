@@ -8,12 +8,13 @@ from apps.accounting.posting import (
     post_customer_receipt,
     post_cash_bank_transfer,
     post_expense,
+    post_digital_settlement,
     post_purchase_bill,
     post_sales_invoice,
     post_supplier_payment,
     post_supplier_payment_allocation,
 )
-from apps.finance.models import CashBankTransfer, Expense, SupplierPayment, SupplierPaymentAllocation
+from apps.finance.models import CashBankTransfer, DigitalSettlement, Expense, SupplierPayment, SupplierPaymentAllocation
 from apps.organizations.models import Organisation
 from apps.purchases.models import PurchaseBill
 from apps.sales.models import CustomerReceipt, SalesInvoice
@@ -71,6 +72,9 @@ class Command(BaseCommand):
             ('Cash/Bank Transfers', 'cash_bank_transfer', CashBankTransfer.objects.filter(
                 organisation=organisation, status=CashBankTransfer.STATUS_ACTIVE,
             ), post_cash_bank_transfer),
+            ('Digital Settlements', 'digital_settlement', DigitalSettlement.objects.filter(
+                organisation=organisation, status=DigitalSettlement.STATUS_ACTIVE,
+            ), post_digital_settlement),
         ]
         if outlet:
             sources = [(label, kind, qs.filter(outlet=outlet), poster) for label, kind, qs, poster in sources]
