@@ -18,6 +18,7 @@ import type {
   LedgerAccountInput,
   TrialBalance,
 } from '@/features/accounting/types';
+import type { DailyBusinessSummary, EmployeeAccountabilityReport } from '@/features/reports/types';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
 
@@ -4114,4 +4115,30 @@ export async function createAccountingPeriodLock(orgId: string, data: { month: s
 
 export async function unlockAccountingPeriod(orgId: string, lockId: string, reason: string): Promise<AccountingPeriodLock> {
   return apiRequest<AccountingPeriodLock>(`/organisations/${orgId}/accounting/period-locks/${lockId}/unlock/`, { method: 'POST', body: JSON.stringify({ reason }) });
+}
+
+// ==========================================
+// Reports
+// ==========================================
+
+export async function fetchDailyBusinessSummary(
+  orgId: string,
+  outletId: string,
+  params: { from_date: string; to_date: string },
+): Promise<DailyBusinessSummary> {
+  const query = new URLSearchParams(params);
+  return apiRequest<DailyBusinessSummary>(
+    `/organisations/${orgId}/outlets/${outletId}/reports/daily-business-summary/?${query.toString()}`,
+  );
+}
+
+export async function fetchEmployeeAccountabilityReport(
+  orgId: string,
+  outletId: string,
+  params: { from_date: string; to_date: string; employee_id?: string },
+): Promise<EmployeeAccountabilityReport> {
+  const query = new URLSearchParams(params);
+  return apiRequest<EmployeeAccountabilityReport>(
+    `/organisations/${orgId}/outlets/${outletId}/reports/employee-accountability/?${query.toString()}`,
+  );
 }

@@ -34,6 +34,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
   const hasOpeningBalanceView = usePermission('opening_balance.view');
   const hasDipCalibrationView = usePermission('dip_calibration.view');
   const hasDesignationView = usePermission('employee_designation.view');
+  const hasReportView = usePermission('report.view');
 
   const hasSettingsAccess = 
     hasSettingsView || 
@@ -152,6 +153,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
             if (item.path === '/app/settings') {
               if (!hasSettingsAccess) return null;
             }
+            if (item.path === '/app/reports' && !hasReportView) return null;
 
             const isActive = item.path === '/app/settings'
               ? location.pathname.startsWith('/app/settings')
@@ -176,4 +178,3 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
     </>
   );
 };
-
