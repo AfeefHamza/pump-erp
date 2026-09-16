@@ -459,6 +459,9 @@ class DigitalSettlement(models.Model):
     STATUS_ACTIVE = 'active'
     STATUS_VOIDED = 'voided'
     STATUS_CHOICES = [(STATUS_ACTIVE, 'Active'), (STATUS_VOIDED, 'Voided')]
+    BASIS_LEGACY_SALES = 'legacy_sales'
+    BASIS_CLEARING = 'clearing'
+    BASIS_CHOICES = [(BASIS_LEGACY_SALES, 'Legacy Sales Posting'), (BASIS_CLEARING, 'Digital Collection Clearing')]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name='digital_settlements')
@@ -475,6 +478,7 @@ class DigitalSettlement(models.Model):
     tds_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     net_amount = models.DecimalField(max_digits=15, decimal_places=2)
     bank_reference = models.CharField(max_length=100)
+    accounting_basis = models.CharField(max_length=20, choices=BASIS_CHOICES, default=BASIS_CLEARING)
     notes = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE, db_index=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='created_digital_settlements')
@@ -573,6 +577,8 @@ class PaymentAccountMovement(models.Model):
     TYPE_TRANSFER_IN_REVERSAL = 'transfer_in_reversal'
     TYPE_DIGITAL_SETTLEMENT = 'digital_settlement'
     TYPE_DIGITAL_SETTLEMENT_REVERSAL = 'digital_settlement_reversal'
+    TYPE_SHIFT_CASH_COLLECTION = 'shift_cash_collection'
+    TYPE_SHIFT_CASH_COLLECTION_REVERSAL = 'shift_cash_collection_reversal'
     TYPE_CHOICES = [
         (TYPE_SUPPLIER_PAYMENT, 'Supplier Payment'),
         (TYPE_SUPPLIER_PAYMENT_REVERSAL, 'Supplier Payment Reversal'),
@@ -588,6 +594,8 @@ class PaymentAccountMovement(models.Model):
         (TYPE_TRANSFER_IN_REVERSAL, 'Transfer In Reversal'),
         (TYPE_DIGITAL_SETTLEMENT, 'Digital Settlement'),
         (TYPE_DIGITAL_SETTLEMENT_REVERSAL, 'Digital Settlement Reversal'),
+        (TYPE_SHIFT_CASH_COLLECTION, 'Shift Cash Collection'),
+        (TYPE_SHIFT_CASH_COLLECTION_REVERSAL, 'Shift Cash Collection Reversal'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -674,6 +682,14 @@ class PaymentAccountMovement(models.Model):
         elif self.movement_type == self.TYPE_DIGITAL_SETTLEMENT_REVERSAL:
             if not self.reversal_of_id or self.signed_amount != -self.reversal_of.signed_amount:
                 raise ValidationError('A digital settlement reversal must exactly offset the original movement.')
+        elif self.movement_type == self.TYPE_SHIFT_CASH_COLLECTION:
+            if self.signed_amount <= 0 or self.reversal_of_id or self.source_type != 'shift_accounting' or not self.source_id:
+                raise ValidationError('A shift cash collection must be a positive original cash movement.')
+        elif self.movement_type == self.TYPE_SHIFT_CASH_COLLECTION_REVERSAL:
+            if not self.reversal_of_id or self.signed_amount != -self.reversal_of.signed_amount:
+                raise ValidationError('A shift cash collection reversal must exactly offset its original movement.')
+            if self.source_id != self.reversal_of.source_id:
+                raise ValidationError('A shift cash reversal must retain the original posting source.')
 
     def save(self, *args, **kwargs):
         if self.pk and PaymentAccountMovement.objects.filter(pk=self.pk).exists():

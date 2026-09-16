@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 from rest_framework import status
 
 from apps.users.models import User
-from apps.organizations.models import Organisation, Outlet
+from apps.organizations.models import FinancialYear, Organisation, Outlet
 from apps.organizations.services import create_organisation_with_owner, create_outlet
 from apps.forecourt.models import FuelProduct, Tank, ProductPrice
 from apps.forecourt.services import create_fuel_product
@@ -43,6 +43,14 @@ class CanonicalItemMasterTestCase(TestCase):
             owner_user=self.user
         )
         self.outlet = create_outlet(self.org, name="Alpha Station", code="ST-01")
+        FinancialYear.objects.create(
+            organisation=self.org,
+            name="FY 2026",
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 12, 31),
+            status=FinancialYear.STATUS_OPEN,
+            is_default=True,
+        )
 
         # Second organisation for multi-tenant isolation tests
         self.other_user = User.objects.create_user(

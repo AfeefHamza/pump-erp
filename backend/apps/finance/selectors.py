@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.db.models import Q, Sum
+from django.db.models import Count, Q, Sum
 
 from apps.purchases.models import PurchaseBill
 
@@ -149,6 +149,8 @@ def pending_digital_collections(organisation, outlet, filters=None):
     qs = EmployeeShiftCollection.objects.filter(
         organisation=organisation, outlet=outlet, status=EmployeeShiftCollection.STATUS_ACTIVE,
         collection_method__in=['card', 'upi', 'fleet_card'],
+        operational_shift__is_locked=True,
+        operational_shift__accounting_postings__status='active',
     ).filter(Q(shift_card__isnull=True) | Q(shift_card__status='active')).select_related(
         'employee', 'operational_shift', 'shift_card',
     ).exclude(digital_settlement_allocations__settlement__status=DigitalSettlement.STATUS_ACTIVE)
@@ -192,9 +194,21 @@ def digital_settlement_summary(organisation, outlet):
         organisation=organisation, outlet=outlet, status=DigitalSettlement.STATUS_ACTIVE,
     )
     values = active.aggregate(gross=Sum('gross_amount'), charges=Sum('charges_amount'), net=Sum('net_amount'))
+    provider_rows = pending.values('collection_method', 'provider_name').annotate(
+        count=Count('id'), amount=Sum('amount'),
+    ).order_by('collection_method', 'provider_name')
     return {
         'pending_count': pending.count(), 'pending_amount': pending_total,
         'settled_gross': values['gross'] or Decimal('0.00'),
         'charges_total': values['charges'] or Decimal('0.00'),
         'net_received': values['net'] or Decimal('0.00'),
+        'pending_by_provider': [
+            {
+                'collection_method': row['collection_method'],
+                'provider_name': row['provider_name'] or 'Unspecified',
+                'count': row['count'],
+                'amount': str((row['amount'] or Decimal('0.00')).quantize(Decimal('0.01'))),
+            }
+            for row in provider_rows
+        ],
     }

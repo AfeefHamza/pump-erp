@@ -2418,6 +2418,7 @@ def calculate_employee_settlement(shift: OperationalShift, employee: Employee) -
     cash_amount = sum((c.amount for c in active_collections if c.collection_method == 'cash'), Decimal('0.00'))
     card_amount = sum((c.amount for c in active_collections if c.collection_method == 'card'), Decimal('0.00'))
     upi_amount = sum((c.amount for c in active_collections if c.collection_method == 'upi'), Decimal('0.00'))
+    fleet_card_amount = sum((c.amount for c in active_collections if c.collection_method == 'fleet_card'), Decimal('0.00'))
 
     credit_slip_amount = FuelCreditSlip.objects.filter(
         operational_shift=shift,
@@ -2433,7 +2434,7 @@ def calculate_employee_settlement(shift: OperationalShift, employee: Employee) -
     approved_increase = sum((d.amount for d in active_deductions if d.direction == 'increases_accounted'), Decimal('0.00'))
     approved_decrease = sum((d.amount for d in active_deductions if d.direction == 'decreases_accounted'), Decimal('0.00'))
 
-    total_accounted = cash_amount + card_amount + upi_amount + credit_slip_amount + approved_increase - approved_decrease
+    total_accounted = cash_amount + card_amount + upi_amount + fleet_card_amount + credit_slip_amount + approved_increase - approved_decrease
     difference = total_accounted - expected_amount
 
     if difference == Decimal('0.00'):
@@ -2507,6 +2508,7 @@ def calculate_employee_settlement(shift: OperationalShift, employee: Employee) -
         'cash_amount': cash_amount,
         'card_amount': card_amount,
         'upi_amount': upi_amount,
+        'fleet_card_amount': fleet_card_amount,
         'credit_slip_amount': credit_slip_amount,
         'approved_increase_adjustments': approved_increase,
         'approved_decrease_adjustments': approved_decrease,
@@ -2554,6 +2556,7 @@ def preview_employee_reconciliation(shift: OperationalShift, employee: Employee)
         'cash_amount': calc['cash_amount'],
         'card_amount': calc['card_amount'],
         'upi_amount': calc['upi_amount'],
+        'fleet_card_amount': calc['fleet_card_amount'],
         'credit_slip_amount': calc['credit_slip_amount'],
         'approved_increase_adjustments': calc['approved_increase_adjustments'],
         'approved_decrease_adjustments': calc['approved_decrease_adjustments'],
@@ -2614,6 +2617,7 @@ def reconcile_employee_settlement(
     settlement.cash_amount = calc['cash_amount']
     settlement.card_amount = calc['card_amount']
     settlement.upi_amount = calc['upi_amount']
+    settlement.fleet_card_amount = calc['fleet_card_amount']
     settlement.credit_slip_amount = calc['credit_slip_amount']
     settlement.approved_increase_adjustments = calc['approved_increase_adjustments']
     settlement.approved_decrease_adjustments = calc['approved_decrease_adjustments']
@@ -3667,12 +3671,17 @@ def void_shift_card(card: EmployeeShiftCard, user, reason: str) -> EmployeeShift
 
 
 @transaction.atomic
-def lock_shift(shift: OperationalShift, user, reason: str = '', lock_source: str = 'manual') -> OperationalShift:
+def lock_shift(shift: OperationalShift, user, reason: str = '', lock_source: str = 'manual', cash_account=None) -> OperationalShift:
     """
     Locks an OperationalShift:
     - Prohibits locking if unresolved meter continuity conflicts exist
     - Sets is_locked=True
     """
+    shift = OperationalShift.objects.select_for_update().select_related(
+        'organisation', 'outlet', 'shift_definition',
+    ).get(pk=shift.pk)
+    if shift.is_locked:
+        return shift
     # Check for blocking continuity conflicts
     has_conflict = ShiftNozzleMeter.objects.filter(
         shift=shift,
@@ -3681,6 +3690,9 @@ def lock_shift(shift: OperationalShift, user, reason: str = '', lock_source: str
     ).exists()
     if has_conflict:
         raise ValidationError({'shift': "Cannot lock shift: Unresolved meter continuity conflicts exist. Please resolve or acknowledge them first."})
+
+    from apps.accounting.posting import post_shift_accounting
+    post_shift_accounting(shift, cash_account=cash_account, user=user)
 
     shift.is_locked = True
     shift.locked_at = timezone.now()
@@ -3708,6 +3720,15 @@ def unlock_shift(shift: OperationalShift, user, reason: str) -> OperationalShift
     """
     if not reason or not reason.strip():
         raise ValidationError({'reason': "A mandatory reason is required to unlock a shift."})
+
+    shift = OperationalShift.objects.select_for_update().select_related(
+        'organisation', 'outlet', 'shift_definition',
+    ).get(pk=shift.pk)
+    if not shift.is_locked:
+        return shift
+
+    from apps.accounting.posting import reverse_shift_accounting
+    reverse_shift_accounting(shift, reason.strip(), user=user)
 
     shift.is_locked = False
     shift.locked_at = None
@@ -3839,6 +3860,4 @@ def _recalculate_settlement_for_card(card):
               else EmployeeShiftSettlement.RESULT_EXCESS)
     )
     settlement.save()
-
-
 

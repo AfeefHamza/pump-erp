@@ -11,7 +11,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework import status
 
-from apps.organizations.models import Organisation, Outlet, Role, PermissionDefinition, RolePermission, OrganisationMembership
+from apps.organizations.models import Organisation, Outlet, Role, PermissionDefinition, RolePermission, OrganisationMembership, FinancialYear
 from apps.organizations.services import create_organisation_with_owner, create_outlet
 from apps.employees.models import Employee, EmployeeDesignation
 from apps.employees.services import create_employee, create_designation, assign_employee_to_outlets
@@ -19,6 +19,7 @@ from apps.forecourt.models import FuelProduct, Tank, Dispenser, Nozzle, ProductP
 from apps.forecourt.services import create_fuel_product, create_tank, create_dispenser, create_nozzle, set_product_price
 from apps.operations.models import NozzleCommissioning, OpeningBalanceBatch, NozzleOpeningBalance
 from apps.operations.services import commission_nozzle
+from apps.finance.services import create_payment_account
 from apps.shifts.models import (
     ShiftDefinition, OperationalShift, EmployeeShiftCard, ShiftNozzleMeter,
     EmployeeShiftCollection, EmployeeShiftDeduction, EmployeeShiftSettlement,
@@ -330,6 +331,14 @@ class ShiftCardWorkflowTests(ShiftCardBaseTestCase):
     def test_07_controlled_locking_and_unlocking(self):
         """6. Controlled locking and unlocking: locking blocks edits, unlocking requires reason & permission."""
         b_date = date(2026, 9, 1)
+        FinancialYear.objects.create(
+            organisation=self.org, name='FY 2026', start_date=date(2026, 1, 1),
+            end_date=date(2026, 12, 31), status=FinancialYear.STATUS_OPEN, is_default=True,
+        )
+        create_payment_account(
+            organisation=self.org, outlet=self.outlet, user=self.owner,
+            code='CASH-SHIFT', name='Shift Cash', account_type='cash',
+        )
         card = atomic_save_shift_card(
             organisation=self.org,
             outlet=self.outlet,
@@ -750,5 +759,4 @@ class ShiftCardWorkflowTests(ShiftCardBaseTestCase):
         self.assertEqual(Decimal(str(resp.data['total_sale_amount'])), Decimal('10000.00'))
         self.assertEqual(Decimal(str(resp.data['difference_amount'])), Decimal('0.00'))
         self.assertEqual(resp.data['discrepancy_status'], 'balanced')
-
 

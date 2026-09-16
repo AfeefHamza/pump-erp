@@ -20,6 +20,8 @@ STANDARD_ACCOUNTS = [
     ('1400', 'Input Tax', 'asset', False, 'input_tax', 'assets'),
     ('1500', 'Supplier Advances', 'asset', False, 'supplier_advances', 'assets'),
     ('1600', 'TDS Receivable', 'asset', False, 'tds_receivable', 'assets'),
+    ('1700', 'Digital Collection Receivable', 'asset', False, 'digital_collection_clearing', 'assets'),
+    ('1800', 'Employee Shortage Receivable', 'asset', False, 'employee_shortage_receivable', 'assets'),
     ('2000', 'Liabilities', 'liability', True, 'liabilities', None),
     ('2100', 'Accounts Payable', 'liability', False, 'accounts_payable', 'liabilities'),
     ('2200', 'Output Tax', 'liability', False, 'output_tax', 'liabilities'),
@@ -30,12 +32,15 @@ STANDARD_ACCOUNTS = [
     ('4100', 'Fuel Sales', 'income', False, 'fuel_sales', 'income'),
     ('4200', 'Product Sales', 'income', False, 'product_sales', 'income'),
     ('4300', 'Service Income', 'income', False, 'service_income', 'income'),
+    ('4900', 'Shift Excess Income', 'income', False, 'shift_excess_income', 'income'),
+    ('4950', 'Shift Adjustment Income', 'income', False, 'shift_adjustment_income', 'income'),
     ('5000', 'Cost of Sales', 'expense', True, 'cost_of_sales', None),
     ('5100', 'Purchases', 'expense', False, 'purchases', 'cost_of_sales'),
     ('5200', 'Cost of Goods Sold', 'expense', False, 'cost_of_goods_sold', 'cost_of_sales'),
     ('6000', 'Operating Expenses', 'expense', True, 'operating_expenses', None),
     ('6100', 'General Expenses', 'expense', False, 'general_expenses', 'operating_expenses'),
     ('6200', 'Payment Gateway Charges', 'expense', False, 'payment_gateway_charges', 'operating_expenses'),
+    ('6300', 'Shift Cash Expenses & Adjustments', 'expense', False, 'shift_adjustment_expense', 'operating_expenses'),
 ]
 
 

@@ -289,6 +289,7 @@ export interface DigitalSettlement {
   bank_reference: string;
   notes?: string | null;
   status: 'active' | 'voided';
+  accounting_basis: 'legacy_sales' | 'clearing';
   accounting_journal_id?: string | null;
   account_movements: AccountMovement[];
   allocations: DigitalSettlementAllocation[];
@@ -318,5 +319,11 @@ export interface DigitalSettlementListResponse {
     settled_gross: string;
     charges_total: string;
     net_received: string;
+    pending_by_provider: Array<{
+      collection_method: DigitalCollectionMethod;
+      provider_name: string;
+      count: number;
+      amount: string;
+    }>;
   };
 }

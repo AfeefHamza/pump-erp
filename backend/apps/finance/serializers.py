@@ -311,6 +311,7 @@ class DigitalSettlementSerializer(serializers.ModelSerializer):
                   'collection_method', 'collection_method_display', 'provider_name', 'batch_reference',
                   'payment_account', 'payment_account_name', 'gross_amount', 'charges_amount',
                   'tds_amount', 'net_amount', 'bank_reference', 'notes', 'status',
+                  'accounting_basis',
                   'accounting_journal_id', 'account_movements', 'allocations', 'created_by_name',
                   'created_at', 'voided_at', 'void_reason']
 

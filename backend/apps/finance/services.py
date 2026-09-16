@@ -301,6 +301,8 @@ def create_digital_settlement(*, organisation, outlet, payment_account, settleme
     for row in collections:
         if row.organisation_id != organisation.id or row.outlet_id != outlet.id or row.status != EmployeeShiftCollection.STATUS_ACTIVE:
             raise ValidationError({'collection_ids': 'Select active collections from this organisation and outlet.'})
+        if not row.operational_shift.is_locked or not row.operational_shift.accounting_postings.filter(status='active').exists():
+            raise ValidationError({'collection_ids': 'Lock and financially post the source shift before settling digital collections.'})
         if row.shift_card_id and row.shift_card.status != row.shift_card.STATUS_ACTIVE:
             raise ValidationError({'collection_ids': 'Voided Shift Card collections cannot be settled.'})
     already_settled = DigitalSettlementAllocation.objects.filter(
@@ -325,7 +327,8 @@ def create_digital_settlement(*, organisation, outlet, payment_account, settleme
         provider_name=(first.provider_name or 'Unspecified').strip() or 'Unspecified',
         batch_reference=batch_reference, payment_account=payment_account,
         gross_amount=gross, charges_amount=charges, tds_amount=tds, net_amount=net,
-        bank_reference=bank_reference, notes=notes, created_by=user,
+        bank_reference=bank_reference, notes=notes,
+        accounting_basis=DigitalSettlement.BASIS_CLEARING, created_by=user,
     )
     DigitalSettlementAllocation.objects.bulk_create([
         DigitalSettlementAllocation(
