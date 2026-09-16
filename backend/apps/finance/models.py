@@ -442,6 +442,122 @@ class CashBankTransfer(models.Model):
         raise ValidationError('Cash/bank transfers cannot be deleted. Void the transfer instead.')
 
 
+class DigitalSettlementSequence(models.Model):
+    outlet = models.ForeignKey(Outlet, on_delete=models.CASCADE, related_name='digital_settlement_sequences')
+    year = models.PositiveIntegerField()
+    last_sequence = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['outlet', 'year'], name='unique_outlet_digital_settlement_seq')]
+
+
+class DigitalSettlement(models.Model):
+    METHOD_CARD = 'card'
+    METHOD_UPI = 'upi'
+    METHOD_FLEET_CARD = 'fleet_card'
+    METHOD_CHOICES = [(METHOD_CARD, 'Card'), (METHOD_UPI, 'UPI'), (METHOD_FLEET_CARD, 'Fleet Card')]
+    STATUS_ACTIVE = 'active'
+    STATUS_VOIDED = 'voided'
+    STATUS_CHOICES = [(STATUS_ACTIVE, 'Active'), (STATUS_VOIDED, 'Voided')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name='digital_settlements')
+    outlet = models.ForeignKey(Outlet, on_delete=models.PROTECT, related_name='digital_settlements')
+    settlement_number = models.CharField(max_length=100)
+    client_request_id = models.UUIDField(null=True, blank=True)
+    settlement_date = models.DateField(db_index=True)
+    collection_method = models.CharField(max_length=20, choices=METHOD_CHOICES)
+    provider_name = models.CharField(max_length=100)
+    batch_reference = models.CharField(max_length=100, blank=True, null=True)
+    payment_account = models.ForeignKey(PaymentAccount, on_delete=models.PROTECT, related_name='digital_settlements')
+    gross_amount = models.DecimalField(max_digits=15, decimal_places=2)
+    charges_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    tds_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    net_amount = models.DecimalField(max_digits=15, decimal_places=2)
+    bank_reference = models.CharField(max_length=100)
+    notes = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE, db_index=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='created_digital_settlements')
+    created_at = models.DateTimeField(auto_now_add=True)
+    voided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='voided_digital_settlements')
+    voided_at = models.DateTimeField(null=True, blank=True)
+    void_reason = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-settlement_date', '-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['outlet', 'settlement_number'], name='unique_outlet_digital_settlement_number'),
+            models.UniqueConstraint(fields=['organisation', 'outlet', 'client_request_id'], condition=models.Q(client_request_id__isnull=False), name='unique_digital_settlement_client_request'),
+            models.CheckConstraint(condition=models.Q(gross_amount__gt=0), name='digital_settlement_gross_positive'),
+            models.CheckConstraint(condition=models.Q(charges_amount__gte=0), name='digital_settlement_charges_nonnegative'),
+            models.CheckConstraint(condition=models.Q(tds_amount__gte=0), name='digital_settlement_tds_nonnegative'),
+            models.CheckConstraint(condition=models.Q(net_amount__gt=0), name='digital_settlement_net_positive'),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.provider_name = (self.provider_name or '').strip() or 'Unspecified'
+        self.batch_reference = (self.batch_reference or '').strip() or None
+        self.bank_reference = (self.bank_reference or '').strip()
+        if self.outlet_id and self.outlet.organisation_id != self.organisation_id:
+            raise ValidationError({'outlet': 'Outlet must belong to the organisation.'})
+        if self.payment_account_id:
+            account = self.payment_account
+            if account.organisation_id != self.organisation_id or (account.outlet_id and account.outlet_id != self.outlet_id):
+                raise ValidationError({'payment_account': 'Bank account is not available for this outlet.'})
+            if account.account_type != PaymentAccount.TYPE_BANK or not account.is_active:
+                raise ValidationError({'payment_account': 'Digital settlements require an active bank account.'})
+        if self.gross_amount is not None and self.net_amount != self.gross_amount - self.charges_amount - self.tds_amount:
+            raise ValidationError({'net_amount': 'Net amount must equal gross amount less charges and TDS.'})
+        if not self.bank_reference:
+            raise ValidationError({'bank_reference': 'Bank settlement reference is required.'})
+        if self.status == self.STATUS_VOIDED and len((self.void_reason or '').strip()) < 5:
+            raise ValidationError({'void_reason': 'A void reason of at least 5 characters is required.'})
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            previous = DigitalSettlement.objects.filter(pk=self.pk).first()
+            if previous:
+                void_fields = {'status', 'void_reason', 'voided_by_id', 'voided_at'}
+                fields = [f.attname for f in self._meta.concrete_fields if f.name not in ('id', 'status', 'void_reason', 'voided_by', 'voided_at')]
+                if any(getattr(previous, field) != getattr(self, field) for field in fields):
+                    raise ValidationError('Recorded settlement details are immutable. Void and re-enter the settlement.')
+                if any(getattr(previous, field) != getattr(self, field) for field in void_fields) and not getattr(self, '_allow_void_transition', False):
+                    raise ValidationError('Settlements can be voided only through the void service.')
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Digital settlements cannot be deleted. Void the settlement instead.')
+
+
+class DigitalSettlementAllocation(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    settlement = models.ForeignKey(DigitalSettlement, on_delete=models.PROTECT, related_name='allocations')
+    collection = models.ForeignKey('shifts.EmployeeShiftCollection', on_delete=models.PROTECT, related_name='digital_settlement_allocations')
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    employee_name_snapshot = models.CharField(max_length=255)
+    collection_reference_snapshot = models.CharField(max_length=100, blank=True, null=True)
+    occurred_at_snapshot = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['occurred_at_snapshot', 'created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['settlement', 'collection'], name='unique_settlement_collection_allocation'),
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name='digital_settlement_allocation_positive'),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and DigitalSettlementAllocation.objects.filter(pk=self.pk).exists():
+            raise ValidationError('Settlement allocations are immutable.')
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Settlement allocations are immutable.')
+
+
 class PaymentAccountMovement(models.Model):
     TYPE_SUPPLIER_PAYMENT = 'supplier_payment'
     TYPE_SUPPLIER_PAYMENT_REVERSAL = 'supplier_payment_reversal'
@@ -455,6 +571,8 @@ class PaymentAccountMovement(models.Model):
     TYPE_TRANSFER_IN = 'transfer_in'
     TYPE_TRANSFER_OUT_REVERSAL = 'transfer_out_reversal'
     TYPE_TRANSFER_IN_REVERSAL = 'transfer_in_reversal'
+    TYPE_DIGITAL_SETTLEMENT = 'digital_settlement'
+    TYPE_DIGITAL_SETTLEMENT_REVERSAL = 'digital_settlement_reversal'
     TYPE_CHOICES = [
         (TYPE_SUPPLIER_PAYMENT, 'Supplier Payment'),
         (TYPE_SUPPLIER_PAYMENT_REVERSAL, 'Supplier Payment Reversal'),
@@ -468,6 +586,8 @@ class PaymentAccountMovement(models.Model):
         (TYPE_TRANSFER_IN, 'Transfer In'),
         (TYPE_TRANSFER_OUT_REVERSAL, 'Transfer Out Reversal'),
         (TYPE_TRANSFER_IN_REVERSAL, 'Transfer In Reversal'),
+        (TYPE_DIGITAL_SETTLEMENT, 'Digital Settlement'),
+        (TYPE_DIGITAL_SETTLEMENT_REVERSAL, 'Digital Settlement Reversal'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -548,6 +668,12 @@ class PaymentAccountMovement(models.Model):
         elif self.movement_type in (self.TYPE_TRANSFER_OUT_REVERSAL, self.TYPE_TRANSFER_IN_REVERSAL):
             if not self.reversal_of_id or self.signed_amount != -self.reversal_of.signed_amount:
                 raise ValidationError('A transfer reversal must exactly offset its original movement.')
+        elif self.movement_type == self.TYPE_DIGITAL_SETTLEMENT:
+            if self.signed_amount <= 0 or self.reversal_of_id or self.source_type != 'digital_settlement' or not self.source_id:
+                raise ValidationError('A digital settlement must be a positive original bank movement.')
+        elif self.movement_type == self.TYPE_DIGITAL_SETTLEMENT_REVERSAL:
+            if not self.reversal_of_id or self.signed_amount != -self.reversal_of.signed_amount:
+                raise ValidationError('A digital settlement reversal must exactly offset the original movement.')
 
     def save(self, *args, **kwargs):
         if self.pk and PaymentAccountMovement.objects.filter(pk=self.pk).exists():

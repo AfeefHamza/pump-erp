@@ -3583,6 +3583,10 @@ import type {
   ExpenseInput,
   ExpenseListResponse,
   PaymentAccountBook,
+  DigitalSettlement,
+  DigitalSettlementInput,
+  DigitalSettlementListResponse,
+  PendingDigitalCollection,
 } from '@/features/finance/types';
 
 export async function fetchPaymentAccounts(orgId: string, outletId?: string): Promise<PaymentAccount[]> {
@@ -3698,6 +3702,28 @@ export async function voidCashBankTransfer(orgId: string, outletId: string, tran
 export async function fetchPaymentAccountBook(orgId: string, outletId: string, accountId: string, params?: Record<string, string>): Promise<PaymentAccountBook> {
   const query = params ? `?${new URLSearchParams(params).toString()}` : '';
   return apiRequest<PaymentAccountBook>(`/organisations/${orgId}/outlets/${outletId}/payment-accounts/${accountId}/book/${query}`);
+}
+
+export async function fetchPendingDigitalCollections(orgId: string, outletId: string, params?: Record<string, string>): Promise<PendingDigitalCollection[]> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<PendingDigitalCollection[]>(`/organisations/${orgId}/outlets/${outletId}/digital-settlements/pending-collections/${query}`);
+}
+
+export async function fetchDigitalSettlements(orgId: string, outletId: string, params?: Record<string, string>): Promise<DigitalSettlementListResponse> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<DigitalSettlementListResponse>(`/organisations/${orgId}/outlets/${outletId}/digital-settlements/${query}`);
+}
+
+export async function fetchDigitalSettlement(orgId: string, outletId: string, settlementId: string): Promise<DigitalSettlement> {
+  return apiRequest<DigitalSettlement>(`/organisations/${orgId}/outlets/${outletId}/digital-settlements/${settlementId}/`);
+}
+
+export async function createDigitalSettlement(orgId: string, outletId: string, data: DigitalSettlementInput): Promise<DigitalSettlement> {
+  return apiRequest<DigitalSettlement>(`/organisations/${orgId}/outlets/${outletId}/digital-settlements/`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function voidDigitalSettlement(orgId: string, outletId: string, settlementId: string, voidReason: string): Promise<DigitalSettlement> {
+  return apiRequest<DigitalSettlement>(`/organisations/${orgId}/outlets/${outletId}/digital-settlements/${settlementId}/void/`, { method: 'POST', body: JSON.stringify({ void_reason: voidReason }) });
 }
 
 
