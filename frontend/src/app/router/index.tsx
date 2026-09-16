@@ -69,6 +69,9 @@ import { JournalVoucherFormPage } from '@/features/accounting/pages/JournalVouch
 import { JournalVoucherDetailPage } from '@/features/accounting/pages/JournalVoucherDetailPage';
 import { AccountingPeriodsPage } from '@/features/accounting/pages/AccountingPeriodsPage';
 import { AccountLedgerPage } from '@/features/accounting/pages/AccountLedgerPage';
+import { ReportsHubPage } from '@/features/reports/pages/ReportsHubPage';
+import { DailyBusinessSummaryPage } from '@/features/reports/pages/DailyBusinessSummaryPage';
+import { EmployeeAccountabilityPage } from '@/features/reports/pages/EmployeeAccountabilityPage';
 import { useParams, useLocation } from 'react-router-dom';
 
 const RedirectWithSearchAndHash: React.FC<{ getDest: (params: Record<string, string | undefined>) => string }> = ({ getDest }) => {
@@ -467,7 +470,15 @@ export const router = createBrowserRouter([
       // Standalone
       {
         path: 'reports',
-        element: <ComingSoonPage title="Reports — Coming Later" />,
+        element: <ReportsHubPage />,
+      },
+      {
+        path: 'reports/daily-business-summary',
+        element: <DailyBusinessSummaryPage />,
+      },
+      {
+        path: 'reports/employee-accountability',
+        element: <EmployeeAccountabilityPage />,
       },
       // Redirects for Administration backward compatibility
       {

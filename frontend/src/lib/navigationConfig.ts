@@ -18,6 +18,7 @@ import {
   PackageCheck,
   BookOpenCheck,
   CalendarClock,
+  BarChart3,
 } from 'lucide-react';
 import { type MenuSection, type MenuItem } from '@/types/navigation';
 
@@ -78,5 +79,6 @@ export const navigationMenu: MenuSection[] = [
 ];
 
 export const standaloneItems: MenuItem[] = [
+  { name: 'Reports', path: '/app/reports', icon: BarChart3 },
   { name: 'Settings', path: '/app/settings', icon: Settings },
 ];
