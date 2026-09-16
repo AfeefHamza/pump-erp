@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import models
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -10,9 +11,19 @@ from rest_framework.views import APIView
 from apps.organizations.models import Organisation, Outlet
 from apps.organizations.permissions import require_permission
 from apps.purchases.models import Supplier
+from apps.accounting.models import ChartOfAccount
 
-from .models import PaymentAccount, SupplierPayment
-from .selectors import list_payment_accounts, list_supplier_payments, open_purchase_bills, payment_totals
+from .models import CashBankTransfer, Expense, ExpenseCategory, PaymentAccount, SupplierPayment
+from .selectors import (
+    list_cash_bank_transfers,
+    list_expense_categories,
+    list_expenses,
+    list_payment_accounts,
+    list_supplier_payments,
+    open_purchase_bills,
+    payment_account_book,
+    payment_totals,
+)
 from .serializers import (
     AddAllocationsSerializer,
     OpenPurchaseBillSerializer,
@@ -21,6 +32,13 @@ from .serializers import (
     SupplierPaymentInputSerializer,
     SupplierPaymentSerializer,
     VoidPaymentSerializer,
+    CashBankTransferInputSerializer,
+    CashBankTransferSerializer,
+    ExpenseCategoryInputSerializer,
+    ExpenseCategorySerializer,
+    ExpenseInputSerializer,
+    ExpenseSerializer,
+    PaymentAccountBookRowSerializer,
 )
 from .services import (
     allocate_supplier_payment,
@@ -29,6 +47,13 @@ from .services import (
     deactivate_payment_account,
     update_payment_account,
     void_supplier_payment,
+    create_cash_bank_transfer,
+    create_expense,
+    create_expense_category,
+    deactivate_expense_category,
+    update_expense_category,
+    void_cash_bank_transfer,
+    void_expense,
 )
 
 
@@ -222,3 +247,195 @@ class SupplierOpenBillsView(APIView):
         require_permission(request.user, organisation, 'supplier_payment.view', outlet=outlet)
         supplier = get_object_or_404(Supplier, id=supplier_id, organisation=organisation)
         return Response(OpenPurchaseBillSerializer(open_purchase_bills(organisation, outlet, supplier), many=True).data)
+
+
+class ExpenseCategoryListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id):
+        organisation = _org(org_id)
+        require_permission(request.user, organisation, 'expense_category.view')
+        rows = list_expense_categories(
+            organisation, active_only=request.query_params.get('active') == 'true',
+            search=request.query_params.get('search'),
+        )
+        return Response(ExpenseCategorySerializer(rows, many=True).data)
+
+    def post(self, request, org_id):
+        organisation = _org(org_id)
+        serializer = ExpenseCategoryInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        ledger = get_object_or_404(ChartOfAccount, id=data.pop('ledger_account_id'), organisation=organisation)
+        try:
+            category = create_expense_category(
+                organisation=organisation, user=request.user, ledger_account=ledger, **data,
+            )
+        except DjangoValidationError as error:
+            return _validation_response(error)
+        return Response(ExpenseCategorySerializer(category).data, status=status.HTTP_201_CREATED)
+
+
+class ExpenseCategoryDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, category_id):
+        organisation = _org(org_id)
+        require_permission(request.user, organisation, 'expense_category.view')
+        category = get_object_or_404(ExpenseCategory.objects.select_related('ledger_account'), id=category_id, organisation=organisation)
+        return Response(ExpenseCategorySerializer(category).data)
+
+    def patch(self, request, org_id, category_id):
+        organisation = _org(org_id)
+        category = get_object_or_404(ExpenseCategory, id=category_id, organisation=organisation)
+        serializer = ExpenseCategoryInputSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        if 'ledger_account_id' in data:
+            data['ledger_account'] = get_object_or_404(
+                ChartOfAccount, id=data.pop('ledger_account_id'), organisation=organisation,
+            )
+        try:
+            category = update_expense_category(category, request.user, **data)
+        except DjangoValidationError as error:
+            return _validation_response(error)
+        return Response(ExpenseCategorySerializer(category).data)
+
+
+class ExpenseCategoryDeactivateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, category_id):
+        organisation = _org(org_id)
+        category = get_object_or_404(ExpenseCategory, id=category_id, organisation=organisation)
+        try:
+            category = deactivate_expense_category(category, request.user)
+        except DjangoValidationError as error:
+            return _validation_response(error)
+        return Response(ExpenseCategorySerializer(category).data)
+
+
+class ExpenseListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id):
+        organisation, outlet = _org_outlet(org_id, outlet_id)
+        require_permission(request.user, organisation, 'expense.view', outlet=outlet)
+        expenses = list_expenses(organisation, outlet, request.query_params)
+        active_total = expenses.filter(status=Expense.STATUS_ACTIVE).aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
+        return Response({'results': ExpenseSerializer(expenses, many=True).data, 'summary': {'active_total': str(active_total)}})
+
+    def post(self, request, org_id, outlet_id):
+        organisation, outlet = _org_outlet(org_id, outlet_id)
+        serializer = ExpenseInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        category = get_object_or_404(ExpenseCategory, id=data.pop('category_id'), organisation=organisation)
+        account = get_object_or_404(PaymentAccount, id=data.pop('payment_account_id'), organisation=organisation)
+        try:
+            expense = create_expense(
+                organisation=organisation, outlet=outlet, category=category,
+                payment_account=account, user=request.user, **data,
+            )
+        except DjangoValidationError as error:
+            return _validation_response(error)
+        return Response(ExpenseSerializer(expense).data, status=status.HTTP_201_CREATED)
+
+
+class ExpenseDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, expense_id):
+        organisation, outlet = _org_outlet(org_id, outlet_id)
+        require_permission(request.user, organisation, 'expense.view', outlet=outlet)
+        expense = get_object_or_404(
+            Expense.objects.select_related('category', 'ledger_account', 'payment_account', 'created_by'),
+            id=expense_id, organisation=organisation, outlet=outlet,
+        )
+        return Response(ExpenseSerializer(expense).data)
+
+
+class ExpenseVoidView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, outlet_id, expense_id):
+        organisation, outlet = _org_outlet(org_id, outlet_id)
+        expense = get_object_or_404(Expense, id=expense_id, organisation=organisation, outlet=outlet)
+        serializer = VoidPaymentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            expense = void_expense(expense, serializer.validated_data['void_reason'], request.user)
+        except DjangoValidationError as error:
+            return _validation_response(error)
+        return Response(ExpenseSerializer(expense).data)
+
+
+class CashBankTransferListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id):
+        organisation, outlet = _org_outlet(org_id, outlet_id)
+        require_permission(request.user, organisation, 'cash_bank_transfer.view', outlet=outlet)
+        rows = list_cash_bank_transfers(organisation, outlet, request.query_params)
+        return Response(CashBankTransferSerializer(rows, many=True).data)
+
+    def post(self, request, org_id, outlet_id):
+        organisation, outlet = _org_outlet(org_id, outlet_id)
+        serializer = CashBankTransferInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        from_account = get_object_or_404(PaymentAccount, id=data.pop('from_account_id'), organisation=organisation)
+        to_account = get_object_or_404(PaymentAccount, id=data.pop('to_account_id'), organisation=organisation)
+        try:
+            transfer = create_cash_bank_transfer(
+                organisation=organisation, outlet=outlet, from_account=from_account,
+                to_account=to_account, user=request.user, **data,
+            )
+        except DjangoValidationError as error:
+            return _validation_response(error)
+        return Response(CashBankTransferSerializer(transfer).data, status=status.HTTP_201_CREATED)
+
+
+class CashBankTransferDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, transfer_id):
+        organisation, outlet = _org_outlet(org_id, outlet_id)
+        require_permission(request.user, organisation, 'cash_bank_transfer.view', outlet=outlet)
+        transfer = get_object_or_404(
+            CashBankTransfer.objects.select_related('from_account', 'to_account', 'created_by'),
+            id=transfer_id, organisation=organisation, outlet=outlet,
+        )
+        return Response(CashBankTransferSerializer(transfer).data)
+
+
+class CashBankTransferVoidView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, org_id, outlet_id, transfer_id):
+        organisation, outlet = _org_outlet(org_id, outlet_id)
+        transfer = get_object_or_404(CashBankTransfer, id=transfer_id, organisation=organisation, outlet=outlet)
+        serializer = VoidPaymentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            transfer = void_cash_bank_transfer(transfer, serializer.validated_data['void_reason'], request.user)
+        except DjangoValidationError as error:
+            return _validation_response(error)
+        return Response(CashBankTransferSerializer(transfer).data)
+
+
+class PaymentAccountBookView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id, account_id):
+        organisation, outlet = _org_outlet(org_id, outlet_id)
+        require_permission(request.user, organisation, 'cash_bank_book.view', outlet=outlet)
+        account = get_object_or_404(PaymentAccount, id=account_id, organisation=organisation)
+        if account.outlet_id and account.outlet_id != outlet.id:
+            return Response({'detail': 'This account belongs to another outlet.'}, status=status.HTTP_404_NOT_FOUND)
+        opening, rows, closing = payment_account_book(account, outlet, request.query_params)
+        return Response({
+            'account': PaymentAccountSerializer(account).data,
+            'opening_balance': str(opening), 'closing_balance': str(closing),
+            'results': PaymentAccountBookRowSerializer(rows, many=True).data,
+        })

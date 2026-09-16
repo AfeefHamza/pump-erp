@@ -50,6 +50,12 @@ import { FuelStockDashboardPage } from '@/features/inventory/pages/FuelStockDash
 import { TankLedgerPage } from '@/features/inventory/pages/TankLedgerPage';
 import { ItemStockPage } from '@/features/inventory/pages/ItemStockPage';
 import { PaymentAccountsPage } from '@/features/finance/pages/PaymentAccountsPage';
+import { ExpensesPage } from '@/features/finance/pages/ExpensesPage';
+import { ExpenseFormPage } from '@/features/finance/pages/ExpenseFormPage';
+import { ExpenseDetailPage } from '@/features/finance/pages/ExpenseDetailPage';
+import { CashBankTransferFormPage } from '@/features/finance/pages/CashBankTransferFormPage';
+import { CashBankTransferDetailPage } from '@/features/finance/pages/CashBankTransferDetailPage';
+import { PaymentAccountBookPage } from '@/features/finance/pages/PaymentAccountBookPage';
 import { SupplierPaymentsPage } from '@/features/finance/pages/SupplierPaymentsPage';
 import { SupplierPaymentFormPage } from '@/features/finance/pages/SupplierPaymentFormPage';
 import { SupplierPaymentDetailPage } from '@/features/finance/pages/SupplierPaymentDetailPage';
@@ -346,12 +352,32 @@ export const router = createBrowserRouter([
         element: <PaymentAccountsPage />,
       },
       {
-        path: 'finance/settlements',
-        element: <ComingSoonPage title="Settlements" />,
+        path: 'finance/cash-banking/:accountId/book',
+        element: <PaymentAccountBookPage />,
       },
       {
         path: 'finance/expenses',
-        element: <ComingSoonPage title="Expenses" />,
+        element: <ExpensesPage />,
+      },
+      {
+        path: 'finance/expenses/new',
+        element: <ExpenseFormPage />,
+      },
+      {
+        path: 'finance/expenses/:expenseId',
+        element: <ExpenseDetailPage />,
+      },
+      {
+        path: 'finance/transfers/new',
+        element: <CashBankTransferFormPage />,
+      },
+      {
+        path: 'finance/transfers/:transferId',
+        element: <CashBankTransferDetailPage />,
+      },
+      {
+        path: 'finance/settlements',
+        element: <Navigate to="/app/finance/cash-banking" replace />,
       },
       {
         path: 'finance/vouchers',

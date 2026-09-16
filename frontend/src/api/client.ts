@@ -3575,6 +3575,14 @@ import type {
   SupplierPayment,
   SupplierPaymentInput,
   SupplierPaymentListResponse,
+  CashBankTransfer,
+  CashBankTransferInput,
+  Expense,
+  ExpenseCategory,
+  ExpenseCategoryInput,
+  ExpenseInput,
+  ExpenseListResponse,
+  PaymentAccountBook,
 } from '@/features/finance/types';
 
 export async function fetchPaymentAccounts(orgId: string, outletId?: string): Promise<PaymentAccount[]> {
@@ -3631,6 +3639,65 @@ export async function voidSupplierPayment(orgId: string, outletId: string, payme
 
 export async function fetchSupplierOpenBills(orgId: string, outletId: string, supplierId: string): Promise<OpenPurchaseBill[]> {
   return apiRequest<OpenPurchaseBill[]>(`/organisations/${orgId}/outlets/${outletId}/suppliers/${supplierId}/open-purchase-bills/`);
+}
+
+export async function fetchExpenseCategories(orgId: string, activeOnly = false): Promise<ExpenseCategory[]> {
+  return apiRequest<ExpenseCategory[]>(`/organisations/${orgId}/expense-categories/${activeOnly ? '?active=true' : ''}`);
+}
+
+export async function createExpenseCategory(orgId: string, data: ExpenseCategoryInput): Promise<ExpenseCategory> {
+  return apiRequest<ExpenseCategory>(`/organisations/${orgId}/expense-categories/`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updateExpenseCategory(orgId: string, categoryId: string, data: Partial<ExpenseCategoryInput>): Promise<ExpenseCategory> {
+  return apiRequest<ExpenseCategory>(`/organisations/${orgId}/expense-categories/${categoryId}/`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export async function deactivateExpenseCategory(orgId: string, categoryId: string): Promise<ExpenseCategory> {
+  return apiRequest<ExpenseCategory>(`/organisations/${orgId}/expense-categories/${categoryId}/deactivate/`, { method: 'POST' });
+}
+
+export async function fetchExpenses(orgId: string, outletId: string, params?: Record<string, string>): Promise<ExpenseListResponse> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<ExpenseListResponse>(`/organisations/${orgId}/outlets/${outletId}/expenses/${query}`);
+}
+
+export async function fetchExpense(orgId: string, outletId: string, expenseId: string): Promise<Expense> {
+  return apiRequest<Expense>(`/organisations/${orgId}/outlets/${outletId}/expenses/${expenseId}/`);
+}
+
+export async function createExpense(orgId: string, outletId: string, data: ExpenseInput): Promise<Expense> {
+  const form = new FormData();
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') form.append(key, value instanceof File ? value : String(value));
+  });
+  return apiRequest<Expense>(`/organisations/${orgId}/outlets/${outletId}/expenses/`, { method: 'POST', body: form });
+}
+
+export async function voidExpense(orgId: string, outletId: string, expenseId: string, voidReason: string): Promise<Expense> {
+  return apiRequest<Expense>(`/organisations/${orgId}/outlets/${outletId}/expenses/${expenseId}/void/`, { method: 'POST', body: JSON.stringify({ void_reason: voidReason }) });
+}
+
+export async function fetchCashBankTransfers(orgId: string, outletId: string, params?: Record<string, string>): Promise<CashBankTransfer[]> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<CashBankTransfer[]>(`/organisations/${orgId}/outlets/${outletId}/cash-bank-transfers/${query}`);
+}
+
+export async function fetchCashBankTransfer(orgId: string, outletId: string, transferId: string): Promise<CashBankTransfer> {
+  return apiRequest<CashBankTransfer>(`/organisations/${orgId}/outlets/${outletId}/cash-bank-transfers/${transferId}/`);
+}
+
+export async function createCashBankTransfer(orgId: string, outletId: string, data: CashBankTransferInput): Promise<CashBankTransfer> {
+  return apiRequest<CashBankTransfer>(`/organisations/${orgId}/outlets/${outletId}/cash-bank-transfers/`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function voidCashBankTransfer(orgId: string, outletId: string, transferId: string, voidReason: string): Promise<CashBankTransfer> {
+  return apiRequest<CashBankTransfer>(`/organisations/${orgId}/outlets/${outletId}/cash-bank-transfers/${transferId}/void/`, { method: 'POST', body: JSON.stringify({ void_reason: voidReason }) });
+}
+
+export async function fetchPaymentAccountBook(orgId: string, outletId: string, accountId: string, params?: Record<string, string>): Promise<PaymentAccountBook> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<PaymentAccountBook>(`/organisations/${orgId}/outlets/${outletId}/payment-accounts/${accountId}/book/${query}`);
 }
 
 

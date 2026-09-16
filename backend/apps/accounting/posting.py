@@ -195,6 +195,46 @@ def post_supplier_payment_allocation(allocation, user=None):
 
 
 @transaction.atomic
+def post_expense(expense, user=None):
+    if expense.status != expense.STATUS_ACTIVE:
+        return None
+    bank = ensure_payment_account_ledger(expense.payment_account, user)
+    return _post(
+        organisation=expense.organisation, outlet=expense.outlet,
+        source_type='expense', source_id=expense.id, entry_date=expense.expense_date,
+        reference=expense.expense_number,
+        narration=f'Expense {expense.expense_number} · {expense.category_name_snapshot}', user=user,
+        lines=[
+            {'account_id': expense.ledger_account_id, 'debit': expense.amount, 'credit': 0,
+             'description': expense.payee or expense.category_name_snapshot},
+            {'account_id': bank.id, 'debit': 0, 'credit': expense.amount,
+             'description': expense.payment_account.name},
+        ],
+    )
+
+
+@transaction.atomic
+def post_cash_bank_transfer(transfer, user=None):
+    if transfer.status != transfer.STATUS_ACTIVE:
+        return None
+    source = ensure_payment_account_ledger(transfer.from_account, user)
+    destination = ensure_payment_account_ledger(transfer.to_account, user)
+    return _post(
+        organisation=transfer.organisation, outlet=transfer.outlet,
+        source_type='cash_bank_transfer', source_id=transfer.id, entry_date=transfer.transfer_date,
+        reference=transfer.transfer_number,
+        narration=f'Cash/Bank Transfer {transfer.transfer_number} · {transfer.from_account.name} to {transfer.to_account.name}',
+        user=user,
+        lines=[
+            {'account_id': destination.id, 'debit': transfer.amount, 'credit': 0,
+             'description': transfer.to_account.name},
+            {'account_id': source.id, 'debit': 0, 'credit': transfer.amount,
+             'description': transfer.from_account.name},
+        ],
+    )
+
+
+@transaction.atomic
 def reverse_source_journal(*, organisation, outlet, source_type, source_id, reason, user=None, reversal_date=None):
     journal = _source_journal(organisation, outlet, source_type, source_id)
     if not journal:

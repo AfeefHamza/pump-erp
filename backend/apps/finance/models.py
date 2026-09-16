@@ -241,6 +241,207 @@ class SupplierPaymentAllocation(models.Model):
         raise ValidationError('Payment allocations are immutable. Void the payment instead.')
 
 
+class ExpenseCategory(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name='expense_categories')
+    code = models.CharField(max_length=50)
+    name = models.CharField(max_length=150)
+    ledger_account = models.ForeignKey('accounting.ChartOfAccount', on_delete=models.PROTECT, related_name='expense_categories')
+    description = models.TextField(blank=True, null=True)
+    display_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='created_expense_categories')
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='updated_expense_categories')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['display_order', 'name']
+        constraints = [
+            models.UniqueConstraint(Lower('code'), 'organisation', name='unique_org_expense_category_code_ci'),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.code = (self.code or '').strip().upper()
+        self.name = (self.name or '').strip()
+        if self.ledger_account_id:
+            ledger = self.ledger_account
+            if ledger.organisation_id != self.organisation_id:
+                raise ValidationError({'ledger_account': 'Ledger account must belong to the organisation.'})
+            if not ledger.is_active or ledger.is_group or ledger.account_type != 'expense':
+                raise ValidationError({'ledger_account': 'Select an active posting-enabled Expense ledger.'})
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            previous = ExpenseCategory.objects.filter(pk=self.pk).first()
+            if previous and previous.ledger_account_id != self.ledger_account_id and self.expenses.exists():
+                raise ValidationError({'ledger_account': 'Ledger mapping cannot change after the category is used.'})
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.expenses.exists():
+            raise ValidationError('Used expense categories cannot be deleted. Deactivate the category instead.')
+        return super().delete(*args, **kwargs)
+
+
+class ExpenseSequence(models.Model):
+    outlet = models.ForeignKey(Outlet, on_delete=models.CASCADE, related_name='expense_sequences')
+    year = models.PositiveIntegerField()
+    last_sequence = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['outlet', 'year'], name='unique_outlet_expense_seq_year')]
+
+
+class Expense(models.Model):
+    STATUS_ACTIVE = 'active'
+    STATUS_VOIDED = 'voided'
+    STATUS_CHOICES = [(STATUS_ACTIVE, 'Active'), (STATUS_VOIDED, 'Voided')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name='expenses')
+    outlet = models.ForeignKey(Outlet, on_delete=models.PROTECT, related_name='expenses')
+    expense_number = models.CharField(max_length=100)
+    client_request_id = models.UUIDField(null=True, blank=True)
+    expense_date = models.DateField(db_index=True)
+    category = models.ForeignKey(ExpenseCategory, on_delete=models.PROTECT, related_name='expenses')
+    category_code_snapshot = models.CharField(max_length=50)
+    category_name_snapshot = models.CharField(max_length=150)
+    ledger_account = models.ForeignKey('accounting.ChartOfAccount', on_delete=models.PROTECT, related_name='recorded_expenses')
+    ledger_code_snapshot = models.CharField(max_length=50)
+    ledger_name_snapshot = models.CharField(max_length=150)
+    payment_account = models.ForeignKey(PaymentAccount, on_delete=models.PROTECT, related_name='expenses')
+    payee = models.CharField(max_length=200, blank=True, null=True)
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    reference_number = models.CharField(max_length=100, blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+    attachment = models.FileField(upload_to='expenses/%Y/%m/', blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE, db_index=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='created_expenses')
+    created_at = models.DateTimeField(auto_now_add=True)
+    voided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='voided_expenses')
+    voided_at = models.DateTimeField(null=True, blank=True)
+    void_reason = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-expense_date', '-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['outlet', 'expense_number'], name='unique_outlet_expense_number'),
+            models.UniqueConstraint(fields=['organisation', 'outlet', 'client_request_id'], condition=models.Q(client_request_id__isnull=False), name='unique_expense_client_request'),
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name='expense_amount_positive'),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.outlet_id and self.outlet.organisation_id != self.organisation_id:
+            raise ValidationError({'outlet': 'Outlet must belong to the organisation.'})
+        if self.category_id and self.category.organisation_id != self.organisation_id:
+            raise ValidationError({'category': 'Expense category must belong to the organisation.'})
+        if self.payment_account_id:
+            account = self.payment_account
+            if account.organisation_id != self.organisation_id or (account.outlet_id and account.outlet_id != self.outlet_id):
+                raise ValidationError({'payment_account': 'Payment account is not available for this outlet.'})
+        if self.status == self.STATUS_VOIDED and len((self.void_reason or '').strip()) < 5:
+            raise ValidationError({'void_reason': 'A void reason of at least 5 characters is required.'})
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            previous = Expense.objects.filter(pk=self.pk).first()
+            if previous:
+                mutable_on_void = {'status', 'void_reason', 'voided_by_id', 'voided_at'}
+                fields = [f.attname for f in self._meta.concrete_fields if f.name not in ('id', 'status', 'void_reason', 'voided_by', 'voided_at')]
+                if any(getattr(previous, field) != getattr(self, field) for field in fields):
+                    raise ValidationError('Recorded expense details are immutable. Void and re-enter the expense.')
+                if any(getattr(previous, field) != getattr(self, field) for field in mutable_on_void) and not getattr(self, '_allow_void_transition', False):
+                    raise ValidationError('Expenses can be voided only through the void service.')
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Expenses cannot be deleted. Void the expense instead.')
+
+
+class CashBankTransferSequence(models.Model):
+    outlet = models.ForeignKey(Outlet, on_delete=models.CASCADE, related_name='cash_bank_transfer_sequences')
+    year = models.PositiveIntegerField()
+    last_sequence = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['outlet', 'year'], name='unique_outlet_transfer_seq_year')]
+
+
+class CashBankTransfer(models.Model):
+    STATUS_ACTIVE = 'active'
+    STATUS_VOIDED = 'voided'
+    STATUS_CHOICES = [(STATUS_ACTIVE, 'Active'), (STATUS_VOIDED, 'Voided')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name='cash_bank_transfers')
+    outlet = models.ForeignKey(Outlet, on_delete=models.PROTECT, related_name='cash_bank_transfers')
+    transfer_number = models.CharField(max_length=100)
+    client_request_id = models.UUIDField(null=True, blank=True)
+    transfer_date = models.DateField(db_index=True)
+    from_account = models.ForeignKey(PaymentAccount, on_delete=models.PROTECT, related_name='outgoing_transfers')
+    to_account = models.ForeignKey(PaymentAccount, on_delete=models.PROTECT, related_name='incoming_transfers')
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    reference_number = models.CharField(max_length=100, blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE, db_index=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='created_cash_bank_transfers')
+    created_at = models.DateTimeField(auto_now_add=True)
+    voided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='voided_cash_bank_transfers')
+    voided_at = models.DateTimeField(null=True, blank=True)
+    void_reason = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-transfer_date', '-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['outlet', 'transfer_number'], name='unique_outlet_cash_bank_transfer_number'),
+            models.UniqueConstraint(fields=['organisation', 'outlet', 'client_request_id'], condition=models.Q(client_request_id__isnull=False), name='unique_transfer_client_request'),
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name='cash_bank_transfer_amount_positive'),
+            models.CheckConstraint(condition=~models.Q(from_account=models.F('to_account')), name='cash_bank_transfer_different_accounts'),
+        ]
+
+    @property
+    def transfer_type(self):
+        if self.from_account.account_type == PaymentAccount.TYPE_CASH and self.to_account.account_type == PaymentAccount.TYPE_BANK:
+            return 'cash_deposit'
+        if self.from_account.account_type == PaymentAccount.TYPE_BANK and self.to_account.account_type == PaymentAccount.TYPE_CASH:
+            return 'bank_withdrawal'
+        return 'account_transfer'
+
+    def clean(self):
+        super().clean()
+        if self.outlet_id and self.outlet.organisation_id != self.organisation_id:
+            raise ValidationError({'outlet': 'Outlet must belong to the organisation.'})
+        if self.from_account_id == self.to_account_id:
+            raise ValidationError({'to_account': 'Source and destination accounts must be different.'})
+        for field in ('from_account', 'to_account'):
+            account = getattr(self, field, None)
+            if account and (account.organisation_id != self.organisation_id or (account.outlet_id and account.outlet_id != self.outlet_id)):
+                raise ValidationError({field: 'Account is not available for this outlet.'})
+        if self.status == self.STATUS_VOIDED and len((self.void_reason or '').strip()) < 5:
+            raise ValidationError({'void_reason': 'A void reason of at least 5 characters is required.'})
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            previous = CashBankTransfer.objects.filter(pk=self.pk).first()
+            if previous:
+                void_fields = {'status', 'void_reason', 'voided_by_id', 'voided_at'}
+                fields = [f.attname for f in self._meta.concrete_fields if f.name not in ('id', 'status', 'void_reason', 'voided_by', 'voided_at')]
+                if any(getattr(previous, field) != getattr(self, field) for field in fields):
+                    raise ValidationError('Recorded transfer details are immutable. Void and re-enter the transfer.')
+                if any(getattr(previous, field) != getattr(self, field) for field in void_fields) and not getattr(self, '_allow_void_transition', False):
+                    raise ValidationError('Transfers can be voided only through the void service.')
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Cash/bank transfers cannot be deleted. Void the transfer instead.')
+
+
 class PaymentAccountMovement(models.Model):
     TYPE_SUPPLIER_PAYMENT = 'supplier_payment'
     TYPE_SUPPLIER_PAYMENT_REVERSAL = 'supplier_payment_reversal'
@@ -248,6 +449,12 @@ class PaymentAccountMovement(models.Model):
     TYPE_SALES_RECEIPT_REVERSAL = 'sales_invoice_receipt_reversal'
     TYPE_CUSTOMER_RECEIPT = 'customer_receipt'
     TYPE_CUSTOMER_RECEIPT_REVERSAL = 'customer_receipt_reversal'
+    TYPE_EXPENSE = 'expense'
+    TYPE_EXPENSE_REVERSAL = 'expense_reversal'
+    TYPE_TRANSFER_OUT = 'transfer_out'
+    TYPE_TRANSFER_IN = 'transfer_in'
+    TYPE_TRANSFER_OUT_REVERSAL = 'transfer_out_reversal'
+    TYPE_TRANSFER_IN_REVERSAL = 'transfer_in_reversal'
     TYPE_CHOICES = [
         (TYPE_SUPPLIER_PAYMENT, 'Supplier Payment'),
         (TYPE_SUPPLIER_PAYMENT_REVERSAL, 'Supplier Payment Reversal'),
@@ -255,6 +462,12 @@ class PaymentAccountMovement(models.Model):
         (TYPE_SALES_RECEIPT_REVERSAL, 'Sales Invoice Receipt Reversal'),
         (TYPE_CUSTOMER_RECEIPT, 'Customer Receipt'),
         (TYPE_CUSTOMER_RECEIPT_REVERSAL, 'Customer Receipt Reversal'),
+        (TYPE_EXPENSE, 'Expense'),
+        (TYPE_EXPENSE_REVERSAL, 'Expense Reversal'),
+        (TYPE_TRANSFER_OUT, 'Transfer Out'),
+        (TYPE_TRANSFER_IN, 'Transfer In'),
+        (TYPE_TRANSFER_OUT_REVERSAL, 'Transfer Out Reversal'),
+        (TYPE_TRANSFER_IN_REVERSAL, 'Transfer In Reversal'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -320,6 +533,21 @@ class PaymentAccountMovement(models.Model):
         elif self.movement_type == self.TYPE_CUSTOMER_RECEIPT_REVERSAL:
             if not self.reversal_of_id or self.signed_amount != -self.reversal_of.signed_amount:
                 raise ValidationError('A customer receipt reversal must exactly offset the original receipt.')
+        elif self.movement_type == self.TYPE_EXPENSE:
+            if self.signed_amount >= 0 or self.reversal_of_id or self.source_type != 'expense' or not self.source_id:
+                raise ValidationError('An expense must be a negative original movement with an expense source.')
+        elif self.movement_type == self.TYPE_EXPENSE_REVERSAL:
+            if not self.reversal_of_id or self.signed_amount != -self.reversal_of.signed_amount:
+                raise ValidationError('An expense reversal must exactly offset the original expense movement.')
+        elif self.movement_type in (self.TYPE_TRANSFER_OUT, self.TYPE_TRANSFER_IN):
+            expected_positive = self.movement_type == self.TYPE_TRANSFER_IN
+            if self.reversal_of_id or self.source_type != 'cash_bank_transfer' or not self.source_id:
+                raise ValidationError('A transfer movement must reference its transfer source.')
+            if expected_positive != (self.signed_amount > 0):
+                raise ValidationError('Transfer in must be positive and transfer out must be negative.')
+        elif self.movement_type in (self.TYPE_TRANSFER_OUT_REVERSAL, self.TYPE_TRANSFER_IN_REVERSAL):
+            if not self.reversal_of_id or self.signed_amount != -self.reversal_of.signed_amount:
+                raise ValidationError('A transfer reversal must exactly offset its original movement.')
 
     def save(self, *args, **kwargs):
         if self.pk and PaymentAccountMovement.objects.filter(pk=self.pk).exists():

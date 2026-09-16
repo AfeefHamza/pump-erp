@@ -10,6 +10,11 @@ from apps.organizations.permissions import require_permission
 from apps.purchases.models import PurchaseBill
 
 from .models import (
+    CashBankTransfer,
+    CashBankTransferSequence,
+    Expense,
+    ExpenseCategory,
+    ExpenseSequence,
     PaymentAccount,
     PaymentAccountMovement,
     SupplierPayment,
@@ -50,6 +55,214 @@ def generate_payment_number(outlet, year):
     sequence.last_sequence += 1
     sequence.save(update_fields=['last_sequence'])
     return f"PAY-{outlet.code.upper()}-{year}-{sequence.last_sequence:05d}"
+
+
+def _next_number(sequence_model, outlet, year, prefix):
+    sequence, _ = sequence_model.objects.select_for_update().get_or_create(
+        outlet=outlet, year=year, defaults={'last_sequence': 0}
+    )
+    sequence.last_sequence += 1
+    sequence.save(update_fields=['last_sequence'])
+    return f'{prefix}-{outlet.code.upper()}-{year}-{sequence.last_sequence:05d}'
+
+
+def _validate_account(account, organisation, outlet, field):
+    if account.organisation_id != organisation.id or not account.is_active:
+        raise ValidationError({field: 'Select an active account from this organisation.'})
+    if account.outlet_id and account.outlet_id != outlet.id:
+        raise ValidationError({field: 'This account belongs to another outlet.'})
+
+
+@transaction.atomic
+def create_expense_category(*, organisation, user, code, name, ledger_account, **data):
+    require_permission(user, organisation, 'expense_category.create')
+    category = ExpenseCategory(
+        organisation=organisation, code=code, name=name, ledger_account=ledger_account,
+        created_by=user, updated_by=user, **data,
+    )
+    category.save()
+    return category
+
+
+@transaction.atomic
+def update_expense_category(category, user, **data):
+    category = ExpenseCategory.objects.select_for_update().get(pk=category.pk)
+    require_permission(user, category.organisation, 'expense_category.update')
+    for field, value in data.items():
+        if field not in {'organisation', 'organisation_id', 'created_by', 'created_at'} and hasattr(category, field):
+            setattr(category, field, value)
+    category.updated_by = user
+    category.save()
+    return category
+
+
+@transaction.atomic
+def deactivate_expense_category(category, user):
+    category = ExpenseCategory.objects.select_for_update().get(pk=category.pk)
+    require_permission(user, category.organisation, 'expense_category.deactivate')
+    category.is_active = False
+    category.updated_by = user
+    category.save(update_fields=['is_active', 'updated_by', 'updated_at'])
+    return category
+
+
+@transaction.atomic
+def create_expense(*, organisation, outlet, category, payment_account, expense_date, amount,
+                   user, payee=None, reference_number=None, notes=None, attachment=None,
+                   client_request_id=None):
+    require_permission(user, organisation, 'expense.create', outlet=outlet)
+    if client_request_id:
+        existing = Expense.objects.select_for_update().filter(
+            organisation=organisation, outlet=outlet, client_request_id=client_request_id,
+        ).first()
+        if existing:
+            return existing
+    amount = _money(amount)
+    if amount <= 0:
+        raise ValidationError({'amount': 'Expense amount must be greater than zero.'})
+    if category.organisation_id != organisation.id or not category.is_active:
+        raise ValidationError({'category': 'Select an active expense category from this organisation.'})
+    _validate_account(payment_account, organisation, outlet, 'payment_account')
+    number = _next_number(ExpenseSequence, outlet, expense_date.year, 'EXP')
+    expense = Expense(
+        organisation=organisation, outlet=outlet, expense_number=number,
+        client_request_id=client_request_id, expense_date=expense_date, category=category,
+        category_code_snapshot=category.code, category_name_snapshot=category.name,
+        ledger_account=category.ledger_account, ledger_code_snapshot=category.ledger_account.code,
+        ledger_name_snapshot=category.ledger_account.name, payment_account=payment_account,
+        payee=payee, amount=amount, reference_number=reference_number, notes=notes,
+        attachment=attachment, created_by=user,
+    )
+    expense.save()
+    PaymentAccountMovement.objects.create(
+        organisation=organisation, outlet=outlet, account=payment_account,
+        effective_date=expense_date, signed_amount=-amount,
+        movement_type=PaymentAccountMovement.TYPE_EXPENSE, source_type='expense', source_id=expense.id,
+        idempotency_key=f'expense:{expense.id}', description=f'{number} · {category.name}', created_by=user,
+    )
+    from apps.accounting.posting import post_expense
+    post_expense(expense, user)
+    return expense
+
+
+@transaction.atomic
+def void_expense(expense, reason, user):
+    expense = Expense.objects.select_for_update().select_related(
+        'organisation', 'outlet', 'payment_account', 'category', 'ledger_account'
+    ).get(pk=expense.pk)
+    require_permission(user, expense.organisation, 'expense.void', outlet=expense.outlet)
+    if expense.status == Expense.STATUS_VOIDED:
+        return expense
+    reason = (reason or '').strip()
+    if len(reason) < 5:
+        raise ValidationError({'void_reason': 'Provide a meaningful reason of at least 5 characters.'})
+    original = PaymentAccountMovement.objects.select_for_update().get(
+        source_type='expense', source_id=expense.id, movement_type=PaymentAccountMovement.TYPE_EXPENSE,
+    )
+    expense.status = Expense.STATUS_VOIDED
+    expense.void_reason = reason
+    expense.voided_by = user
+    expense.voided_at = timezone.now()
+    expense._allow_void_transition = True
+    expense.save(update_fields=['status', 'void_reason', 'voided_by', 'voided_at'])
+    PaymentAccountMovement.objects.create(
+        organisation=expense.organisation, outlet=expense.outlet, account=expense.payment_account,
+        effective_date=to_outlet_business_date(timezone.now(), outlet=expense.outlet, organisation=expense.organisation),
+        signed_amount=-original.signed_amount, movement_type=PaymentAccountMovement.TYPE_EXPENSE_REVERSAL,
+        source_type='expense', source_id=expense.id, reversal_of=original,
+        idempotency_key=f'expense-reversal:{expense.id}', description=f'Reversal of {expense.expense_number}', created_by=user,
+    )
+    from apps.accounting.posting import reverse_source_journal
+    reverse_source_journal(
+        organisation=expense.organisation, outlet=expense.outlet, source_type='expense', source_id=expense.id,
+        reason=reason, user=user,
+    )
+    return expense
+
+
+@transaction.atomic
+def create_cash_bank_transfer(*, organisation, outlet, from_account, to_account, transfer_date,
+                              amount, user, reference_number=None, notes=None, client_request_id=None):
+    require_permission(user, organisation, 'cash_bank_transfer.create', outlet=outlet)
+    if client_request_id:
+        existing = CashBankTransfer.objects.select_for_update().filter(
+            organisation=organisation, outlet=outlet, client_request_id=client_request_id,
+        ).first()
+        if existing:
+            return existing
+    amount = _money(amount)
+    if amount <= 0:
+        raise ValidationError({'amount': 'Transfer amount must be greater than zero.'})
+    _validate_account(from_account, organisation, outlet, 'from_account')
+    _validate_account(to_account, organisation, outlet, 'to_account')
+    if from_account.id == to_account.id:
+        raise ValidationError({'to_account': 'Source and destination accounts must be different.'})
+    number = _next_number(CashBankTransferSequence, outlet, transfer_date.year, 'TRF')
+    transfer = CashBankTransfer.objects.create(
+        organisation=organisation, outlet=outlet, transfer_number=number,
+        client_request_id=client_request_id, transfer_date=transfer_date,
+        from_account=from_account, to_account=to_account, amount=amount,
+        reference_number=reference_number, notes=notes, created_by=user,
+    )
+    common = dict(
+        organisation=organisation, outlet=outlet, effective_date=transfer_date,
+        source_type='cash_bank_transfer', source_id=transfer.id, created_by=user,
+    )
+    PaymentAccountMovement.objects.create(
+        **common, account=from_account, signed_amount=-amount,
+        movement_type=PaymentAccountMovement.TYPE_TRANSFER_OUT,
+        idempotency_key=f'cash-bank-transfer:{transfer.id}:out', description=f'{number} · Transfer to {to_account.name}',
+    )
+    PaymentAccountMovement.objects.create(
+        **common, account=to_account, signed_amount=amount,
+        movement_type=PaymentAccountMovement.TYPE_TRANSFER_IN,
+        idempotency_key=f'cash-bank-transfer:{transfer.id}:in', description=f'{number} · Transfer from {from_account.name}',
+    )
+    from apps.accounting.posting import post_cash_bank_transfer
+    post_cash_bank_transfer(transfer, user)
+    return transfer
+
+
+@transaction.atomic
+def void_cash_bank_transfer(transfer, reason, user):
+    transfer = CashBankTransfer.objects.select_for_update().select_related(
+        'organisation', 'outlet', 'from_account', 'to_account'
+    ).get(pk=transfer.pk)
+    require_permission(user, transfer.organisation, 'cash_bank_transfer.void', outlet=transfer.outlet)
+    if transfer.status == CashBankTransfer.STATUS_VOIDED:
+        return transfer
+    reason = (reason or '').strip()
+    if len(reason) < 5:
+        raise ValidationError({'void_reason': 'Provide a meaningful reason of at least 5 characters.'})
+    originals = list(PaymentAccountMovement.objects.select_for_update().filter(
+        source_type='cash_bank_transfer', source_id=transfer.id,
+        movement_type__in=[PaymentAccountMovement.TYPE_TRANSFER_OUT, PaymentAccountMovement.TYPE_TRANSFER_IN],
+    ))
+    if len(originals) != 2:
+        raise ValidationError('Transfer account movements are incomplete.')
+    transfer.status = CashBankTransfer.STATUS_VOIDED
+    transfer.void_reason = reason
+    transfer.voided_by = user
+    transfer.voided_at = timezone.now()
+    transfer._allow_void_transition = True
+    transfer.save(update_fields=['status', 'void_reason', 'voided_by', 'voided_at'])
+    reversal_date = to_outlet_business_date(timezone.now(), outlet=transfer.outlet, organisation=transfer.organisation)
+    for original in originals:
+        is_out = original.movement_type == PaymentAccountMovement.TYPE_TRANSFER_OUT
+        PaymentAccountMovement.objects.create(
+            organisation=transfer.organisation, outlet=transfer.outlet, account=original.account,
+            effective_date=reversal_date, signed_amount=-original.signed_amount,
+            movement_type=(PaymentAccountMovement.TYPE_TRANSFER_OUT_REVERSAL if is_out else PaymentAccountMovement.TYPE_TRANSFER_IN_REVERSAL),
+            source_type='cash_bank_transfer', source_id=transfer.id, reversal_of=original,
+            idempotency_key=f'cash-bank-transfer-reversal:{transfer.id}:{"out" if is_out else "in"}',
+            description=f'Reversal of {transfer.transfer_number}', created_by=user,
+        )
+    from apps.accounting.posting import reverse_source_journal
+    reverse_source_journal(
+        organisation=transfer.organisation, outlet=transfer.outlet, source_type='cash_bank_transfer',
+        source_id=transfer.id, reason=reason, user=user,
+    )
+    return transfer
 
 
 @transaction.atomic
