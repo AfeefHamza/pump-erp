@@ -11,7 +11,7 @@ from rest_framework.test import APIClient
 from rest_framework import status
 
 from apps.organizations.models import (
-    Organisation, Outlet, Role, PermissionDefinition,
+    Organisation, Outlet, Role, PermissionDefinition, FinancialYear,
     RolePermission, OrganisationMembership, MembershipRole
 )
 from apps.organizations.services import (
@@ -46,11 +46,19 @@ class PurchaseBillTestCase(TestCase):
         self.owner = User.objects.create_user(email="owner_pb@example.com", password="password", display_name="Owner User")
         self.org = create_organisation_with_owner(name="Petro Fuel Ltd", code="PFL", owner_user=self.owner)
         self.outlet = create_outlet(self.org, name="Central Highway Station", code="CHS1")
+        FinancialYear.objects.create(
+            organisation=self.org, name='FY 2026', start_date=date(2026, 1, 1),
+            end_date=date(2026, 12, 31), status=FinancialYear.STATUS_OPEN, is_default=True,
+        )
 
         # Other Org and Outlet for cross-tenant testing
         self.other_owner = User.objects.create_user(email="other_owner@example.com", password="password")
         self.other_org = create_organisation_with_owner(name="Other Corp", code="OTH", owner_user=self.other_owner)
         self.other_outlet = create_outlet(self.other_org, name="Other Outlet", code="OOT1")
+        FinancialYear.objects.create(
+            organisation=self.other_org, name='FY 2026', start_date=date(2026, 1, 1),
+            end_date=date(2026, 12, 31), status=FinancialYear.STATUS_OPEN, is_default=True,
+        )
 
         # Outlet 2 within same Org
         self.outlet2 = create_outlet(self.org, name="North Station", code="CHS2")
@@ -646,7 +654,8 @@ class PurchaseBillTestCase(TestCase):
         stock_after_save = get_or_create_tank_projection(self.tank_ms).current_book_stock
         self.assertEqual(initial_stock, stock_after_save)
 
-        update_purchase_bill(bill.id, self.owner, {'notes': "Updated note"})
+        with self.assertRaises(ValidationError):
+            update_purchase_bill(bill.id, self.owner, {'notes': "Updated note"})
         stock_after_update = get_or_create_tank_projection(self.tank_ms).current_book_stock
         self.assertEqual(initial_stock, stock_after_update)
 

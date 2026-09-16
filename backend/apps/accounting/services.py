@@ -18,6 +18,7 @@ STANDARD_ACCOUNTS = [
     ('1200', 'Accounts Receivable', 'asset', False, 'accounts_receivable', 'assets'),
     ('1300', 'Inventory', 'asset', False, 'inventory', 'assets'),
     ('1400', 'Input Tax', 'asset', False, 'input_tax', 'assets'),
+    ('1500', 'Supplier Advances', 'asset', False, 'supplier_advances', 'assets'),
     ('2000', 'Liabilities', 'liability', True, 'liabilities', None),
     ('2100', 'Accounts Payable', 'liability', False, 'accounts_payable', 'liabilities'),
     ('2200', 'Output Tax', 'liability', False, 'output_tax', 'liabilities'),
@@ -116,9 +117,11 @@ def deactivate_account(account, user):
 @transaction.atomic
 def post_journal(*, organisation, outlet, entry_date, narration, lines, user,
                  reference='', source_type=JournalEntry.SOURCE_MANUAL, source_id=None,
-                 client_request_id=None, reversal_of=None, reversal_reason=''):
-    permission = 'journal_voucher.create' if source_type == JournalEntry.SOURCE_MANUAL else 'journal_voucher.reverse'
-    require_permission(user, organisation, permission, outlet=outlet)
+                 client_request_id=None, reversal_of=None, reversal_reason='',
+                 enforce_permission=True):
+    if enforce_permission:
+        permission = 'journal_voucher.create' if source_type == JournalEntry.SOURCE_MANUAL else 'journal_voucher.reverse'
+        require_permission(user, organisation, permission, outlet=outlet)
     if client_request_id:
         existing = JournalEntry.objects.filter(organisation=organisation, outlet=outlet, client_request_id=client_request_id).first()
         if existing:
@@ -166,9 +169,14 @@ def post_journal(*, organisation, outlet, entry_date, narration, lines, user,
 
 
 @transaction.atomic
-def reverse_journal(journal, reason, user, reversal_date=None):
+def reverse_journal(journal, reason, user, reversal_date=None, enforce_permission=True):
     journal = JournalEntry.objects.select_for_update().prefetch_related('lines').get(pk=journal.pk)
-    require_permission(user, journal.organisation, 'journal_voucher.reverse', outlet=journal.outlet)
+    if enforce_permission:
+        require_permission(user, journal.organisation, 'journal_voucher.reverse', outlet=journal.outlet)
+        if journal.source_type != JournalEntry.SOURCE_MANUAL:
+            raise ValidationError(
+                'Automatic journals can only be reversed by voiding their source transaction.'
+            )
     if journal.status == JournalEntry.STATUS_REVERSED:
         return journal.reversal_entry
     if journal.reversal_of_id:
@@ -182,6 +190,7 @@ def reverse_journal(journal, reason, user, reversal_date=None):
         reference=journal.journal_number, source_type=JournalEntry.SOURCE_REVERSAL,
         source_id=journal.id, reversal_of=journal, reversal_reason=reason.strip(), user=user,
         lines=[{'account_id': line.account_id, 'debit': line.credit, 'credit': line.debit, 'description': line.description, 'party_type': line.party_type, 'party_id': line.party_id, 'party_name': line.party_name_snapshot} for line in journal.lines.all()],
+        enforce_permission=enforce_permission,
     )
     journal.status = JournalEntry.STATUS_REVERSED
     journal._allow_reversed_status = True

@@ -9,13 +9,16 @@ class PaymentAccountSerializer(serializers.ModelSerializer):
     outlet_name = serializers.CharField(source='outlet.name', read_only=True, allow_null=True)
     current_balance = serializers.SerializerMethodField()
     movements = serializers.SerializerMethodField()
+    ledger_account_code = serializers.CharField(source='ledger_account.code', read_only=True, allow_null=True)
+    ledger_account_name = serializers.CharField(source='ledger_account.name', read_only=True, allow_null=True)
 
     class Meta:
         model = PaymentAccount
         fields = ['id', 'organisation', 'outlet', 'outlet_name', 'code', 'name', 'account_type', 'bank_name',
                   'account_number_last4', 'ifsc', 'opening_balance', 'opening_balance_date', 'current_balance',
-                  'notes', 'display_order', 'is_active', 'movements', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'organisation', 'current_balance', 'created_at', 'updated_at']
+                  'ledger_account', 'ledger_account_code', 'ledger_account_name', 'notes', 'display_order',
+                  'is_active', 'movements', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'organisation', 'ledger_account', 'current_balance', 'created_at', 'updated_at']
 
     def get_current_balance(self, obj):
         return str(obj.current_balance)
@@ -79,17 +82,22 @@ class SupplierPaymentSerializer(serializers.ModelSerializer):
     allocations = SupplierPaymentAllocationSerializer(many=True, read_only=True)
     account_movements = PaymentAccountMovementSerializer(many=True, read_only=True)
     audit_logs = SupplierPaymentAuditSerializer(many=True, read_only=True)
+    accounting_journal_id = serializers.SerializerMethodField()
 
     class Meta:
         model = SupplierPayment
         fields = ['id', 'organisation', 'outlet', 'supplier', 'supplier_name', 'supplier_code', 'payment_number',
                   'payment_date', 'amount', 'payment_account', 'payment_account_name', 'payment_method',
                   'reference_number', 'cheque_number', 'cheque_date', 'notes', 'allocated_amount',
-                  'unallocated_amount', 'status', 'created_by_name', 'created_at', 'voided_at', 'void_reason',
+                  'unallocated_amount', 'status', 'accounting_journal_id', 'created_by_name', 'created_at', 'voided_at', 'void_reason',
                   'allocations', 'account_movements', 'audit_logs']
 
     def get_allocated_amount(self, obj):
         return str((obj.amount - obj.unallocated_amount).quantize(Decimal('0.01')))
+
+    def get_accounting_journal_id(self, obj):
+        from apps.accounting.posting import journal_id_for_source
+        return journal_id_for_source(obj.organisation_id, obj.outlet_id, 'supplier_payment', obj.id)
 
 
 class AllocationInputSerializer(serializers.Serializer):

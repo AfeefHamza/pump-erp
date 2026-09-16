@@ -232,6 +232,8 @@ def create_sales_invoice(*, organisation, outlet, invoice_date, invoice_type, li
             description=f'{invoice.invoice_number} · {invoice.customer_name_snapshot}', created_by=user,
         )
     SalesInvoiceAuditLog.objects.create(invoice=invoice, event_type='created', actor=user, metadata={'grand_total': str(total), 'line_count': len(calculated)})
+    from apps.accounting.posting import post_sales_invoice
+    post_sales_invoice(invoice, user)
     return invoice
 
 
@@ -267,6 +269,11 @@ def void_sales_invoice(invoice, reason, user):
             description=f'Reversal of {invoice.invoice_number}', created_by=user,
         )
     invoice.credit_slip_links.filter(released_at__isnull=True).update(released_at=timezone.now())
+    from apps.accounting.posting import reverse_source_journal
+    reverse_source_journal(
+        organisation=invoice.organisation, outlet=invoice.outlet,
+        source_type='sales_invoice', source_id=invoice.id, reason=reason, user=user,
+    )
     invoice.status = SalesInvoice.STATUS_VOIDED
     invoice.void_reason = reason
     invoice.voided_by = user
@@ -341,6 +348,8 @@ def create_customer_receipt(*, organisation, outlet, customer, receipt_date, amo
         idempotency_key=f'customer-receipt:{receipt.id}',
         description=f'{receipt.receipt_number} · {receipt.customer_name_snapshot}', created_by=user,
     )
+    from apps.accounting.posting import post_customer_receipt
+    post_customer_receipt(receipt, user)
     return receipt
 
 
@@ -369,6 +378,12 @@ def void_customer_receipt(receipt, reason, user):
             idempotency_key=f'customer-receipt-reversal:{receipt.id}',
             description=f'Reversal of {receipt.receipt_number}', created_by=user,
         )
+    from apps.accounting.posting import reverse_source_journal
+    reverse_source_journal(
+        organisation=receipt.organisation, outlet=receipt.outlet,
+        source_type='customer_receipt', source_id=receipt.id,
+        reason=reason, user=user,
+    )
     receipt.status = CustomerReceipt.STATUS_VOIDED
     receipt.voided_at = timezone.now(); receipt.voided_by = user; receipt.void_reason = reason.strip()
     receipt._allow_void_transition = True

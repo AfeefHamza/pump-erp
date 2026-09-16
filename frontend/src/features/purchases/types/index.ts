@@ -360,6 +360,7 @@ export interface PurchaseBillListItem {
   outstanding_amount: string;
   payment_status?: 'unpaid' | 'partially_paid' | 'paid' | 'voided';
   status: 'active' | 'voided';
+  accounting_journal_id?: string | null;
   is_overdue: boolean;
   days_overdue: number;
   linked_tanker_receipts: string[];

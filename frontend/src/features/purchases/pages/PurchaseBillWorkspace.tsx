@@ -51,6 +51,7 @@ import {
   FileCheck,
   AlertCircle,
   CheckCircle2,
+  BookOpenCheck,
   RefreshCw,
   X,
   MapPin
@@ -69,6 +70,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
 
   // Core data states
   const [bill, setBill] = useState<PurchaseBillDetail | null>(null);
+  const isPosted = !isNew && !!bill?.accounting_journal_id;
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [fuelProducts, setFuelProducts] = useState<FuelProduct[]>([]);
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
@@ -155,10 +157,11 @@ export const PurchaseBillWorkspace: React.FC = () => {
   // Dirty state tracking for navigation guard
   const [isDirty, setIsDirty] = useState(false);
   const isVoided = bill?.status === 'voided';
+  const isReadOnly = isVoided || isPosted;
   const isLegacy = bill?.calculation_version === 'legacy_v1';
 
   // Navigation guard
-  const { confirmNavigation } = useUnsavedChanges(isDirty && !isVoided);
+  const { confirmNavigation } = useUnsavedChanges(isDirty && !isReadOnly);
 
   const showToast = useCallback((message: any, type: 'success' | 'error') => {
     const msgStr = typeof message === 'string'
@@ -1207,7 +1210,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
             <ArrowLeft size={18} />
           </button>
           <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>
-            {isNew ? 'New Unified Purchase Bill' : `Edit Purchase Bill — ${bill?.bill_number}`}
+            {isNew ? 'New Unified Purchase Bill' : `${isPosted ? 'View' : 'Edit'} Purchase Bill — ${bill?.bill_number}`}
           </h2>
           {isVoided ? (
             <span className="badge badge-danger">Voided</span>
@@ -1252,6 +1255,13 @@ export const PurchaseBillWorkspace: React.FC = () => {
         </div>
       )}
 
+      {isPosted && bill?.accounting_journal_id && (
+        <div className="alert alert-info" style={{ marginBottom: 'var(--space-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span><strong>Posted to accounts.</strong> This bill is locked; void and re-enter it to make a correction.</span>
+          <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/app/finance/vouchers/${bill.accounting_journal_id}`)}><BookOpenCheck size={14}/> View Journal</button>
+        </div>
+      )}
+
       {/* Void Warning Banner */}
       {isVoided && bill && (
         <div className="alert alert-danger" style={{ marginBottom: 'var(--space-md)', padding: 'var(--space-sm) var(--space-md)' }}>
@@ -1279,7 +1289,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
               value={supplierId}
               options={supplierOptions}
               placeholder="Search or select supplier..."
-              disabled={isVoided || (!isNew && lines.some((l) => l.tanker_receipt_line_id))}
+              disabled={isReadOnly || (!isNew && lines.some((l) => l.tanker_receipt_line_id))}
               autoFocus={isNew}
               tabIndex={1}
               error={fieldErrors.supplier}
@@ -1307,7 +1317,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
               style={{ height: '36px', fontSize: '0.85rem', fontFamily: 'monospace' }}
               placeholder="e.g. INV-98124"
               value={supplierInvoiceNumber}
-              disabled={isVoided}
+              disabled={isReadOnly}
               tabIndex={2}
               onChange={(e) => {
                 setSupplierInvoiceNumber(e.target.value);
@@ -1327,7 +1337,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
               className="input"
               style={{ height: '36px', fontSize: '0.85rem' }}
               value={invoiceDate}
-              disabled={isVoided}
+              disabled={isReadOnly}
               tabIndex={3}
               onChange={(e) => {
                 setInvoiceDate(e.target.value);
@@ -1346,7 +1356,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
               className="input"
               style={{ height: '36px', fontSize: '0.85rem' }}
               value={dueDate}
-              disabled={isVoided}
+              disabled={isReadOnly}
               tabIndex={4}
               onChange={(e) => {
                 setDueDate(e.target.value);
@@ -1378,7 +1388,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
               className="input"
               style={{ height: '34px', fontSize: '0.85rem' }}
               value={receivedDate}
-              disabled={isVoided}
+              disabled={isReadOnly}
               tabIndex={5}
               onChange={(e) => {
                 setReceivedDate(e.target.value);
@@ -1406,7 +1416,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
             <button
               type="button"
               onClick={handleOpenReceiptModal}
-              disabled={isVoided || !supplierId}
+              disabled={isReadOnly || !supplierId}
               className="btn btn-secondary btn-sm"
               style={{
                 display: 'inline-flex',
@@ -1451,7 +1461,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
               <div style={{ display: 'flex', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
                 <button
                   type="button"
-                  disabled={isVoided}
+                  disabled={isReadOnly}
                   className={`btn btn-xs ${taxPriceMode === 'exclusive' ? 'btn-primary' : 'btn-secondary'}`}
                   style={{ padding: '2px 8px', fontSize: '0.75rem', borderRadius: 0 }}
                   onClick={() => {
@@ -1463,7 +1473,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  disabled={isVoided}
+                  disabled={isReadOnly}
                   className={`btn btn-xs ${taxPriceMode === 'inclusive' ? 'btn-primary' : 'btn-secondary'}`}
                   style={{ padding: '2px 8px', fontSize: '0.75rem', borderRadius: 0 }}
                   onClick={() => {
@@ -1483,7 +1493,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
                 className="input"
                 style={{ height: '28px', fontSize: '0.75rem', padding: '2px 6px' }}
                 value={transactionDiscountMethod}
-                disabled={isVoided}
+                disabled={isReadOnly}
                 onChange={(e: any) => {
                   const m = e.target.value as 'none' | 'fixed_amount' | 'percentage';
                   setTransactionDiscountMethod(m);
@@ -1512,7 +1522,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
                   style={{ width: '90px', height: '28px', fontSize: '0.8rem', padding: '2px 6px', textAlign: 'right', fontFamily: 'monospace' }}
                   placeholder="0.00"
                   value={transactionDiscountAmount}
-                  disabled={isVoided}
+                  disabled={isReadOnly}
                   onChange={(e) => {
                     setTransactionDiscountAmount(e.target.value);
                     setIsDirty(true);
@@ -1531,7 +1541,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
                     style={{ width: '70px', height: '28px', fontSize: '0.8rem', padding: '2px 6px', textAlign: 'right' }}
                     placeholder="0%"
                     value={transactionDiscountPercentage}
-                    disabled={isVoided}
+                    disabled={isReadOnly}
                     onChange={(e) => {
                       setTransactionDiscountPercentage(e.target.value);
                       setIsDirty(true);
@@ -1573,7 +1583,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
                   setIsDuplicateOverride(e.target.checked);
                   setIsDirty(true);
                 }}
-                disabled={isVoided}
+                disabled={isReadOnly}
                 style={{ width: '15px', height: '15px' }}
               />
               <span>Authorise Duplicate Invoice Override</span>
@@ -1600,7 +1610,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
                     style={{ height: '30px', fontSize: '0.8rem' }}
                     value={conflictingBillId}
                     onChange={(e) => setConflictingBillId(e.target.value)}
-                    disabled={isVoided}
+                    disabled={isReadOnly}
                   />
                 </div>
                 <div>
@@ -1613,7 +1623,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
                     style={{ height: '30px', fontSize: '0.8rem' }}
                     value={duplicateOverrideReason}
                     onChange={(e) => setDuplicateOverrideReason(e.target.value)}
-                    disabled={isVoided}
+                    disabled={isReadOnly}
                     placeholder="e.g. Supplementary debit invoice issued by supplier..."
                   />
                 </div>
@@ -1658,7 +1668,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
               <span>
                 {chip.receiptNumber} &bull; {chip.product} &bull; {chip.quantity} {chip.unit}
               </span>
-              {!isVoided && (
+              {!isReadOnly && (
                 <button
                   type="button"
                   onClick={() => handleUnlinkReceiptLine(chip.receiptLineId)}
@@ -1692,7 +1702,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
           canonicalItems={canonicalItems}
           taxCodes={taxCodes}
           taxTreatments={taxTreatments}
-          isVoided={isVoided}
+          isVoided={isReadOnly}
           taxPriceMode={taxPriceMode}
           onUpdateLine={handleUpdateProductLine}
           onRemoveLine={handleRemoveProductLine}
@@ -1707,7 +1717,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
           <AdjustmentSection
             adjustments={adjustments}
             percentageBase={previewTotals.percentageBase}
-            isVoided={isVoided}
+            isVoided={isReadOnly}
             onAddAdjustment={handleAddAdjustment}
             onUpdateAdjustment={handleUpdateAdjustment}
             onRemoveAdjustment={handleRemoveAdjustment}
@@ -1718,7 +1728,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
           <OtherChargesSection
             charges={otherCharges}
             taxCodes={taxCodes}
-            isVoided={isVoided}
+            isVoided={isReadOnly}
             onAddCharge={handleAddOtherCharge}
             onUpdateCharge={handleUpdateOtherCharge}
             onRemoveCharge={handleRemoveOtherCharge}
@@ -1751,7 +1761,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
                 setNotes(e.target.value);
                 setIsDirty(true);
               }}
-              disabled={isVoided}
+              disabled={isReadOnly}
               placeholder="Optional notes, driver references, or purchase remarks..."
             />
           </div>
@@ -1772,7 +1782,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
                 <span style={{ fontWeight: 700, fontSize: '0.8rem' }}>Bill Attachments &amp; Scans</span>
               </div>
 
-              {!isVoided && (
+              {!isReadOnly && (
                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '8px' }}>
                   <select
                     className="input"
@@ -1874,7 +1884,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
         onCancel={() => confirmNavigation(() => navigate('/app/purchases/purchase-bills'))}
         onOpenHelp={() => setShowShortcutsModal(true)}
         saving={saving}
-        isVoided={isVoided}
+        isVoided={isVoided || isPosted}
         isNew={isNew}
       />
 

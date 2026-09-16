@@ -1820,6 +1820,8 @@ def create_purchase_bill(
             metadata={'petroleum_tax_total': str(bill.petroleum_tax_total)}
         )
 
+    from apps.accounting.posting import post_purchase_bill
+    post_purchase_bill(bill, user)
     return bill
 
 
@@ -1835,6 +1837,9 @@ def update_purchase_bill(
     """
     bill = PurchaseBill.objects.select_for_update().get(id=bill_id)
     require_permission(user, bill.organisation, 'purchase_bill.update', outlet=bill.outlet)
+    from apps.accounting.posting import journal_id_for_source
+    if journal_id_for_source(bill.organisation_id, bill.outlet_id, 'purchase_bill', bill.id):
+        raise ValidationError('Posted Purchase Bills are locked. Void and re-enter the bill to correct it.')
 
     if bill.status == PurchaseBill.STATUS_VOIDED:
         raise ValidationError("Voided purchase bills cannot be modified.")
@@ -2209,6 +2214,13 @@ def void_purchase_bill(
     if bill.amount_paid > Decimal('0.00'):
         raise ValidationError("Cannot void a purchase bill with allocated supplier payments.")
 
+    from apps.accounting.posting import reverse_source_journal
+    reverse_source_journal(
+        organisation=bill.organisation, outlet=bill.outlet,
+        source_type='purchase_bill', source_id=bill.id,
+        reason=void_reason.strip(), user=user,
+    )
+
     prev_outstanding = str(bill.outstanding_amount)
     prev_grand_total = str(bill.grand_total)
 
@@ -2217,6 +2229,7 @@ def void_purchase_bill(
     bill.voided_at = timezone.now()
     bill.void_reason = void_reason.strip()
     bill.outstanding_amount = Decimal('0.00')
+    bill._allow_void_transition = True
     bill.save()
 
     # Atomically release all active receipt line linkages (Correction 2)

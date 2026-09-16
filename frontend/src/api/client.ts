@@ -11,6 +11,7 @@ import type {
 } from '@/features/sales/types';
 import type {
   AccountingPeriodLock,
+  AccountLedger,
   JournalEntry,
   JournalEntryInput,
   LedgerAccount,
@@ -4002,6 +4003,11 @@ export async function reverseJournalEntry(orgId: string, outletId: string, journ
 export async function fetchTrialBalance(orgId: string, outletId: string, params?: Record<string, string>): Promise<TrialBalance> {
   const query = params ? `?${new URLSearchParams(params).toString()}` : '';
   return apiRequest<TrialBalance>(`/organisations/${orgId}/outlets/${outletId}/accounting/trial-balance/${query}`);
+}
+
+export async function fetchAccountLedger(orgId: string, outletId: string, accountId: string, params?: Record<string, string>): Promise<AccountLedger> {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return apiRequest<AccountLedger>(`/organisations/${orgId}/outlets/${outletId}/accounting/accounts/${accountId}/ledger/${query}`);
 }
 
 export async function fetchAccountingPeriodLocks(orgId: string): Promise<AccountingPeriodLock[]> {

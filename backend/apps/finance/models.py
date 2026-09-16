@@ -29,6 +29,10 @@ class PaymentAccount(models.Model):
     notes = models.TextField(blank=True, null=True)
     display_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
+    ledger_account = models.OneToOneField(
+        'accounting.ChartOfAccount', on_delete=models.PROTECT, null=True, blank=True,
+        related_name='payment_account',
+    )
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='created_payment_accounts')
     updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='updated_payment_accounts')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -46,6 +50,11 @@ class PaymentAccount(models.Model):
         self.name = (self.name or '').strip()
         if self.outlet_id and self.outlet.organisation_id != self.organisation_id:
             raise ValidationError({'outlet': 'Outlet must belong to the organisation.'})
+        if self.ledger_account_id:
+            if self.ledger_account.organisation_id != self.organisation_id:
+                raise ValidationError({'ledger_account': 'Ledger account must belong to the organisation.'})
+            if not self.ledger_account.is_active or self.ledger_account.is_group or self.ledger_account.account_type != 'asset':
+                raise ValidationError({'ledger_account': 'Payment accounts require a posting-enabled Asset ledger.'})
         if self.account_type == self.TYPE_CASH and any([self.bank_name, self.account_number_last4, self.ifsc]):
             raise ValidationError('Bank details are only valid for bank accounts.')
         if self.account_number_last4 and (len(self.account_number_last4) != 4 or not self.account_number_last4.isdigit()):
@@ -63,6 +72,8 @@ class PaymentAccount(models.Model):
                     raise ValidationError({'account_type': 'Account type cannot change after movements exist.'})
                 if previous.outlet_id != self.outlet_id:
                     raise ValidationError({'outlet': 'Account scope cannot change after movements exist.'})
+                if previous.ledger_account_id and previous.ledger_account_id != self.ledger_account_id:
+                    raise ValidationError({'ledger_account': 'Ledger mapping cannot change after movements exist.'})
         self.full_clean()
         super().save(*args, **kwargs)
 
@@ -194,6 +205,10 @@ class SupplierPaymentAllocation(models.Model):
     payment = models.ForeignKey(SupplierPayment, on_delete=models.PROTECT, related_name='allocations')
     purchase_bill = models.ForeignKey(PurchaseBill, on_delete=models.PROTECT, related_name='payment_allocations')
     amount = models.DecimalField(max_digits=15, decimal_places=2)
+    is_advance_application = models.BooleanField(
+        default=False,
+        help_text='True when an existing supplier advance was allocated after the original payment was posted.',
+    )
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='created_supplier_payment_allocations')
     created_at = models.DateTimeField(auto_now_add=True)
 

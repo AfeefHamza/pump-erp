@@ -85,6 +85,21 @@ export interface TrialBalance {
   total_credit: string;
 }
 
+export interface AccountLedger {
+  account: { id: string; code: string; name: string };
+  rows: Array<{
+    journal_id: string;
+    journal_number: string;
+    entry_date: string;
+    reference: string;
+    description: string;
+    debit: string;
+    credit: string;
+    running_balance: string;
+  }>;
+  closing_balance: string;
+}
+
 export interface AccountingPeriodLock {
   id: string;
   outlet: string | null;

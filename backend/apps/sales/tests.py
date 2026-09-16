@@ -6,10 +6,13 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.finance.models import PaymentAccountMovement
+from apps.accounting.models import JournalEntry
+from apps.accounting.services import reverse_journal
 from apps.finance.services import create_payment_account
 from apps.inventory.models import Item, ItemStockBalanceProjection, ItemStockMovement, UnitMaster
 from apps.inventory.services import create_item_stock_adjustment
 from apps.inventory.services_item import create_canonical_item
+from apps.organizations.models import FinancialYear
 from apps.organizations.services import create_organisation_with_owner, create_outlet
 from apps.purchases.models import ItemPurchaseTaxTreatment, PurchaseTaxCode
 from apps.purchases.services import create_purchase_tax_code, create_purchase_tax_code_rate
@@ -27,6 +30,10 @@ class SalesInvoiceTests(TestCase):
         self.org = create_organisation_with_owner(name='Sales Fuels', code='SF', owner_user=self.user)
         self.org.state_code = '32'; self.org.save()
         self.outlet = create_outlet(self.org, name='Main Outlet', code='MAIN')
+        FinancialYear.objects.create(
+            organisation=self.org, name='FY 2026', start_date=date(2026, 1, 1),
+            end_date=date(2026, 12, 31), status=FinancialYear.STATUS_OPEN, is_default=True,
+        )
         self.outlet.state_code = '32'; self.outlet.save()
         self.unit = UnitMaster.objects.create(organisation=self.org, code='PCS', name='Piece', symbol='pc')
         self.item = create_canonical_item(organisation=self.org, code='OIL-1L', name='Engine Oil 1L', item_type=Item.ITEM_TYPE_STOCK, base_unit=self.unit)
@@ -57,6 +64,10 @@ class SalesInvoiceTests(TestCase):
         self.assertEqual(invoice.grand_total, Decimal('236.00'))
         self.assertEqual(invoice.outstanding_amount, Decimal('236.00'))
         self.assertEqual(invoice.lines.get().tax_components_snapshot[0]['name'], 'CGST')
+        journal = JournalEntry.objects.get(source_type='sales_invoice', source_id=invoice.id)
+        self.assertEqual(journal.total_debit, Decimal('236.00'))
+        with self.assertRaises(ValidationError):
+            reverse_journal(journal, 'Do not bypass source voiding', self.user)
 
     def test_cash_invoice_posts_account_receipt(self):
         invoice = self.invoice(invoice_type='cash', quantity='1')
@@ -65,6 +76,7 @@ class SalesInvoiceTests(TestCase):
         self.assertEqual(invoice.amount_paid, Decimal('118.00'))
         self.cash.refresh_from_db()
         self.assertEqual(self.cash.current_balance, Decimal('1118.00'))
+        self.assertEqual(JournalEntry.objects.get(source_type='sales_invoice', source_id=invoice.id).total_credit, Decimal('118.00'))
 
     def test_service_invoice_has_no_stock_movement(self):
         invoice = self.invoice(item=self.service, quantity='1')
@@ -109,6 +121,7 @@ class SalesInvoiceTests(TestCase):
         }, format='json')
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data['grand_total'], '118.00')
+        self.assertIsNotNone(response.data['accounting_journal_id'])
 
     def test_client_request_is_idempotent(self):
         request_id = '5af64dbd-08b3-4bde-bf14-65236bbc5ef5'
@@ -139,6 +152,7 @@ class SalesInvoiceTests(TestCase):
         invoice.refresh_from_db(); self.cash.refresh_from_db()
         self.assertEqual(invoice.outstanding_amount, Decimal('36.00'))
         self.assertEqual(receipt.unallocated_amount, Decimal('50.00'))
+        self.assertTrue(JournalEntry.objects.filter(source_type='customer_receipt', source_id=receipt.id).exists())
         self.assertEqual(self.cash.current_balance, Decimal('1250.00'))
         with self.assertRaises(ValidationError):
             void_sales_invoice(invoice, 'Wrong invoice', self.user)
@@ -147,6 +161,8 @@ class SalesInvoiceTests(TestCase):
         self.assertEqual(invoice.outstanding_amount, Decimal('236.00'))
         self.assertEqual(self.cash.current_balance, Decimal('1000.00'))
         self.assertEqual(receipt.status, CustomerReceipt.STATUS_VOIDED)
+        original = JournalEntry.objects.get(source_type='customer_receipt', source_id=receipt.id, reversal_of__isnull=True)
+        self.assertEqual(original.status, JournalEntry.STATUS_REVERSED)
 
     def test_item_stock_adjustment_api(self):
         self.client.force_authenticate(self.user)

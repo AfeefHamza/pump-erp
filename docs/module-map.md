@@ -133,6 +133,14 @@ Financial invoice tracking for fuel deliveries and goods, strictly isolated from
 - **Period control**: Open Financial Year validation plus audited organisation-wide or outlet-month locks. This is not an operational Day Close.
 - **Frontend**: Chart of Accounts and Trial Balance, full-page Journal Voucher entry, read-only voucher detail/reversal, and Accounting Period controls under Finance.
 
+### 11. Automatic Ledger Posting (Milestone 16, Implemented)
+- **Operational posting**: Sales Invoices, Purchase Bills, Customer Receipts and Supplier Payments create balanced General Ledger journals inside the same database transaction.
+- **Mappings**: Every Cash & Banking account has one stable Asset ledger; standard Receivable, Payable, Sales, Purchases, Input/Output Tax and customer/supplier advance accounts are used automatically.
+- **Corrections**: Posted source documents are immutable. Voiding creates an exact linked reversal; later supplier-advance allocations create a separate Payable/Advance journal.
+- **Traceability**: Source APIs expose their journal ID, transaction screens link to the voucher, and Chart of Accounts opens a chronological running ledger.
+- **Safe migration**: `reconcile_general_ledger` previews missing historical journals by default and writes only with the explicit `--apply` flag.
+- **Valuation boundary**: This milestone does not invent stock values. COGS and Inventory-value journals remain pending until a valuation method is implemented.
+
 ---
 
 ## Planned Business Modules (Remaining)
@@ -147,7 +155,7 @@ Financial invoice tracking for fuel deliveries and goods, strictly isolated from
 ### 5. Finance
 - **Cash & Banking**: Manage cash safe vaults, bank deposits, and credit card settlements.
 - **Expenses**: Record daily station operating expenses.
-- **Automatic postings**: Connect sales, purchases, receipts, payments, stock valuation and tax totals to the General Ledger.
+- **Inventory valuation postings**: Connect valued stock movements and COGS to the General Ledger after a valuation method is implemented.
 
 ### 6. Employees
 - **Shift Assignments**: Track roster schedules.
