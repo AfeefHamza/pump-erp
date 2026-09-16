@@ -7,7 +7,8 @@ from rest_framework.test import APIClient
 from rest_framework import status
 
 from apps.users.models import User
-from apps.organizations.models import Organisation, Outlet
+from apps.accounting.models import JournalEntry
+from apps.organizations.models import FinancialYear, Organisation, Outlet
 from apps.organizations.services import create_organisation_with_owner, create_outlet
 from apps.forecourt.models import FuelProduct
 from apps.purchases.models import (
@@ -38,6 +39,10 @@ class UnifiedPurchaseBillTaxTestCase(TestCase):
         self.org.state_code = "29"
         self.org.gstin = "29AAAAA0000A1Z5"
         self.org.save()
+        FinancialYear.objects.create(
+            organisation=self.org, name='FY 2026', start_date=date(2026, 1, 1),
+            end_date=date(2026, 12, 31), status=FinancialYear.STATUS_OPEN, is_default=True,
+        )
 
         self.outlet = create_outlet(
             self.org,
@@ -208,7 +213,8 @@ class UnifiedPurchaseBillTaxTestCase(TestCase):
                     'discount_method': 'none',
                     'discount_amount': '0.00',
                     'tax_treatment': 'gst',
-                    'tax_code_id': str(self.tax_code_gst18.id)
+                    'tax_code_id': str(self.tax_code_gst18.id),
+                    'itc_classification': PurchaseItem.ITC_ELIGIBLE_INPUTS,
                 }
             ],
             user=self.user
@@ -224,6 +230,10 @@ class UnifiedPurchaseBillTaxTestCase(TestCase):
         self.assertEqual(bill.sgst_total, Decimal('1350.00'))
         self.assertEqual(bill.igst_total, Decimal('0.00'))
         self.assertEqual(bill.grand_total, Decimal('17700.00'))
+        journal = JournalEntry.objects.get(source_type='purchase_bill', source_id=bill.id)
+        self.assertEqual(journal.total_debit, Decimal('17700.00'))
+        self.assertEqual(journal.lines.get(account__system_key='input_tax').debit, Decimal('2700.00'))
+        self.assertEqual(journal.lines.get(account__system_key='accounts_payable').credit, Decimal('17700.00'))
         self.assertFalse(bill.is_interstate)
 
     def test_gst_exclusive_inter_state_calculation(self):
@@ -681,8 +691,8 @@ class UnifiedPurchaseBillTaxTestCase(TestCase):
         # Grand total = 100,000 subtotal + 1,800 GST + 20,000 Petro Tax = 121,800.00
         self.assertEqual(bill.grand_total, Decimal('121800.00'))
 
-    def test_update_purchase_bill_recalculates_v2(self):
-        """Updating a V2 bill lines and other charges recalculates totals and Place of Supply."""
+    def test_posted_purchase_bill_requires_void_and_reentry(self):
+        """Automatically posted V2 bills are immutable after recording."""
         bill = create_purchase_bill(
             organisation=self.org,
             outlet=self.outlet,
@@ -703,40 +713,17 @@ class UnifiedPurchaseBillTaxTestCase(TestCase):
         )
         self.assertEqual(bill.grand_total, Decimal('5900.00'))
 
-        # Update line quantity to 10 and add other charge of 1000 freight
-        updated_bill = update_purchase_bill(
-            bill_id=bill.id,
-            user=self.user,
-            data={
-                'lines': [
-                    {
-                        'purchase_item_id': str(self.item_lube.id),
-                        'quantity': '10.0000',
-                        'unit_rate': '1000.0000',
-                        'tax_treatment': 'gst',
-                        'tax_code_id': str(self.tax_code_gst18.id)
-                    }
-                ],
-                'other_charges': [
-                    {
-                        'charge_type': 'freight',
-                        'description': 'Transport',
-                        'calculation_type': 'fixed_amount',
-                        'amount': '1000.00',
-                        'tax_treatment': 'taxable',
-                        'tax_code_id': str(self.tax_code_gst18.id)
-                    }
-                ]
-            }
-        )
+        with self.assertRaises(ValidationError) as error:
+            update_purchase_bill(
+                bill_id=bill.id,
+                user=self.user,
+                data={'notes': 'Attempted edit after posting'},
+            )
+        self.assertIn('locked', str(error.exception).lower())
 
-        # 10 * 1000 = 10,000 + 1,800 GST = 11,800
-        # Freight = 1,000 + 180 GST = 1,180
-        # Grand total = 11,800 + 1,180 = 12,980.00
-        self.assertEqual(updated_bill.grand_total, Decimal('12980.00'))
-        self.assertEqual(updated_bill.taxable_value_total, Decimal('11000.00'))
-        self.assertEqual(updated_bill.cgst_total, Decimal('990.00'))
-        self.assertEqual(updated_bill.sgst_total, Decimal('990.00'))
+        bill.notes = 'Direct model edit'
+        with self.assertRaises(ValidationError):
+            bill.save()
 
     def test_purchase_tax_code_api_crud_and_permissions(self):
         """Verify API CRUD operations and permissions for purchase tax codes and rate versions."""
@@ -893,5 +880,3 @@ class UnifiedPurchaseBillTaxTestCase(TestCase):
         self.assertIn('Supplier Invoice Number', res_dup.json()['detail'])
         self.assertIn('errors', res_dup.json())
         self.assertIsInstance(res_dup.json()['errors'], dict)
-
-

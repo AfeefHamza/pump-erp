@@ -1,12 +1,16 @@
 from datetime import date
 from decimal import Decimal
+from io import StringIO
 
 from django.core.exceptions import ValidationError
+from django.core.management import call_command
 from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.organizations.models import FinancialYear
 from apps.organizations.services import create_organisation_with_owner, create_outlet
+from apps.purchases.models import PurchaseBill
+from apps.purchases.services import create_supplier
 from apps.users.models import User
 
 from .models import ChartOfAccount, JournalEntry, JournalLine
@@ -39,7 +43,7 @@ class AccountingCoreTests(TestCase):
         )
 
     def test_standard_chart_is_created_for_new_organisation(self):
-        self.assertEqual(ChartOfAccount.objects.filter(organisation=self.org).count(), 20)
+        self.assertEqual(ChartOfAccount.objects.filter(organisation=self.org).count(), 21)
         self.assertEqual(self.cash.parent.system_key, 'assets')
         self.assertTrue(ChartOfAccount.objects.get(organisation=self.org, system_key='assets').is_group)
 
@@ -132,3 +136,21 @@ class AccountingCoreTests(TestCase):
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data['total_debit'], '250.00')
         self.assertEqual(response.data['lines'][0]['account_code_snapshot'], self.cash.code)
+
+    def test_general_ledger_reconciliation_is_preview_first_and_idempotent(self):
+        supplier = create_supplier(self.org, code='SUP-1', name='Test Supplier')
+        bill = PurchaseBill.objects.create(
+            organisation=self.org, outlet=self.outlet, supplier=supplier,
+            bill_number='PB-LEGACY-1', supplier_invoice_number='LEGACY-1',
+            normalized_supplier_invoice_number='LEGACY-1', invoice_date=date(2026, 9, 15),
+            due_date=date(2026, 10, 15), grand_total=Decimal('500.00'),
+            outstanding_amount=Decimal('500.00'),
+        )
+        preview = StringIO()
+        call_command('reconcile_general_ledger', organisation=self.org.code, stdout=preview)
+        self.assertIn('Preview complete: 1 missing journal', preview.getvalue())
+        self.assertFalse(JournalEntry.objects.filter(source_type='purchase_bill', source_id=bill.id).exists())
+
+        call_command('reconcile_general_ledger', organisation=str(self.org.id), apply=True, stdout=StringIO())
+        call_command('reconcile_general_ledger', organisation=str(self.org.id), apply=True, stdout=StringIO())
+        self.assertEqual(JournalEntry.objects.filter(source_type='purchase_bill', source_id=bill.id).count(), 1)

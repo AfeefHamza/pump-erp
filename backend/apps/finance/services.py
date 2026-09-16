@@ -38,6 +38,7 @@ def recalculate_purchase_bill_payment_projection(bill):
         raise ValidationError('Active payment allocations exceed the purchase bill total.')
     bill.amount_paid = paid
     bill.outstanding_amount = (bill.grand_total - paid).quantize(MONEY)
+    bill._allow_settlement_transition = True
     bill.save(update_fields=['amount_paid', 'outstanding_amount', 'updated_at'])
     return bill
 
@@ -65,6 +66,8 @@ def create_payment_account(*, organisation, user, code, name, account_type, outl
         **data,
     )
     account.save()
+    from apps.accounting.posting import ensure_payment_account_ledger
+    ensure_payment_account_ledger(account, user)
     return account
 
 
@@ -197,6 +200,8 @@ def create_supplier_payment(*, organisation, outlet, supplier, payment_account, 
             'bills': [{'id': str(b.id), 'number': b.bill_number, 'amount': str(a)} for b, a in locked_allocations],
         },
     )
+    from apps.accounting.posting import post_supplier_payment
+    post_supplier_payment(payment, user)
     return payment
 
 
@@ -218,10 +223,13 @@ def allocate_supplier_payment(payment, allocations, user):
         raise ValidationError({'allocations': 'Allocations exceed the remaining unallocated payment amount.'})
 
     for bill, allocated_amount in locked_allocations:
-        SupplierPaymentAllocation.objects.create(
-            payment=payment, purchase_bill=bill, amount=allocated_amount, created_by=user
+        allocation = SupplierPaymentAllocation.objects.create(
+            payment=payment, purchase_bill=bill, amount=allocated_amount, created_by=user,
+            is_advance_application=True,
         )
         recalculate_purchase_bill_payment_projection(bill)
+        from apps.accounting.posting import post_supplier_payment_allocation
+        post_supplier_payment_allocation(allocation, user)
 
     previous = payment.unallocated_amount
     payment.unallocated_amount = (payment.unallocated_amount - new_total).quantize(MONEY)
@@ -278,6 +286,18 @@ def void_supplier_payment(payment, reason, user):
             'created_by': user,
         },
     )
+    from apps.accounting.posting import reverse_source_journal
+    reverse_source_journal(
+        organisation=payment.organisation, outlet=payment.outlet,
+        source_type='supplier_payment', source_id=payment.id,
+        reason=reason, user=user,
+    )
+    for allocation in allocations:
+        reverse_source_journal(
+            organisation=payment.organisation, outlet=payment.outlet,
+            source_type='supplier_payment_allocation', source_id=allocation.id,
+            reason=reason, user=user,
+        )
     for allocation in allocations:
         recalculate_purchase_bill_payment_projection(allocation.purchase_bill)
     SupplierPaymentAuditLog.objects.create(

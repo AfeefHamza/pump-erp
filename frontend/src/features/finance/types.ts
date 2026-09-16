@@ -15,6 +15,9 @@ export interface PaymentAccount {
   opening_balance: string;
   opening_balance_date?: string | null;
   current_balance: string;
+  ledger_account?: string | null;
+  ledger_account_code?: string | null;
+  ledger_account_name?: string | null;
   notes?: string | null;
   display_order: number;
   is_active: boolean;
@@ -73,6 +76,7 @@ export interface SupplierPayment {
   allocated_amount: string;
   unallocated_amount: string;
   status: 'active' | 'voided';
+  accounting_journal_id?: string | null;
   created_by_name?: string | null;
   created_at: string;
   voided_at?: string | null;

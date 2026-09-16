@@ -468,6 +468,7 @@ class PurchaseBillListSerializer(serializers.ModelSerializer):
     linked_tanker_receipts = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
     payment_status = serializers.SerializerMethodField()
+    accounting_journal_id = serializers.SerializerMethodField()
 
     class Meta:
         model = PurchaseBill
@@ -480,7 +481,7 @@ class PurchaseBillListSerializer(serializers.ModelSerializer):
             'igst_total', 'gst_cess_total', 'petroleum_tax_total',
             'other_charges_subtotal', 'other_charges_tax_total',
             'round_off_amount', 'grand_total', 'amount_paid',
-            'outstanding_amount', 'payment_status', 'status', 'is_overdue', 'days_overdue',
+            'outstanding_amount', 'payment_status', 'status', 'accounting_journal_id', 'is_overdue', 'days_overdue',
             'linked_tanker_receipts', 'created_by_name', 'created_at'
         ]
 
@@ -515,6 +516,10 @@ class PurchaseBillListSerializer(serializers.ModelSerializer):
             return 'paid'
         return 'partially_paid' if obj.amount_paid > Decimal('0.00') else 'unpaid'
 
+    def get_accounting_journal_id(self, obj):
+        from apps.accounting.posting import journal_id_for_source
+        return journal_id_for_source(obj.organisation_id, obj.outlet_id, 'purchase_bill', obj.id)
+
 
 class PurchaseBillDetailSerializer(serializers.ModelSerializer):
     supplier_name = serializers.CharField(source='supplier_name_snapshot', read_only=True)
@@ -537,6 +542,7 @@ class PurchaseBillDetailSerializer(serializers.ModelSerializer):
     voided_by_name = serializers.SerializerMethodField()
     payment_status = serializers.SerializerMethodField()
     payment_allocations = serializers.SerializerMethodField()
+    accounting_journal_id = serializers.SerializerMethodField()
 
     class Meta:
         model = PurchaseBill
@@ -555,12 +561,16 @@ class PurchaseBillDetailSerializer(serializers.ModelSerializer):
             'igst_total', 'gst_cess_total', 'petroleum_tax_total',
             'other_charges_subtotal', 'other_charges_tax_total',
             'round_off_amount', 'grand_total', 'amount_paid',
-            'outstanding_amount', 'payment_status', 'payment_allocations', 'status', 'is_overdue', 'days_overdue',
+            'outstanding_amount', 'payment_status', 'payment_allocations', 'status', 'accounting_journal_id', 'is_overdue', 'days_overdue',
             'notes', 'created_by_name', 'updated_by_name', 'voided_by_name',
             'voided_at', 'void_reason', 'lines', 'adjustments', 'other_charges',
             'receipt_links', 'attachments', 'audit_logs',
             'linked_tanker_receipts', 'created_at', 'updated_at'
         ]
+
+    def get_accounting_journal_id(self, obj):
+        from apps.accounting.posting import journal_id_for_source
+        return journal_id_for_source(obj.organisation_id, obj.outlet_id, 'purchase_bill', obj.id)
 
     def get_tax_override(self, obj):
         return any(bool(line.is_petroleum_manual_override) for line in obj.lines.all())

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Ban, Printer } from 'lucide-react';
+import { ArrowLeft, Ban, BookOpenCheck, Printer } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppSelector } from '@/app/store';
 import { fetchSalesInvoice, voidSalesInvoice } from '@/api/client';
@@ -21,7 +21,7 @@ export const SalesInvoiceDetailPage: React.FC = () => {
   };
   if (!invoice) return <div style={{ padding: 24 }}>{error || 'Loading Sales Invoice…'}</div>;
   return <div style={{ maxWidth: 1350, margin: '0 auto', padding: '1.5rem' }}>
-    <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}><button className="btn btn-ghost" onClick={() => navigate('/app/sales/invoices')}><ArrowLeft size={16}/> Back</button><div style={{ display: 'flex', gap: 8 }}><button className="btn btn-secondary" onClick={() => window.print()}><Printer size={16}/> Print</button>{invoice.status === 'active' && <button className="btn btn-danger" onClick={voidInvoice}><Ban size={16}/> Void Invoice</button>}</div></div>
+    <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}><button className="btn btn-ghost" onClick={() => navigate('/app/sales/invoices')}><ArrowLeft size={16}/> Back</button><div style={{ display: 'flex', gap: 8 }}>{invoice.accounting_journal_id && <button className="btn btn-secondary" onClick={() => navigate(`/app/finance/vouchers/${invoice.accounting_journal_id}`)}><BookOpenCheck size={16}/> View Journal</button>}<button className="btn btn-secondary" onClick={() => window.print()}><Printer size={16}/> Print</button>{invoice.status === 'active' && <button className="btn btn-danger" onClick={voidInvoice}><Ban size={16}/> Void Invoice</button>}</div></div>
     {error && <div className="alert alert-error">{error}</div>}
     <div className="card" style={{ padding: 28 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', borderBottom: '1px solid var(--border-color)', paddingBottom: 20 }}><div><div className="text-muted">SALES INVOICE</div><h1 style={{ margin: '4px 0' }}>{invoice.invoice_number}</h1><span className={`status-badge ${invoice.status === 'active' ? 'success' : 'danger'}`}>{invoice.status}</span></div><div style={{ textAlign: 'right' }}><strong>{invoice.customer_name}</strong><div>{invoice.customer_code_snapshot}</div><div className="text-muted">Invoice: {invoice.invoice_date}</div><div className="text-muted">Due: {invoice.due_date}</div></div></div>

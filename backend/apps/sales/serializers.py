@@ -28,10 +28,15 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
     payment_status = serializers.SerializerMethodField()
     lines = SalesInvoiceLineSerializer(many=True, read_only=True)
     audit_logs = SalesInvoiceAuditSerializer(many=True, read_only=True)
+    accounting_journal_id = serializers.SerializerMethodField()
 
     class Meta:
         model = SalesInvoice
-        fields = ['id', 'organisation', 'outlet', 'customer', 'customer_name', 'customer_code_snapshot', 'customer_gstin_snapshot', 'billing_address_snapshot', 'invoice_number', 'invoice_date', 'due_date', 'invoice_type', 'place_of_supply_state_code', 'is_interstate', 'payment_account', 'payment_account_name', 'payment_method', 'payment_reference', 'subtotal', 'discount_total', 'taxable_total', 'tax_total', 'grand_total', 'amount_paid', 'outstanding_amount', 'payment_status', 'notes', 'status', 'created_by_name', 'created_at', 'voided_at', 'void_reason', 'lines', 'audit_logs']
+        fields = ['id', 'organisation', 'outlet', 'customer', 'customer_name', 'customer_code_snapshot', 'customer_gstin_snapshot', 'billing_address_snapshot', 'invoice_number', 'invoice_date', 'due_date', 'invoice_type', 'place_of_supply_state_code', 'is_interstate', 'payment_account', 'payment_account_name', 'payment_method', 'payment_reference', 'subtotal', 'discount_total', 'taxable_total', 'tax_total', 'grand_total', 'amount_paid', 'outstanding_amount', 'payment_status', 'notes', 'status', 'accounting_journal_id', 'created_by_name', 'created_at', 'voided_at', 'void_reason', 'lines', 'audit_logs']
+
+    def get_accounting_journal_id(self, obj):
+        from apps.accounting.posting import journal_id_for_source
+        return journal_id_for_source(obj.organisation_id, obj.outlet_id, 'sales_invoice', obj.id)
 
     def get_payment_status(self, obj):
         if obj.status == SalesInvoice.STATUS_VOIDED:
@@ -87,10 +92,15 @@ class CustomerReceiptSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer_name_snapshot', read_only=True)
     payment_account_name = serializers.CharField(source='payment_account.name', read_only=True)
     allocations = CustomerReceiptAllocationSerializer(many=True, read_only=True)
+    accounting_journal_id = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomerReceipt
-        fields = ['id', 'customer', 'customer_name', 'customer_code_snapshot', 'receipt_number', 'receipt_date', 'amount', 'payment_account', 'payment_account_name', 'payment_method', 'reference_number', 'notes', 'unallocated_amount', 'status', 'created_at', 'voided_at', 'void_reason', 'allocations']
+        fields = ['id', 'customer', 'customer_name', 'customer_code_snapshot', 'receipt_number', 'receipt_date', 'amount', 'payment_account', 'payment_account_name', 'payment_method', 'reference_number', 'notes', 'unallocated_amount', 'status', 'accounting_journal_id', 'created_at', 'voided_at', 'void_reason', 'allocations']
+
+    def get_accounting_journal_id(self, obj):
+        from apps.accounting.posting import journal_id_for_source
+        return journal_id_for_source(obj.organisation_id, obj.outlet_id, 'customer_receipt', obj.id)
 
 
 class CustomerReceiptAllocationInputSerializer(serializers.Serializer):

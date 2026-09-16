@@ -59,6 +59,7 @@ import { JournalVoucherListPage } from '@/features/accounting/pages/JournalVouch
 import { JournalVoucherFormPage } from '@/features/accounting/pages/JournalVoucherFormPage';
 import { JournalVoucherDetailPage } from '@/features/accounting/pages/JournalVoucherDetailPage';
 import { AccountingPeriodsPage } from '@/features/accounting/pages/AccountingPeriodsPage';
+import { AccountLedgerPage } from '@/features/accounting/pages/AccountLedgerPage';
 import { useParams, useLocation } from 'react-router-dom';
 
 const RedirectWithSearchAndHash: React.FC<{ getDest: (params: Record<string, string | undefined>) => string }> = ({ getDest }) => {
@@ -375,6 +376,10 @@ export const router = createBrowserRouter([
       {
         path: 'finance/chart-of-accounts/:accountId/edit',
         element: <LedgerAccountFormPage />,
+      },
+      {
+        path: 'finance/chart-of-accounts/:accountId/ledger',
+        element: <AccountLedgerPage />,
       },
       {
         path: 'finance/accounting-periods',

@@ -1116,6 +1116,41 @@ class PurchaseBill(models.Model):
         raise ValidationError("Purchase bills cannot be deleted. Use void instead to invalidate a bill.")
 
     def save(self, *args, **kwargs):
+        if self.pk:
+            previous = PurchaseBill.objects.filter(pk=self.pk).first()
+            if previous:
+                from apps.accounting.models import JournalEntry
+                is_posted = JournalEntry.objects.filter(
+                    organisation_id=self.organisation_id,
+                    outlet_id=self.outlet_id,
+                    source_type='purchase_bill',
+                    source_id=self.pk,
+                    reversal_of__isnull=True,
+                ).exists()
+                if is_posted:
+                    transition_fields = {
+                        'amount_paid', 'outstanding_amount', 'status', 'voided_by_id',
+                        'voided_at', 'void_reason', 'updated_by_id', 'updated_at',
+                    }
+                    changed = {
+                        field.attname
+                        for field in self._meta.concrete_fields
+                        if field.attname != 'updated_at'
+                        and getattr(previous, field.attname) != getattr(self, field.attname)
+                    }
+                    if changed - transition_fields:
+                        raise ValidationError(
+                            'Posted Purchase Bills are immutable. Void and re-enter the bill to correct it.'
+                        )
+                    settlement_changed = bool(changed & {'amount_paid', 'outstanding_amount'})
+                    void_changed = bool(changed & {'status', 'voided_by_id', 'voided_at', 'void_reason'})
+                    if settlement_changed and not (
+                        getattr(self, '_allow_settlement_transition', False)
+                        or getattr(self, '_allow_void_transition', False)
+                    ):
+                        raise ValidationError('Purchase Bill settlement can change only through payment allocation.')
+                    if void_changed and not getattr(self, '_allow_void_transition', False):
+                        raise ValidationError('Posted Purchase Bills can be voided only through the void service.')
         if self.supplier and (not self.supplier_name_snapshot or not self.supplier_code_snapshot):
             self.supplier_name_snapshot = self.supplier.name
             self.supplier_code_snapshot = self.supplier.code

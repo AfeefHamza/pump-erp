@@ -6,6 +6,8 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.organizations.services import create_organisation_with_owner, create_outlet
+from apps.organizations.models import FinancialYear
+from apps.accounting.models import JournalEntry
 from apps.purchases.models import PurchaseBill
 from apps.purchases.selectors import get_supplier_outstanding_summary, get_supplier_statement
 from apps.purchases.services import create_supplier, update_purchase_bill, void_purchase_bill
@@ -26,6 +28,11 @@ class SupplierPaymentTests(TestCase):
         self.org = create_organisation_with_owner(name='Finance Fuels', code='FF', owner_user=self.owner)
         self.outlet = create_outlet(self.org, name='Main Outlet', code='MAIN')
         self.other_outlet = create_outlet(self.org, name='Other Outlet', code='OTHER')
+        today = date.today()
+        FinancialYear.objects.create(
+            organisation=self.org, name=f'FY {today.year}', start_date=date(today.year, 1, 1),
+            end_date=date(today.year, 12, 31), status=FinancialYear.STATUS_OPEN, is_default=True,
+        )
         self.supplier = create_supplier(self.org, code='IOCL', name='Indian Oil')
         self.cash = create_payment_account(
             organisation=self.org, outlet=self.outlet, user=self.owner,
@@ -74,6 +81,7 @@ class SupplierPaymentTests(TestCase):
         self.assertEqual(self.bill1.amount_paid, Decimal('400.00'))
         self.assertEqual(self.bill1.outstanding_amount, Decimal('600.00'))
         self.assertEqual(payment.unallocated_amount, Decimal('200.00'))
+        self.assertEqual(JournalEntry.objects.get(source_type='supplier_payment', source_id=payment.id).total_debit, Decimal('600.00'))
 
     def test_payment_can_allocate_multiple_bills(self):
         payment = self._payment('1500.00', [
@@ -110,6 +118,9 @@ class SupplierPaymentTests(TestCase):
         payment.refresh_from_db(); self.bill2.refresh_from_db()
         self.assertEqual(payment.unallocated_amount, Decimal('100.00'))
         self.assertEqual(self.bill2.amount_paid, Decimal('300.00'))
+        allocation = payment.allocations.get(purchase_bill=self.bill2)
+        self.assertTrue(allocation.is_advance_application)
+        self.assertTrue(JournalEntry.objects.filter(source_type='supplier_payment_allocation', source_id=allocation.id).exists())
 
     def test_void_reverses_money_and_bill_projection_once(self):
         payment = self._payment('500.00', [{'purchase_bill_id': self.bill1.id, 'amount': '500.00'}])
@@ -120,6 +131,7 @@ class SupplierPaymentTests(TestCase):
         self.assertEqual(self.bill1.outstanding_amount, Decimal('1000.00'))
         self.assertEqual(self.bank.current_balance, Decimal('10000.00'))
         self.assertEqual(PaymentAccountMovement.objects.filter(payment=payment).count(), 2)
+        self.assertEqual(JournalEntry.objects.get(source_type='supplier_payment', source_id=payment.id, reversal_of__isnull=True).status, JournalEntry.STATUS_REVERSED)
 
     def test_recorded_payment_and_allocations_are_immutable(self):
         payment = self._payment('500.00', [{'purchase_bill_id': self.bill1.id, 'amount': '500.00'}])
@@ -172,3 +184,4 @@ class SupplierPaymentTests(TestCase):
         self.assertEqual(response.data['allocated_amount'], '400.00')
         self.assertEqual(response.data['unallocated_amount'], '50.00')
         self.assertEqual(response.data['allocations'][0]['bill_number'], 'PB-1')
+        self.assertIsNotNone(response.data['accounting_journal_id'])
