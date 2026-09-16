@@ -2029,11 +2029,21 @@ class ShiftLockView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            cash_account = None
+            cash_account_id = serializer.validated_data.get('cash_account_id')
+            if cash_account_id:
+                from apps.finance.models import PaymentAccount
+                cash_account = PaymentAccount.objects.filter(
+                    id=cash_account_id, organisation_id=org_id,
+                ).first()
+                if not cash_account:
+                    return Response({'cash_account_id': ['Cash account was not found.']}, status=status.HTTP_400_BAD_REQUEST)
             locked = lock_shift(
                 shift=shift,
                 user=request.user,
                 reason=serializer.validated_data.get('reason', ''),
-                lock_source=serializer.validated_data.get('lock_source', 'manual')
+                lock_source=serializer.validated_data.get('lock_source', 'manual'),
+                cash_account=cash_account,
             )
             return Response({
                 'detail': "Shift locked successfully.",
@@ -2150,5 +2160,4 @@ class ParentShiftSummaryView(APIView):
 
         summary = get_parent_shift_summary(shift)
         return Response(summary, status=status.HTTP_200_OK)
-
 

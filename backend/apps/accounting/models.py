@@ -187,6 +187,85 @@ class JournalLine(models.Model):
         raise ValidationError('Posted journal lines cannot be deleted.')
 
 
+class ShiftAccountingPosting(models.Model):
+    STATUS_ACTIVE = 'active'
+    STATUS_REVERSED = 'reversed'
+    STATUS_CHOICES = [(STATUS_ACTIVE, 'Active'), (STATUS_REVERSED, 'Reversed')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organisation = models.ForeignKey(Organisation, on_delete=models.PROTECT, related_name='shift_accounting_postings')
+    outlet = models.ForeignKey(Outlet, on_delete=models.PROTECT, related_name='shift_accounting_postings')
+    operational_shift = models.ForeignKey('shifts.OperationalShift', on_delete=models.PROTECT, related_name='accounting_postings')
+    version = models.PositiveIntegerField()
+    cash_account = models.ForeignKey('finance.PaymentAccount', null=True, blank=True, on_delete=models.PROTECT, related_name='shift_accounting_postings')
+    fuel_sales_amount = models.DecimalField(max_digits=18, decimal_places=2)
+    cash_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
+    card_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
+    upi_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
+    fleet_card_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
+    credit_slip_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
+    approved_increase_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
+    approved_decrease_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
+    shortage_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
+    excess_amount = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'))
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    posted_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='posted_shift_accounting')
+    posted_at = models.DateTimeField(auto_now_add=True)
+    reversed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='reversed_shift_accounting')
+    reversed_at = models.DateTimeField(null=True, blank=True)
+    reversal_reason = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['operational_shift', 'version']
+        constraints = [
+            models.UniqueConstraint(fields=['operational_shift', 'version'], name='unique_shift_accounting_version'),
+            models.UniqueConstraint(fields=['operational_shift'], condition=models.Q(status='active'), name='unique_active_shift_accounting'),
+            models.CheckConstraint(condition=models.Q(version__gt=0), name='shift_accounting_version_positive'),
+        ]
+
+    @property
+    def digital_amount(self):
+        return self.card_amount + self.upi_amount + self.fleet_card_amount
+
+    def clean(self):
+        super().clean()
+        if self.outlet_id and self.outlet.organisation_id != self.organisation_id:
+            raise ValidationError({'outlet': 'Shift accounting outlet must belong to the organisation.'})
+        if self.operational_shift_id:
+            if self.operational_shift.organisation_id != self.organisation_id or self.operational_shift.outlet_id != self.outlet_id:
+                raise ValidationError({'operational_shift': 'Shift accounting scope does not match the shift.'})
+        if self.cash_amount > 0 and not self.cash_account_id:
+            raise ValidationError({'cash_account': 'Select the cash account receiving the shift cash collection.'})
+        if self.cash_account_id:
+            if self.cash_account.organisation_id != self.organisation_id or (self.cash_account.outlet_id and self.cash_account.outlet_id != self.outlet_id):
+                raise ValidationError({'cash_account': 'Cash account is not available for this outlet.'})
+            if self.cash_account.account_type != 'cash' or not self.cash_account.is_active:
+                raise ValidationError({'cash_account': 'Select an active Cash account.'})
+        money_fields = (
+            'fuel_sales_amount', 'cash_amount', 'card_amount', 'upi_amount', 'fleet_card_amount',
+            'credit_slip_amount', 'approved_increase_amount', 'approved_decrease_amount',
+            'shortage_amount', 'excess_amount',
+        )
+        if any(getattr(self, field) < 0 for field in money_fields):
+            raise ValidationError('Shift accounting amounts cannot be negative.')
+        if self.status == self.STATUS_REVERSED and len((self.reversal_reason or '').strip()) < 5:
+            raise ValidationError({'reversal_reason': 'A reversal reason of at least 5 characters is required.'})
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            previous = ShiftAccountingPosting.objects.filter(pk=self.pk).first()
+            if previous:
+                mutable = {'status', 'reversed_by_id', 'reversed_at', 'reversal_reason'}
+                changed = {f.attname for f in self._meta.concrete_fields if getattr(previous, f.attname) != getattr(self, f.attname)}
+                if changed - mutable or (changed and not getattr(self, '_allow_reversal', False)):
+                    raise ValidationError('Shift accounting postings are immutable. Reverse through the controlled unlock workflow.')
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Shift accounting postings cannot be deleted.')
+
+
 class AccountingPeriodLock(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE, related_name='accounting_period_locks')

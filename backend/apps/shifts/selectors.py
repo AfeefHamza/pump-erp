@@ -1074,6 +1074,32 @@ def get_parent_shift_summary(shift) -> dict:
         'total_historical_nozzles': len(historical_nozzles),
     }
 
+    from apps.accounting.models import ShiftAccountingPosting
+    from apps.accounting.posting import journal_id_for_source
+    accounting_posting = ShiftAccountingPosting.objects.filter(operational_shift=shift).select_related(
+        'cash_account',
+    ).order_by('-version').first()
+    accounting_info = None
+    if accounting_posting:
+        accounting_info = {
+            'id': str(accounting_posting.id),
+            'version': accounting_posting.version,
+            'status': accounting_posting.status,
+            'cash_account_id': str(accounting_posting.cash_account_id) if accounting_posting.cash_account_id else None,
+            'cash_account_name': accounting_posting.cash_account.name if accounting_posting.cash_account_id else None,
+            'fuel_sales_amount': str(accounting_posting.fuel_sales_amount),
+            'cash_amount': str(accounting_posting.cash_amount),
+            'digital_amount': str(accounting_posting.digital_amount),
+            'credit_slip_amount': str(accounting_posting.credit_slip_amount),
+            'shortage_amount': str(accounting_posting.shortage_amount),
+            'excess_amount': str(accounting_posting.excess_amount),
+            'journal_id': str(journal_id_for_source(
+                shift.organisation_id, shift.outlet_id, 'shift_accounting', accounting_posting.id,
+            ) or ''),
+            'posted_at': accounting_posting.posted_at.isoformat(),
+            'reversal_reason': accounting_posting.reversal_reason or None,
+        }
+
     return {
         # Structured top-level objects for UI
         'shift': shift_info,
@@ -1081,6 +1107,7 @@ def get_parent_shift_summary(shift) -> dict:
         'coverage': coverage_info,
         'cards': cards_summary,
         'deductions': all_deductions,
+        'accounting': accounting_info,
         # Flat legacy keys for backward-compatibility
         'shift_id': str(shift.id),
         'outlet_id': str(shift.outlet_id),

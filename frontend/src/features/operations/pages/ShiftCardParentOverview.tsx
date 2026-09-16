@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAppSelector } from '@/app/store';
 import {
   fetchParentShiftSummary,
+  fetchPaymentAccountOptions,
   lockShift,
   unlockShift,
   approveShiftDeduction,
@@ -10,6 +11,7 @@ import {
 } from '@/api/client';
 import { PageHeader } from '@/components/navigation/PageHeader';
 import { usePermission } from '@/features/auth/hooks/usePermission';
+import type { PaymentAccount } from '@/features/finance/types';
 import {
   Lock,
   Unlock,
@@ -49,6 +51,8 @@ export const ShiftCardParentOverview: React.FC = () => {
   const [showLockModal, setShowLockModal] = useState(false);
   const [lockReason, setLockReason] = useState('');
   const [locking, setLocking] = useState(false);
+  const [cashAccounts, setCashAccounts] = useState<PaymentAccount[]>([]);
+  const [cashAccountId, setCashAccountId] = useState('');
 
   // Reject Deduction Modal
   const [rejectingDeductionId, setRejectingDeductionId] = useState<string | null>(null);
@@ -74,13 +78,24 @@ export const ShiftCardParentOverview: React.FC = () => {
     loadSummary();
   }, [loadSummary]);
 
+  useEffect(() => {
+    if (!selectedOrgId || !selectedOutletId) return;
+    fetchPaymentAccountOptions(selectedOrgId, selectedOutletId)
+      .then((rows) => {
+        const cash = rows.filter((row) => row.account_type === 'cash' && row.is_active);
+        setCashAccounts(cash);
+        if (cash.length === 1) setCashAccountId(cash[0].id);
+      })
+      .catch(() => setCashAccounts([]));
+  }, [selectedOrgId, selectedOutletId]);
+
   // Handle Controlled Lock
   const handleConfirmLock = async () => {
     if (!selectedOrgId || !selectedOutletId || !shiftId) return;
     setLocking(true);
     setError(null);
     try {
-      await lockShift(selectedOrgId, selectedOutletId, shiftId, lockReason || 'Manual financial lock');
+      await lockShift(selectedOrgId, selectedOutletId, shiftId, lockReason || 'Manual financial lock', cashAccountId || undefined);
       setShowLockModal(false);
       setLockReason('');
       setActionMsg('Shift locked successfully. Data entry is now protected.');
@@ -204,6 +219,8 @@ export const ShiftCardParentOverview: React.FC = () => {
   };
 
   const deductions = summary?.deductions || [];
+  const totalCash = cards.reduce((sum: number, card: any) => sum + Number(card.cash_total || 0), 0);
+  const accounting = summary?.accounting;
 
   return (
     <div className="management-page" style={{ padding: '1.5rem', maxWidth: '1400px', margin: '0 auto' }}>
@@ -280,6 +297,22 @@ export const ShiftCardParentOverview: React.FC = () => {
       {error && (
         <div style={{ background: '#fef2f2', border: '1px solid #ef4444', color: '#991b1b', padding: '0.85rem 1.25rem', borderRadius: '6px', marginBottom: '1.25rem' }}>
           {error}
+        </div>
+      )}
+
+      {accounting && (
+        <div className="card" style={{ padding: '1rem 1.25rem', marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+          <div>
+            <strong>Shift Accounting · Version {accounting.version}</strong>
+            <div className="text-muted">
+              {accounting.status === 'active' ? 'Posted to the General Ledger and Cash Book' : `Reversed: ${accounting.reversal_reason || 'Shift unlocked'}`}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'center' }}>
+            <span><span className="text-muted">Sales </span><strong>₹{Number(accounting.fuel_sales_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+            <span><span className="text-muted">Digital Clearing </span><strong>₹{Number(accounting.digital_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+            {accounting.journal_id && <button type="button" className="btn btn-outline btn-sm" onClick={() => navigate(`/app/finance/vouchers/${accounting.journal_id}`)}>View Journal</button>}
+          </div>
         </div>
       )}
 
@@ -604,6 +637,13 @@ export const ShiftCardParentOverview: React.FC = () => {
               Locking this shift prevents further modifications to shift cards and meter totalizers.
             </p>
             <div style={{ marginBottom: '1.25rem' }}>
+              {totalCash > 0 && <label style={{ fontSize: '0.875rem', fontWeight: 600, display: 'block', marginBottom: '0.75rem' }}>
+                Cash Account Receiving ₹{totalCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })} *
+                <select className="form-control" required value={cashAccountId} onChange={(e) => setCashAccountId(e.target.value)} style={{ marginTop: '0.35rem' }}>
+                  <option value="">Select cash account</option>
+                  {cashAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.code}</option>)}
+                </select>
+              </label>}
               <label style={{ fontSize: '0.875rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
                 Lock Note (Optional)
               </label>
@@ -623,7 +663,7 @@ export const ShiftCardParentOverview: React.FC = () => {
                 type="button"
                 className="btn btn-primary"
                 onClick={handleConfirmLock}
-                disabled={locking}
+                disabled={locking || (totalCash > 0 && !cashAccountId)}
               >
                 {locking ? 'Locking...' : 'Confirm Lock'}
               </button>

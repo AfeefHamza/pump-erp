@@ -13,6 +13,7 @@ const sourceLabels: Record<string, string> = {
   supplier_payment_allocation: 'Supplier Advance Allocation',
   expense: 'Expense', cash_bank_transfer: 'Cash / Bank Transfer',
   digital_settlement: 'Digital Settlement',
+  shift_accounting: 'Shift Accounting',
 };
 const sourceLabel = (source: string) => sourceLabels[source] || source.replaceAll('_', ' ');
 

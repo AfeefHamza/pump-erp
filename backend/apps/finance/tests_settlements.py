@@ -7,7 +7,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.accounting.models import JournalEntry
+from apps.accounting.models import JournalEntry, ShiftAccountingPosting
 from apps.employees.models import Employee, EmployeeDesignation
 from apps.organizations.models import FinancialYear
 from apps.organizations.services import create_organisation_with_owner, create_outlet
@@ -55,6 +55,16 @@ class DigitalSettlementTests(TestCase):
         self.card_1 = self._collection('card', '500.00', 'HDFC', 'CARD-001')
         self.card_2 = self._collection('card', '500.00', 'HDFC', 'CARD-002')
         self.upi = self._collection('upi', '250.00', 'PhonePe', 'UPI-001')
+        self.shift.is_locked = True
+        self.shift.locked_at = timezone.now()
+        self.shift.locked_by = self.owner
+        self.shift.lock_source = 'test'
+        self.shift.save(update_fields=['is_locked', 'locked_at', 'locked_by', 'lock_source'])
+        ShiftAccountingPosting.objects.create(
+            organisation=self.org, outlet=self.outlet, operational_shift=self.shift, version=1,
+            fuel_sales_amount=Decimal('1250.00'), card_amount=Decimal('1000.00'),
+            upi_amount=Decimal('250.00'), posted_by=self.owner,
+        )
         self.client = APIClient()
 
     def _collection(self, method, amount, provider, reference):
@@ -94,7 +104,7 @@ class DigitalSettlementTests(TestCase):
         self.assertEqual(lines[f'payment_account:{self.bank.id}'], (Decimal('970.00'), Decimal('0.00')))
         self.assertEqual(lines['payment_gateway_charges'], (Decimal('20.00'), Decimal('0.00')))
         self.assertEqual(lines['tds_receivable'], (Decimal('10.00'), Decimal('0.00')))
-        self.assertEqual(lines['fuel_sales'], (Decimal('0.00'), Decimal('1000.00')))
+        self.assertEqual(lines['digital_collection_clearing'], (Decimal('0.00'), Decimal('1000.00')))
 
     def test_pending_selector_and_api_exclude_active_allocations(self):
         self.assertEqual(pending_digital_collections(self.org, self.outlet).count(), 3)
@@ -185,4 +195,3 @@ class DigitalSettlementTests(TestCase):
         self.assertEqual(response.data['settlement_number'], f'SET-MAIN-{date.today().year}-00001')
         self.assertEqual(response.data['net_amount'], '970.00')
         self.assertEqual(len(response.data['account_movements']), 1)
-

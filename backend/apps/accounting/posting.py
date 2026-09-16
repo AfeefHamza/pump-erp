@@ -2,12 +2,12 @@ from collections import defaultdict
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from apps.core.timezone_utils import to_outlet_business_date
 
-from .models import ChartOfAccount, JournalEntry
+from .models import ChartOfAccount, JournalEntry, ShiftAccountingPosting
 from .services import ensure_standard_chart, post_journal, reverse_journal
 
 MONEY = Decimal('0.01')
@@ -91,7 +91,13 @@ def post_sales_invoice(invoice, user=None):
         else accounts['accounts_receivable']
     )
     revenue = defaultdict(lambda: Decimal('0.00'))
+    posting_total = Decimal('0.00')
+    posting_tax = Decimal('0.00')
     for line in invoice.lines.all():
+        # A fuel credit slip is revenue already recognised by the locked Shift Card.
+        # Its later invoice is a customer document and receivable allocation, not a second sale.
+        if line.source_type == line.SOURCE_CREDIT_SLIP:
+            continue
         if line.item_type_snapshot == 'fuel':
             key = 'fuel_sales'
         elif line.item_type_snapshot == 'service':
@@ -99,12 +105,17 @@ def post_sales_invoice(invoice, user=None):
         else:
             key = 'product_sales'
         revenue[key] += _amount(line.line_total - line.tax_amount)
-    tax = _amount(invoice.tax_total)
-    expected_revenue = _amount(invoice.grand_total - tax)
+        posting_total += _amount(line.line_total)
+        posting_tax += _amount(line.tax_amount)
+    posting_total = _amount(posting_total)
+    tax = _amount(posting_tax)
+    if posting_total <= 0:
+        return None
+    expected_revenue = _amount(posting_total - tax)
     difference = expected_revenue - sum(revenue.values(), Decimal('0.00'))
     if difference:
         revenue[next(iter(revenue), 'product_sales')] += difference
-    lines = [{'account_id': debit_account.id, 'debit': invoice.grand_total, 'credit': 0, 'description': invoice.customer_name_snapshot}]
+    lines = [{'account_id': debit_account.id, 'debit': posting_total, 'credit': 0, 'description': invoice.customer_name_snapshot}]
     lines.extend({'account_id': accounts[key].id, 'debit': 0, 'credit': value, 'description': invoice.invoice_number} for key, value in revenue.items())
     if tax:
         lines.append({'account_id': accounts['output_tax'].id, 'debit': 0, 'credit': tax, 'description': 'Output tax'})
@@ -252,10 +263,176 @@ def post_digital_settlement(settlement, user=None):
              'description': 'Provider charges'},
             {'account_id': accounts['tds_receivable'].id, 'debit': settlement.tds_amount, 'credit': 0,
              'description': 'TDS deducted'},
-            {'account_id': accounts['fuel_sales'].id, 'debit': 0, 'credit': settlement.gross_amount,
+            {'account_id': accounts[
+                'fuel_sales' if settlement.accounting_basis == settlement.BASIS_LEGACY_SALES
+                else 'digital_collection_clearing'
+            ].id, 'debit': 0, 'credit': settlement.gross_amount,
              'description': f'{settlement.get_collection_method_display()} collections'},
         ],
     )
+
+
+@transaction.atomic
+def post_shift_accounting(shift, cash_account=None, user=None):
+    from apps.finance.models import DigitalSettlement, DigitalSettlementAllocation, PaymentAccount, PaymentAccountMovement
+    from apps.shifts.models import EmployeeShiftCard, EmployeeShiftDeduction
+
+    active = ShiftAccountingPosting.objects.select_for_update().filter(
+        operational_shift=shift, status=ShiftAccountingPosting.STATUS_ACTIVE,
+    ).first()
+    if active:
+        return active
+    cards = list(shift.employee_cards.filter(status=EmployeeShiftCard.STATUS_ACTIVE).prefetch_related(
+        'meters__price_segments', 'collections', 'credit_slips', 'deductions',
+    ))
+    if not cards:
+        raise ValidationError({'shift': 'At least one active Shift Card is required before financial locking.'})
+    if any(card.completeness_status != 'complete' for card in cards):
+        raise ValidationError({'shift': 'Complete every Shift Card and acknowledge shortages or excesses before locking.'})
+    if any(
+        deduction.status == EmployeeShiftDeduction.STATUS_ACTIVE
+        and deduction.approval_status == EmployeeShiftDeduction.APPROVAL_PENDING
+        for card in cards for deduction in card.deductions.all()
+    ):
+        raise ValidationError({'shift': 'Approve or reject every pending shift expense before locking.'})
+    has_legacy_settlement = DigitalSettlementAllocation.objects.filter(
+        collection__operational_shift=shift,
+        settlement__status=DigitalSettlement.STATUS_ACTIVE,
+        settlement__accounting_basis=DigitalSettlement.BASIS_LEGACY_SALES,
+    ).exists()
+    if has_legacy_settlement:
+        raise ValidationError({
+            'shift': 'This shift has a legacy digital settlement. Void it first, lock the shift, then record the settlement again.'
+        })
+
+    totals = defaultdict(lambda: Decimal('0.00'))
+    for card in cards:
+        sale = sum(
+            (_amount(segment.sale_amount) for meter in card.meters.all() for segment in meter.price_segments.all()),
+            Decimal('0.00'),
+        )
+        cash = sum((_amount(row.amount) for row in card.collections.all() if row.status == 'active' and row.collection_method == 'cash'), Decimal('0.00'))
+        card_amount = sum((_amount(row.amount) for row in card.collections.all() if row.status == 'active' and row.collection_method == 'card'), Decimal('0.00'))
+        upi = sum((_amount(row.amount) for row in card.collections.all() if row.status == 'active' and row.collection_method == 'upi'), Decimal('0.00'))
+        fleet = sum((_amount(row.amount) for row in card.collections.all() if row.status == 'active' and row.collection_method == 'fleet_card'), Decimal('0.00'))
+        credit = sum((_amount(row.amount) for row in card.credit_slips.all() if row.status == 'active'), Decimal('0.00'))
+        increases = sum((_amount(row.amount) for row in card.deductions.all() if row.status == 'active' and row.approval_status == 'approved' and row.direction == 'increases_accounted'), Decimal('0.00'))
+        decreases = sum((_amount(row.amount) for row in card.deductions.all() if row.status == 'active' and row.approval_status == 'approved' and row.direction == 'decreases_accounted'), Decimal('0.00'))
+        difference = cash + card_amount + upi + fleet + credit + increases - decreases - sale
+        totals['fuel_sales'] += sale
+        totals['cash'] += cash
+        totals['card'] += card_amount
+        totals['upi'] += upi
+        totals['fleet'] += fleet
+        totals['credit'] += credit
+        totals['increases'] += increases
+        totals['decreases'] += decreases
+        if difference < 0:
+            totals['shortage'] += abs(difference)
+        elif difference > 0:
+            totals['excess'] += difference
+
+    if totals['cash'] > 0:
+        if not cash_account:
+            choices = PaymentAccount.objects.filter(
+                organisation=shift.organisation, account_type=PaymentAccount.TYPE_CASH, is_active=True,
+            ).filter(models.Q(outlet__isnull=True) | models.Q(outlet=shift.outlet))
+            if choices.count() == 1:
+                cash_account = choices.first()
+            else:
+                raise ValidationError({'cash_account': 'Select the Cash account receiving this shift collection.'})
+        if cash_account.organisation_id != shift.organisation_id or (cash_account.outlet_id and cash_account.outlet_id != shift.outlet_id):
+            raise ValidationError({'cash_account': 'Cash account is not available for this outlet.'})
+        if cash_account.account_type != PaymentAccount.TYPE_CASH or not cash_account.is_active:
+            raise ValidationError({'cash_account': 'Select an active Cash account.'})
+    else:
+        cash_account = None
+
+    version = (ShiftAccountingPosting.objects.filter(operational_shift=shift).aggregate(
+        maximum=models.Max('version'),
+    )['maximum'] or 0) + 1
+    posting = ShiftAccountingPosting.objects.create(
+        organisation=shift.organisation, outlet=shift.outlet, operational_shift=shift, version=version,
+        cash_account=cash_account, fuel_sales_amount=_amount(totals['fuel_sales']),
+        cash_amount=_amount(totals['cash']), card_amount=_amount(totals['card']),
+        upi_amount=_amount(totals['upi']), fleet_card_amount=_amount(totals['fleet']),
+        credit_slip_amount=_amount(totals['credit']), approved_increase_amount=_amount(totals['increases']),
+        approved_decrease_amount=_amount(totals['decreases']), shortage_amount=_amount(totals['shortage']),
+        excess_amount=_amount(totals['excess']), posted_by=user,
+    )
+    accounts = _accounts(shift.organisation)
+    digital = posting.digital_amount
+    lines = [
+        {'account_id': ensure_payment_account_ledger(cash_account, user).id, 'debit': posting.cash_amount, 'credit': 0, 'description': 'Shift cash collection'} if cash_account else None,
+        {'account_id': accounts['digital_collection_clearing'].id, 'debit': digital, 'credit': 0, 'description': 'Card, UPI and fleet-card collections'},
+        {'account_id': accounts['accounts_receivable'].id, 'debit': posting.credit_slip_amount, 'credit': 0, 'description': 'Fuel credit slips'},
+        {'account_id': accounts['shift_adjustment_expense'].id, 'debit': posting.approved_increase_amount, 'credit': 0, 'description': 'Approved shift cash expenses and adjustments'},
+        {'account_id': accounts['employee_shortage_receivable'].id, 'debit': posting.shortage_amount, 'credit': 0, 'description': 'Employee shortages'},
+        {'account_id': accounts['fuel_sales'].id, 'debit': 0, 'credit': posting.fuel_sales_amount, 'description': 'Meter fuel sales'},
+        {'account_id': accounts['shift_adjustment_income'].id, 'debit': 0, 'credit': posting.approved_decrease_amount, 'description': 'Approved decreasing adjustments'},
+        {'account_id': accounts['shift_excess_income'].id, 'debit': 0, 'credit': posting.excess_amount, 'description': 'Employee excess collections'},
+    ]
+    _post(
+        organisation=shift.organisation, outlet=shift.outlet, source_type='shift_accounting', source_id=posting.id,
+        entry_date=shift.business_date, reference=f'SHIFT-{shift.business_date}-{shift.shift_definition.code}',
+        narration=f'Shift accounting · {shift.shift_definition.name} · {shift.business_date}',
+        lines=[line for line in lines if line], user=user,
+    )
+    if posting.cash_amount > 0:
+        PaymentAccountMovement.objects.create(
+            organisation=shift.organisation, outlet=shift.outlet, account=cash_account,
+            effective_date=shift.business_date, signed_amount=posting.cash_amount,
+            movement_type=PaymentAccountMovement.TYPE_SHIFT_CASH_COLLECTION,
+            source_type='shift_accounting', source_id=posting.id,
+            idempotency_key=f'shift-accounting-cash:{posting.id}',
+            description=f'{shift.shift_definition.name} · {shift.business_date} cash collection', created_by=user,
+        )
+    return posting
+
+
+@transaction.atomic
+def reverse_shift_accounting(shift, reason, user=None):
+    from apps.finance.models import DigitalSettlement, DigitalSettlementAllocation, PaymentAccountMovement
+    from apps.sales.models import SalesInvoice, SalesInvoiceCreditSlipLink
+
+    posting = ShiftAccountingPosting.objects.select_for_update().filter(
+        operational_shift=shift, status=ShiftAccountingPosting.STATUS_ACTIVE,
+    ).first()
+    if not posting:
+        return None
+    if DigitalSettlementAllocation.objects.filter(
+        collection__operational_shift=shift, settlement__status=DigitalSettlement.STATUS_ACTIVE,
+    ).exists():
+        raise ValidationError({'shift': 'Void active digital settlements for this shift before unlocking it.'})
+    if SalesInvoiceCreditSlipLink.objects.filter(
+        credit_slip__operational_shift=shift, released_at__isnull=True, invoice__status=SalesInvoice.STATUS_ACTIVE,
+    ).exists():
+        raise ValidationError({'shift': 'Void linked active credit-slip invoices before unlocking this shift.'})
+    original = PaymentAccountMovement.objects.filter(
+        source_type='shift_accounting', source_id=posting.id,
+        movement_type=PaymentAccountMovement.TYPE_SHIFT_CASH_COLLECTION,
+    ).first()
+    if original:
+        PaymentAccountMovement.objects.create(
+            organisation=posting.organisation, outlet=posting.outlet, account=original.account,
+            effective_date=to_outlet_business_date(timezone.now(), outlet=posting.outlet, organisation=posting.organisation),
+            signed_amount=-original.signed_amount,
+            movement_type=PaymentAccountMovement.TYPE_SHIFT_CASH_COLLECTION_REVERSAL,
+            source_type='shift_accounting', source_id=posting.id, reversal_of=original,
+            idempotency_key=f'shift-accounting-cash-reversal:{posting.id}',
+            description=f'Reversal of shift cash · {shift.business_date}', created_by=user,
+        )
+    reverse_source_journal(
+        organisation=posting.organisation, outlet=posting.outlet, source_type='shift_accounting',
+        source_id=posting.id, reason=reason, user=user,
+    )
+    posting.status = ShiftAccountingPosting.STATUS_REVERSED
+    posting.reversed_by = user
+    posting.reversed_at = timezone.now()
+    posting.reversal_reason = reason
+    posting._allow_reversal = True
+    posting.save(update_fields=['status', 'reversed_by', 'reversed_at', 'reversal_reason'])
+    return posting
 
 
 @transaction.atomic

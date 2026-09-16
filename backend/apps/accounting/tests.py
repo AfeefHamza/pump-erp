@@ -43,11 +43,13 @@ class AccountingCoreTests(TestCase):
         )
 
     def test_standard_chart_is_created_for_new_organisation(self):
-        self.assertEqual(ChartOfAccount.objects.filter(organisation=self.org).count(), 23)
+        self.assertEqual(ChartOfAccount.objects.filter(organisation=self.org).count(), 28)
         self.assertEqual(self.cash.parent.system_key, 'assets')
         self.assertTrue(ChartOfAccount.objects.get(organisation=self.org, system_key='assets').is_group)
         self.assertTrue(ChartOfAccount.objects.filter(organisation=self.org, system_key='tds_receivable').exists())
         self.assertTrue(ChartOfAccount.objects.filter(organisation=self.org, system_key='payment_gateway_charges').exists())
+        self.assertTrue(ChartOfAccount.objects.filter(organisation=self.org, system_key='digital_collection_clearing').exists())
+        self.assertTrue(ChartOfAccount.objects.filter(organisation=self.org, system_key='employee_shortage_receivable').exists())
 
     def test_account_codes_are_unique_per_organisation_case_insensitively(self):
         create_account(organisation=self.org, code='6110', name='Electricity', account_type='expense', user=self.user)

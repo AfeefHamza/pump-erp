@@ -854,6 +854,7 @@ class ShiftCardVoidSerializer(serializers.Serializer):
 class ShiftLockActionSerializer(serializers.Serializer):
     reason = serializers.CharField(required=False, allow_blank=True, default='')
     lock_source = serializers.CharField(required=False, default='manual')
+    cash_account_id = serializers.UUIDField(required=False, allow_null=True)
 
 
 class ShiftUnlockActionSerializer(serializers.Serializer):
@@ -862,5 +863,4 @@ class ShiftUnlockActionSerializer(serializers.Serializer):
 
 class ShiftDeductionRejectActionSerializer(serializers.Serializer):
     reason = serializers.CharField(min_length=5, required=True)
-
 

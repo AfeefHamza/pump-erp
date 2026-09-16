@@ -95,6 +95,7 @@ describe('Digital settlements', () => {
       summary: {
         pending_count: 3, pending_amount: '1250.00', settled_gross: '1000.00',
         charges_total: '20.00', net_received: '970.00',
+        pending_by_provider: [{ collection_method: 'card', provider_name: 'HDFC', count: 2, amount: '1000.00' }],
       },
     });
     renderPage(<DigitalSettlementsPage />);

@@ -3099,13 +3099,14 @@ export async function lockShift(
   orgId: string,
   outletId: string,
   shiftId: string,
-  reason?: string
+  reason?: string,
+  cashAccountId?: string
 ): Promise<{ id: string; is_locked: boolean; locked_at: string; lock_source: string }> {
   return apiRequest(
     `/organisations/${orgId}/outlets/${outletId}/shifts/${shiftId}/lock/`,
     {
       method: 'POST',
-      body: JSON.stringify({ reason: reason || 'Manual shift lock' }),
+      body: JSON.stringify({ reason: reason || 'Manual shift lock', cash_account_id: cashAccountId || null }),
     }
   );
 }
