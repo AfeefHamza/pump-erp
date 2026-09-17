@@ -1039,9 +1039,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
           }, 100);
         } else {
           showToast(`Purchase bill ${created.bill_number} recorded successfully!`, 'success');
-          setTimeout(() => {
-            navigate(`/app/purchases/purchase-bills/${created.id}`);
-          }, 500);
+          navigate(`/app/purchases/purchase-bills/${created.id}`, { replace: true });
         }
       } else if (billId) {
         const updated = await updatePurchaseBill(activeOrgId, activeOutletId, billId, payload);
@@ -1158,8 +1156,8 @@ export const PurchaseBillWorkspace: React.FC = () => {
     <div
       className="purchase-bill-workspace"
       style={{
-        padding: 'var(--space-md) var(--space-lg) 80px var(--space-lg)',
-        maxWidth: '1440px',
+        padding: '24px 32px 96px',
+        maxWidth: '1720px',
         margin: '0 auto',
         minHeight: '100vh',
         backgroundColor: 'var(--bg-main)'
@@ -1210,7 +1208,7 @@ export const PurchaseBillWorkspace: React.FC = () => {
             <ArrowLeft size={18} />
           </button>
           <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>
-            {isNew ? 'New Unified Purchase Bill' : `${isPosted ? 'View' : 'Edit'} Purchase Bill — ${bill?.bill_number}`}
+            {isNew ? 'New Purchase Bill' : `${isPosted ? 'View' : 'Edit'} Purchase Bill — ${bill?.bill_number}`}
           </h2>
           {isVoided ? (
             <span className="badge badge-danger">Voided</span>

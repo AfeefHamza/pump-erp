@@ -1,5 +1,6 @@
 // frontend/src/components/forms/SearchableCombobox.tsx
-import React, { useState, useEffect, useRef, useId } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useId } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Plus, X } from 'lucide-react';
 
 export interface ComboboxOption {
@@ -52,10 +53,12 @@ export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, width: 0 });
 
   // Find selected option
   const selectedOption = options.find((opt) => opt.id === value);
@@ -87,7 +90,11 @@ export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
   // Handle outside click to close
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node) &&
+        !menuRef.current?.contains(e.target as Node)
+      ) {
         setIsOpen(false);
         setSearchQuery(selectedOption ? selectedOption.label : '');
       }
@@ -95,6 +102,28 @@ export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [selectedOption]);
+
+  useLayoutEffect(() => {
+    if (!isOpen || !containerRef.current) return;
+
+    const updatePosition = () => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setMenuPosition({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isOpen]);
 
   const handleSelectOption = (opt: ComboboxOption, advance = false) => {
     onChange(opt.id, opt);
@@ -274,22 +303,23 @@ export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
         </span>
       )}
 
-      {isOpen && !disabled && (
+      {isOpen && !disabled && createPortal(
         <div
+          ref={menuRef}
           id={listboxId}
           role="listbox"
           style={{
-            position: 'absolute',
-            top: 'calc(100% + 4px)',
-            left: 0,
-            right: 0,
+            position: 'fixed',
+            top: menuPosition.top,
+            left: menuPosition.left,
+            width: menuPosition.width,
             background: 'var(--bg-card)',
             border: '1px solid var(--border-color)',
             borderRadius: 'var(--radius-md)',
             boxShadow: 'var(--shadow-md)',
             maxHeight: '240px',
             overflowY: 'auto',
-            zIndex: 100,
+            zIndex: 12000,
             padding: '4px 0'
           }}
         >
@@ -361,7 +391,8 @@ export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
               <span>{addNewLabel} &quot;{searchQuery.trim()}&quot;</span>
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

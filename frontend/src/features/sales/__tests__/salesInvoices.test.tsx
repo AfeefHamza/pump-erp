@@ -43,18 +43,20 @@ describe('Sales milestone', () => {
   it('uses a full-page item invoice workspace with canonical items', async () => {
     renderPage(<SalesInvoiceFormPage />);
     expect(await screen.findByText('New Sales Invoice')).toBeInTheDocument();
-    expect(await screen.findByRole('option', { name: 'Engine Oil (OIL)' })).toBeInTheDocument();
+    fireEvent.focus(await screen.findByLabelText('Item 1'));
+    expect(await screen.findByRole('option', { name: /Engine Oil/ })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: /Petrol/ })).not.toBeInTheDocument();
-    expect(screen.getByText(/Fuel is billed from Credit Slips/)).toBeInTheDocument();
+    expect(screen.getByText(/Fuel sales recorded at the meter/)).toBeInTheDocument();
   });
 
   it('adds an existing meter Credit Slip without manual fuel entry', async () => {
     renderPage(<SalesInvoiceFormPage />);
-    fireEvent.change(await screen.findByLabelText(/Customer/), { target: { value: 'customer-1' } });
+    fireEvent.focus(await screen.findByLabelText('Customer'));
+    fireEvent.click(await screen.findByRole('option', { name: /ABC Travels/ }));
     await screen.findByText('CS-001');
-    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add to invoice' }));
     expect(screen.getByText('Non-GST Petroleum')).toBeInTheDocument();
-    expect(screen.getByText('Meter sale')).toBeInTheDocument();
+    expect(screen.getByText(/Meter sale/)).toBeInTheDocument();
   });
 
   it('auto allocates a customer receipt oldest invoice first', async () => {

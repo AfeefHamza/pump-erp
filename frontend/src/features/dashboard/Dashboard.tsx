@@ -54,8 +54,8 @@ export const Dashboard: React.FC = () => {
     { label: 'Cash Collected', value: money(data.recorded.cash_collections), detail: 'Recorded shift cash', icon: Coins, path: '/app/reports/daily-business-summary' },
     { label: 'Digital Collected', value: money(data.recorded.digital_collections), detail: 'Card, UPI and fleet card', icon: CreditCard, path: '/app/reports/daily-business-summary' },
     { label: 'Pending Settlement', value: money(data.settlements.pending_amount), detail: `${data.settlements.pending_count} unsettled collection(s)`, icon: WalletCards, path: '/app/finance/settlements' },
-    { label: 'Customer Outstanding', value: money(data.receivables.customer_outstanding), detail: `${money(data.receivables.unbilled_credit)} unbilled fuel credit`, icon: Users, path: '/app/sales/customer-outstanding' },
-    { label: 'Supplier Outstanding', value: money(data.payables.supplier_outstanding), detail: `${money(data.payables.supplier_overdue)} overdue`, icon: Truck, path: '/app/purchases/supplier-outstanding' },
+    { label: 'Customer Outstanding', value: money(data.receivables.customer_outstanding), detail: `${money(data.receivables.unbilled_credit)} unbilled fuel credit`, icon: Users, path: '/app/reports' },
+    { label: 'Supplier Outstanding', value: money(data.payables.supplier_outstanding), detail: `${money(data.payables.supplier_overdue)} overdue`, icon: Truck, path: '/app/reports' },
     { label: 'Fuel Book Stock', value: quantity(data.stock.total_book_stock), detail: `${data.stock.total_tanks} active tank(s)`, icon: Droplet, path: '/app/inventory/fuel-stock' },
     { label: 'Shortage / Excess', value: `${money(data.recorded.shortage)} / ${money(data.recorded.excess)}`, detail: 'Recorded employee settlements', icon: AlertTriangle, path: '/app/reports/employee-accountability' },
   ] : [];
@@ -69,45 +69,45 @@ export const Dashboard: React.FC = () => {
     { label: 'View Reports', icon: BarChart3, path: '/app/reports' },
   ];
 
-  return <div style={{ maxWidth: 1600, margin: '0 auto', padding: '1.5rem' }}>
+  return <div className="dashboard-page">
     <PageHeader
       title="Management Dashboard"
       subtitle={data ? `${data.outlet.name} · Business date ${displayDate(data.business_date)}` : 'Live outlet overview'}
       actions={<button type="button" className="btn btn-secondary" onClick={load} disabled={loading}><RefreshCw size={16}/>{loading ? 'Refreshing…' : 'Refresh'}</button>}
     />
     {error && <div className="alert alert-danger" style={{ marginBottom: 16 }}>{error}</div>}
-    {data && <div className="alert alert-secondary" style={{ marginBottom: 16 }}>{data.basis}</div>}
+    {data && <div className="dashboard-basis"><span className="dashboard-live-dot"/> <strong>Recorded data</strong><span>{data.basis}</span><span className="dashboard-date-pill">{displayDate(data.business_date)}</span></div>}
 
-    <div className="quick-actions-grid" style={{ marginBottom: 20 }}>
+    <div className="quick-actions-grid dashboard-quick-actions">
       {quickActions.map(({ label, icon: Icon, path }) => <button key={label} type="button" className="quick-action-button" onClick={() => navigate(path)}><Icon className="quick-action-icon" size={20}/><span>{label}</span></button>)}
     </div>
 
     {!data && loading ? <div className="card" style={{ padding: 36, textAlign: 'center' }}>Loading dashboard…</div> : data && <>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 14, marginBottom: 20 }}>
-        {metrics.map(({ label, value, detail, icon: Icon, path }) => <button key={label} type="button" className="card" onClick={() => navigate(path)} style={{ padding: 18, textAlign: 'left', cursor: 'pointer', background: '#fff', border: '1px solid var(--border-color)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}><span className="text-muted">{label}</span><Icon size={19} color="#2563eb"/></div>
-          <strong style={{ display: 'block', fontSize: 22, margin: '9px 0 5px' }}>{value}</strong>
-          <span className="text-muted" style={{ fontSize: 12 }}>{detail}</span>
+      <div className="dashboard-kpi-grid">
+        {metrics.map(({ label, value, detail, icon: Icon, path }) => <button key={label} type="button" className="dashboard-kpi-card" onClick={() => navigate(path)}>
+          <div className="dashboard-kpi-head"><span>{label}</span><span className="dashboard-kpi-icon"><Icon size={18}/></span></div>
+          <strong>{value}</strong>
+          <small>{detail}</small>
         </button>)}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(360px,1fr))', gap: 18, marginBottom: 18 }}>
-        <section className="card" style={{ overflowX: 'auto' }}>
+      <div className="dashboard-section-grid">
+        <section className="card dashboard-panel" style={{ overflowX: 'auto' }}>
           <div className="dashboard-card-header"><h3 className="dashboard-card-title">Fuel sales by product</h3><button className="btn btn-link" onClick={() => navigate('/app/reports/daily-business-summary')}>Full report <ArrowRight size={15}/></button></div>
           <table className="data-table"><thead><tr><th>Product</th><th style={{ textAlign: 'right' }}>Quantity</th><th style={{ textAlign: 'right' }}>Recorded Sales</th></tr></thead><tbody>
             {!data.fuel_products.length ? <tr><td colSpan={3} style={{ textAlign: 'center', padding: 28 }}>No financially locked fuel sales for this business date.</td></tr> : data.fuel_products.map((row) => <tr key={row.product_id}><td><strong>{row.product_name}</strong><div className="text-muted">{row.product_code}</div></td><td style={{ textAlign: 'right' }}>{Number(row.quantity).toLocaleString('en-IN', { minimumFractionDigits: 3 })} {row.unit}</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{money(row.amount)}</td></tr>)}
           </tbody></table>
         </section>
 
-        <section className="card" style={{ padding: 18 }}>
+        <section className="card dashboard-panel" style={{ padding: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}><strong>Shift status</strong><button className="btn btn-link" onClick={() => navigate('/app/operations/shift-cards')}>Open Shift Cards</button></div>
           {[['Recorded', data.operations.recorded_shift_count, '#16a34a'], ['Open', data.operations.open_shift_count, '#2563eb'], ['Awaiting recording', data.operations.awaiting_recording_count, '#d97706']].map(([label, value, color]) => <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 0', borderBottom: '1px solid var(--border-color)' }}><span>{label}</span><strong style={{ color: String(color) }}>{value}</strong></div>)}
           {!!data.operations.open_shifts.length && <div style={{ marginTop: 14 }}>{data.operations.open_shifts.map((shift) => <button key={shift.shift_id} type="button" onClick={() => navigate(`/app/operations/shift-cards/parent/${shift.shift_id}`)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', padding: '9px 0', border: 0, background: 'transparent', cursor: 'pointer', textAlign: 'left' }}><span>{shift.shift_name}<span className="text-muted"> · {shift.business_date}</span></span>{shift.is_stale && <span className="status-badge danger">Stale</span>}</button>)}</div>}
         </section>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(360px,1fr))', gap: 18 }}>
-        <section className="card" style={{ padding: 18 }}>
+      <div className="dashboard-section-grid">
+        <section className="card dashboard-panel" style={{ padding: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}><strong>Tank stock</strong><button className="btn btn-link" onClick={() => navigate('/app/inventory/fuel-stock')}>Fuel Stock <ArrowRight size={15}/></button></div>
           {!data.stock.tanks.length ? <div className="text-muted" style={{ padding: 20, textAlign: 'center' }}>No active tanks configured.</div> : <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>{data.stock.tanks.map((tank) => {
             const pct = Math.max(0, Math.min(100, Number(tank.utilization_pct)));
@@ -116,7 +116,7 @@ export const Dashboard: React.FC = () => {
           })}</div>}
         </section>
 
-        <section className="card" style={{ padding: 18 }}>
+        <section className="card dashboard-panel" style={{ padding: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}><strong>Attention required</strong><span className="status-badge warning">{data.alerts.length}</span></div>
           {!data.alerts.length ? <div style={{ padding: 24, textAlign: 'center', color: '#15803d' }}>No operational alerts.</div> : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{data.alerts.map((alert, index) => <button key={`${alert.type}-${index}`} type="button" onClick={() => navigate(alert.path)} style={{ padding: 12, borderRadius: 8, border: `1px solid ${alert.severity === 'danger' ? '#fecaca' : '#fde68a'}`, background: alert.severity === 'danger' ? '#fef2f2' : '#fffbeb', textAlign: 'left', cursor: 'pointer' }}><strong style={{ display: 'block', color: alert.severity === 'danger' ? '#b91c1c' : '#92400e' }}>{alert.title}</strong><span style={{ fontSize: 12, lineHeight: 1.5 }}>{alert.detail}</span></button>)}</div>}
         </section>

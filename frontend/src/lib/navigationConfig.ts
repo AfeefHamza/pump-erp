@@ -44,7 +44,6 @@ export const navigationMenu: MenuSection[] = [
       { name: 'Customer Receipts', path: '/app/sales/receipts', icon: WalletCards },
       { name: 'Credit Slips', path: '/app/sales/credit-slips', icon: FileText },
       { name: 'Customers', path: '/app/sales/customers', icon: Users },
-      { name: 'Customer Outstanding', path: '/app/sales/customer-outstanding', icon: DollarSign },
     ],
   },
   {
@@ -54,14 +53,13 @@ export const navigationMenu: MenuSection[] = [
       { name: 'Purchase Bills', path: '/app/purchases/purchase-bills', icon: ShoppingBag },
       { name: 'Supplier Payments', path: '/app/purchases/supplier-payments', icon: WalletCards },
       { name: 'Suppliers', path: '/app/purchases/suppliers', icon: Briefcase },
-      { name: 'Supplier Outstanding', path: '/app/purchases/supplier-outstanding', icon: DollarSign },
     ],
   },
   {
     title: 'INVENTORY',
     items: [
       { name: 'Items', path: '/app/inventory/items', icon: BookOpen },
-      { name: 'Item Stock', path: '/app/inventory/item-stock', icon: PackageCheck },
+      { name: 'Inventory Adjustments', path: '/app/inventory/adjustments', icon: PackageCheck },
       { name: 'Fuel Stock', path: '/app/inventory/fuel-stock', icon: Layers },
     ],
   },

@@ -318,8 +318,12 @@ export const router = createBrowserRouter([
         element: <TankLedgerPage />,
       },
       {
-        path: 'inventory/item-stock',
+        path: 'inventory/adjustments',
         element: <ItemStockPage />,
+      },
+      {
+        path: 'inventory/item-stock',
+        element: <Navigate to="/app/inventory/adjustments" replace />,
       },
       {
         path: 'inventory/tanks',
@@ -351,7 +355,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'inventory/stock-adjustments',
-        element: <Navigate to="/app/inventory/item-stock" replace />,
+        element: <Navigate to="/app/inventory/adjustments" replace />,
       },
       // Finance
       {
