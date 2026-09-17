@@ -49,7 +49,7 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
   const itemOptions: ComboboxOption[] = useMemo(() => {
     if (canonicalItems && canonicalItems.length > 0) {
       return canonicalItems.map((ci) => ({
-        id: `canonical:${ci.id}`,
+        id: ci.id,
         label: ci.name,
         subLabel: `${ci.item_type.toUpperCase().replace('_', ' ')} | Code: ${ci.code} | Unit: ${ci.base_unit_code} | HSN: ${ci.hsn_sac || 'N/A'}`,
         tags: [ci.code, ci.name, ci.item_type, ci.hsn_sac || '', ci.base_unit_code]
@@ -135,7 +135,7 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
   };
 
   return (
-    <div className="card" style={{ padding: 0, overflow: 'hidden', margin: 0 }}>
+    <div className="card purchase-line-grid" style={{ padding: 0, overflow: 'visible', margin: 0 }}>
       <div
         className="card-header"
         style={{
@@ -228,7 +228,7 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
                   : Math.max(0, gross - discount) + lineTax);
 
               const selectedOptionValue = (line as any).item_id
-                ? `canonical:${(line as any).item_id}`
+                ? (line as any).item_id
                 : line.product_id
                 ? `fuel:${line.product_id}`
                 : line.purchase_item_id
@@ -269,9 +269,10 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
                             return;
                           }
 
-                          if (selectedId.startsWith('canonical:')) {
-                            const cId = selectedId.replace('canonical:', '');
-                            const cItem = canonicalItems.find((ci) => ci.id === cId);
+                          const canonicalItem = canonicalItems.find((ci) => ci.id === selectedId);
+                          if (canonicalItem) {
+                            const cId = selectedId;
+                            const cItem = canonicalItem;
                             onUpdateLine(idx, 'item_id' as any, cId);
                             onUpdateLine(idx, 'product_id', null);
                             onUpdateLine(idx, 'purchase_item_id', null);
