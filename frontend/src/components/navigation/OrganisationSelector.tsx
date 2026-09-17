@@ -31,28 +31,13 @@ export const OrganisationSelector: React.FC = () => {
     }
   }, [organisations, selectedOrgId, dispatch]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const orgId = e.target.value;
-    dispatch(setOrganization(orgId));
-    
-    // Proactively select the first outlet of this organisation
-    const selectedOrg = organisations.find(org => org.id === orgId);
-    if (selectedOrg && selectedOrg.outlets && selectedOrg.outlets.length > 0) {
-      dispatch(setOutlet(selectedOrg.outlets[0].id));
-    } else {
-      dispatch(setOutlet(''));
-    }
-  };
-
   if (organisations.length === 0) {
     return (
       <div className="org-selector-wrapper" style={{ opacity: 0.6 }}>
         <div className="org-selector-icon-box">
           <Building2 size={16} />
         </div>
-        <select className="org-selector-dropdown" disabled>
-          <option value="">No organisation access</option>
-        </select>
+        <span className="sidebar-context-value">No organisation access</span>
       </div>
     );
   }
@@ -62,17 +47,7 @@ export const OrganisationSelector: React.FC = () => {
       <div className="org-selector-icon-box">
         <Building2 size={16} />
       </div>
-      <select
-        value={selectedOrgId}
-        onChange={handleChange}
-        className="org-selector-dropdown"
-      >
-        {organisations.map((org) => (
-          <option key={org.id} value={org.id}>
-            {org.name}
-          </option>
-        ))}
-      </select>
+      <div className="sidebar-context-copy"><small>Organisation</small><span className="sidebar-context-value">{organisations.find((org) => org.id === selectedOrgId)?.name || organisations[0].name}</span></div>
     </div>
   );
 };

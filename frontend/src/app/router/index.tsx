@@ -30,6 +30,7 @@ import { ShiftCardParentOverview } from '@/features/operations/pages/ShiftCardPa
 import { DipReadingsPage } from '@/features/operations/pages/DipReadingsPage';
 import { CustomersPage } from '@/features/sales/pages/CustomersPage';
 import { CustomerDetailPage } from '@/features/sales/pages/CustomerDetailPage';
+import { CustomerFormPage } from '@/features/sales/pages/CustomerFormPage';
 import { CreditSlipsPage } from '@/features/sales/pages/CreditSlipsPage';
 import { SalesInvoiceListPage } from '@/features/sales/pages/SalesInvoiceListPage';
 import { SalesInvoiceFormPage } from '@/features/sales/pages/SalesInvoiceFormPage';
@@ -43,12 +44,14 @@ import { PurchaseBillListPage } from '@/features/purchases/pages/PurchaseBillLis
 import { PurchaseBillWorkspace } from '@/features/purchases/pages/PurchaseBillWorkspace';
 import { SupplierOutstandingPage } from '@/features/purchases/pages/SupplierOutstandingPage';
 import { SuppliersPage } from '@/features/purchases/pages/SuppliersPage';
+import { SupplierFormPage } from '@/features/purchases/pages/SupplierFormPage';
 import { ItemsMasterPage } from '@/features/inventory/pages/ItemsMasterPage';
 import { ItemFormPage } from '@/features/inventory/pages/ItemFormPage';
 import { TaxTreatmentsPage } from '@/features/settings/pages/TaxTreatmentsPage';
 import { FuelStockDashboardPage } from '@/features/inventory/pages/FuelStockDashboardPage';
 import { TankLedgerPage } from '@/features/inventory/pages/TankLedgerPage';
 import { ItemStockPage } from '@/features/inventory/pages/ItemStockPage';
+import { ItemStockAdjustmentFormPage } from '@/features/inventory/pages/ItemStockAdjustmentFormPage';
 import { PaymentAccountsPage } from '@/features/finance/pages/PaymentAccountsPage';
 import { ExpensesPage } from '@/features/finance/pages/ExpensesPage';
 import { ExpenseFormPage } from '@/features/finance/pages/ExpenseFormPage';
@@ -236,6 +239,14 @@ export const router = createBrowserRouter([
         element: <CustomersPage />,
       },
       {
+        path: 'sales/customers/new',
+        element: <CustomerFormPage />,
+      },
+      {
+        path: 'sales/customers/:customerId/edit',
+        element: <CustomerFormPage />,
+      },
+      {
         path: 'sales/customers/:customerId',
         element: <CustomerDetailPage />,
       },
@@ -275,6 +286,14 @@ export const router = createBrowserRouter([
       {
         path: 'purchases/suppliers',
         element: <SuppliersPage />,
+      },
+      {
+        path: 'purchases/suppliers/new',
+        element: <SupplierFormPage />,
+      },
+      {
+        path: 'purchases/suppliers/:supplierId/edit',
+        element: <SupplierFormPage />,
       },
       {
         path: 'purchases/supplier-payments',
@@ -320,6 +339,10 @@ export const router = createBrowserRouter([
       {
         path: 'inventory/adjustments',
         element: <ItemStockPage />,
+      },
+      {
+        path: 'inventory/adjustments/new',
+        element: <ItemStockAdjustmentFormPage />,
       },
       {
         path: 'inventory/item-stock',

@@ -234,12 +234,14 @@ export const SearchableCombobox: React.FC<SearchableComboboxProps> = ({
           }}
           onFocus={() => {
             if (!disabled) {
-              setIsOpen(true);
               if (selectedOption) {
                 setSearchQuery(selectedOption.label);
               }
               if (inputRef.current) inputRef.current.select();
             }
+          }}
+          onClick={() => {
+            if (!disabled) setIsOpen(true);
           }}
           onKeyDown={handleKeyDown}
         />

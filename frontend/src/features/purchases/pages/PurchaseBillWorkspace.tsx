@@ -10,7 +10,6 @@ import {
   updatePurchaseBill,
   voidPurchaseBill,
   fetchSuppliers,
-  createSupplier,
   fetchFuelProducts,
   fetchPurchaseItems,
   fetchPurchaseTaxCodes,
@@ -91,15 +90,6 @@ export const PurchaseBillWorkspace: React.FC = () => {
   const [voidReason, setVoidReason] = useState('');
   const [voidLoading, setVoidLoading] = useState(false);
   const [voidError, setVoidError] = useState<string | null>(null);
-
-  // Quick Create Supplier Modal State
-  const [showQuickSupplierModal, setShowQuickSupplierModal] = useState(false);
-  const [quickSupplierName, setQuickSupplierName] = useState('');
-  const [quickSupplierCode, setQuickSupplierCode] = useState('');
-  const [quickSupplierPhone, setQuickSupplierPhone] = useState('');
-  const [quickSupplierTaxNumber, setQuickSupplierTaxNumber] = useState('');
-  const [quickSupplierLoading, setQuickSupplierLoading] = useState(false);
-  const [quickSupplierError, setQuickSupplierError] = useState<string | null>(null);
 
   // Form Fields
   const [supplierId, setSupplierId] = useState('');
@@ -384,6 +374,13 @@ export const PurchaseBillWorkspace: React.FC = () => {
   useEffect(() => {
     loadInitialData();
   }, [loadInitialData]);
+
+  useEffect(() => {
+    if (!activeOrgId) return;
+    const refreshSuppliers = () => fetchSuppliers(activeOrgId).then(setSuppliers).catch(() => undefined);
+    window.addEventListener('focus', refreshSuppliers);
+    return () => window.removeEventListener('focus', refreshSuppliers);
+  }, [activeOrgId]);
 
   // Item creation opens in a separate ERP page so the current bill remains
   // untouched. Refresh only the canonical selector when the user returns.
@@ -803,55 +800,9 @@ export const PurchaseBillWorkspace: React.FC = () => {
   }, [lines, adjustments]);
 
   // Quick Create Supplier Handler
-  const handleOpenQuickSupplier = (nameQuery: string) => {
-    setQuickSupplierName(nameQuery);
-    setQuickSupplierCode(nameQuery.replace(/[^A-Z0-9]/gi, '').slice(0, 6).toUpperCase() || 'SUP');
-    setQuickSupplierPhone('');
-    setQuickSupplierTaxNumber('');
-    setQuickSupplierError(null);
-    setShowQuickSupplierModal(true);
-  };
-
-  const handleCreateSupplierSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeOrgId) return;
-    if (!quickSupplierName.trim()) {
-      setQuickSupplierError('Supplier name is required.');
-      return;
-    }
-    if (!quickSupplierCode.trim()) {
-      setQuickSupplierError('Supplier code is required.');
-      return;
-    }
-
-    setQuickSupplierLoading(true);
-    setQuickSupplierError(null);
-    try {
-      const created = await createSupplier(activeOrgId, {
-        name: quickSupplierName.trim(),
-        code: quickSupplierCode.trim(),
-        phone: quickSupplierPhone.trim() || null,
-        tax_number: quickSupplierTaxNumber.trim() || null,
-        gst_registration_type: 'pending_review',
-        is_active: true,
-      });
-
-      setSuppliers((prev) => [...prev, created]);
-      setSupplierId(created.id);
-      setIsDirty(true);
-      setShowQuickSupplierModal(false);
-      showToast(`Supplier "${created.name}" created and selected.`, 'success');
-
-      setTimeout(() => {
-        const invInput = document.getElementById('field-invoice-number');
-        invInput?.focus();
-      }, 100);
-    } catch (err: any) {
-      console.error(err);
-      setQuickSupplierError(err?.data?.detail || err?.data?.code?.[0] || err.message || 'Failed to create supplier.');
-    } finally {
-      setQuickSupplierLoading(false);
-    }
+  const handleOpenQuickSupplier = (_nameQuery: string) => {
+    window.open('/app/purchases/suppliers/new', '_blank', 'noopener,noreferrer');
+    showToast('Supplier Master opened in a new tab. Return here after saving.', 'success');
   };
 
   // Save / Save & New Handler
@@ -1484,70 +1435,19 @@ export const PurchaseBillWorkspace: React.FC = () => {
               </div>
             </div>
 
-            {/* Bill-Level Transaction Discount */}
+            {/* Discount Scope */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Bill Discount:</span>
-              <select
-                className="input"
-                style={{ height: '28px', fontSize: '0.75rem', padding: '2px 6px' }}
-                value={transactionDiscountMethod}
-                disabled={isReadOnly}
-                onChange={(e: any) => {
-                  const m = e.target.value as 'none' | 'fixed_amount' | 'percentage';
-                  setTransactionDiscountMethod(m);
-                  if (m === 'none') {
-                    setTransactionDiscountAmount('0.00');
-                    setTransactionDiscountPercentage('');
-                  } else if (m === 'percentage') {
-                    setTransactionDiscountAmount('0.00');
-                  } else if (m === 'fixed_amount') {
-                    setTransactionDiscountPercentage('');
-                  }
+              <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Discount:</span>
+              <div className="erp-segmented-control">
+                <button type="button" className={discountMode === 'line' ? 'active' : ''} disabled={isReadOnly} onClick={() => {
+                  setDiscountMode('line'); setTransactionDiscountMethod('none'); setTransactionDiscountAmount('0.00'); setTransactionDiscountPercentage(''); setIsDirty(true);
+                }}>Item Level</button>
+                <button type="button" className={discountMode === 'transaction' ? 'active' : ''} disabled={isReadOnly} onClick={() => {
+                  setDiscountMode('transaction');
+                  setLines((current) => current.map((line) => ({ ...line, discount_method: 'none', discount_amount: '0.00', discount_percentage: '' })));
                   setIsDirty(true);
-                }}
-              >
-                <option value="none">None</option>
-                <option value="fixed_amount">Fixed Amount (Rs.)</option>
-                <option value="percentage">Percentage (%)</option>
-              </select>
-
-              {transactionDiscountMethod === 'fixed_amount' && (
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  className="input"
-                  style={{ width: '90px', height: '28px', fontSize: '0.8rem', padding: '2px 6px', textAlign: 'right', fontFamily: 'monospace' }}
-                  placeholder="0.00"
-                  value={transactionDiscountAmount}
-                  disabled={isReadOnly}
-                  onChange={(e) => {
-                    setTransactionDiscountAmount(e.target.value);
-                    setIsDirty(true);
-                  }}
-                />
-              )}
-
-              {transactionDiscountMethod === 'percentage' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="100"
-                    className="input"
-                    style={{ width: '70px', height: '28px', fontSize: '0.8rem', padding: '2px 6px', textAlign: 'right' }}
-                    placeholder="0%"
-                    value={transactionDiscountPercentage}
-                    disabled={isReadOnly}
-                    onChange={(e) => {
-                      setTransactionDiscountPercentage(e.target.value);
-                      setIsDirty(true);
-                    }}
-                  />
-                  <span>%</span>
-                </div>
-              )}
+                }}>Transaction Level</button>
+              </div>
             </div>
           </div>
         )}
@@ -1702,12 +1602,42 @@ export const PurchaseBillWorkspace: React.FC = () => {
           taxTreatments={taxTreatments}
           isVoided={isReadOnly}
           taxPriceMode={taxPriceMode}
+          discountMode={discountMode}
           onUpdateLine={handleUpdateProductLine}
           onRemoveLine={handleRemoveProductLine}
           onAddLine={handleAddProductLine}
           onCreateItem={() => window.open('/app/inventory/items/new', '_blank', 'noopener,noreferrer')}
         />
       </div>
+
+      {!isLegacy && discountMode === 'transaction' && (
+        <section className="erp-document-card transaction-discount-card">
+          <div>
+            <span className="erp-section-kicker">Transaction discount</span>
+            <strong>Apply one discount to the complete bill</strong>
+            <small>Item-level discount columns are hidden while this mode is selected.</small>
+          </div>
+          <label>Method
+            <select className="input" value={transactionDiscountMethod} disabled={isReadOnly} onChange={(e) => {
+              const method = e.target.value as 'none' | 'fixed_amount' | 'percentage';
+              setTransactionDiscountMethod(method);
+              if (method !== 'fixed_amount') setTransactionDiscountAmount('0.00');
+              if (method !== 'percentage') setTransactionDiscountPercentage('');
+              setIsDirty(true);
+            }}>
+              <option value="none">No discount</option>
+              <option value="fixed_amount">Fixed Amount (₹)</option>
+              <option value="percentage">Percentage (%)</option>
+            </select>
+          </label>
+          {transactionDiscountMethod === 'fixed_amount' && <label>Discount Amount
+            <input className="input number-input" type="number" min="0" step="0.01" value={transactionDiscountAmount} disabled={isReadOnly} onChange={(e) => { setTransactionDiscountAmount(e.target.value); setIsDirty(true); }}/>
+          </label>}
+          {transactionDiscountMethod === 'percentage' && <label>Discount Percentage
+            <div className="input-with-suffix"><input className="input number-input" type="number" min="0" max="100" step="0.01" value={transactionDiscountPercentage} disabled={isReadOnly} onChange={(e) => { setTransactionDiscountPercentage(e.target.value); setIsDirty(true); }}/><span>%</span></div>
+          </label>}
+        </section>
+      )}
 
       {/* 3. Legacy Adjustments Section (for legacy bills) OR V2 Other Charges Section */}
       {isLegacy ? (
@@ -1990,148 +1920,6 @@ export const PurchaseBillWorkspace: React.FC = () => {
                 Apply &amp; Recalculate
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Quick Create Supplier Modal */}
-      {showQuickSupplierModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 10000
-          }}
-        >
-          <div
-            className="card"
-            style={{
-              width: '100%',
-              maxWidth: '440px',
-              padding: 'var(--space-md)',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)'
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 'var(--space-md)',
-                borderBottom: '1px solid var(--border-color)',
-                paddingBottom: 'var(--space-xs)'
-              }}
-            >
-              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>Add New Supplier</h3>
-              <button
-                type="button"
-                onClick={() => setShowQuickSupplierModal(false)}
-                className="btn-icon"
-                style={{ padding: '2px' }}
-              >
-                &times;
-              </button>
-            </div>
-
-            {quickSupplierError && (
-              <div
-                className="alert alert-danger"
-                style={{ marginBottom: 'var(--space-sm)', padding: 'var(--space-xs) var(--space-sm)' }}
-              >
-                {quickSupplierError}
-              </div>
-            )}
-
-            <form onSubmit={handleCreateSupplierSubmit}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-                <div>
-                  <label className="label" style={{ fontSize: '0.75rem', marginBottom: '2px' }}>
-                    Supplier Name <span style={{ color: 'var(--color-danger-text)' }}>*</span>
-                  </label>
-                  <input
-                    type="text"
-                    className="input"
-                    required
-                    style={{ height: '34px', fontSize: '0.85rem' }}
-                    value={quickSupplierName}
-                    onChange={(e) => setQuickSupplierName(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-
-                <div>
-                  <label className="label" style={{ fontSize: '0.75rem', marginBottom: '2px' }}>
-                    Supplier Code <span style={{ color: 'var(--color-danger-text)' }}>*</span>
-                  </label>
-                  <input
-                    type="text"
-                    className="input"
-                    required
-                    placeholder="e.g. SHELL-PK"
-                    style={{ height: '34px', fontSize: '0.85rem', fontFamily: 'monospace' }}
-                    value={quickSupplierCode}
-                    onChange={(e) => setQuickSupplierCode(e.target.value.toUpperCase())}
-                  />
-                </div>
-
-                <div>
-                  <label className="label" style={{ fontSize: '0.75rem', marginBottom: '2px' }}>
-                    Phone Number
-                  </label>
-                  <input
-                    type="text"
-                    className="input"
-                    style={{ height: '34px', fontSize: '0.85rem' }}
-                    value={quickSupplierPhone}
-                    onChange={(e) => setQuickSupplierPhone(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <label className="label" style={{ fontSize: '0.75rem', marginBottom: '2px' }}>
-                    Tax / GSTIN Number
-                  </label>
-                  <input
-                    type="text"
-                    className="input"
-                    style={{ height: '34px', fontSize: '0.85rem', fontFamily: 'monospace' }}
-                    value={quickSupplierTaxNumber}
-                    onChange={(e) => setQuickSupplierTaxNumber(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'flex-end',
-                  gap: 'var(--space-sm)',
-                  marginTop: 'var(--space-md)',
-                  paddingTop: 'var(--space-sm)',
-                  borderTop: '1px solid var(--border-color)'
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setShowQuickSupplierModal(false)}
-                  className="btn btn-secondary btn-sm"
-                  disabled={quickSupplierLoading}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary btn-sm"
-                  disabled={quickSupplierLoading}
-                >
-                  {quickSupplierLoading ? 'Saving...' : 'Save Supplier'}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

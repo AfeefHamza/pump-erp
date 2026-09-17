@@ -697,7 +697,7 @@ export const ShiftCardWorkspace: React.FC = () => {
   }
 
   return (
-    <div className="management-page" style={{ padding: '1.5rem', maxWidth: '1600px', margin: '0 auto' }}>
+    <div className="erp-page shift-card-erp-page" style={{ maxWidth: '1600px', margin: '0 auto' }}>
       {/* Top Breadcrumb & Title */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <button
@@ -730,7 +730,7 @@ export const ShiftCardWorkspace: React.FC = () => {
 
       <PageHeader
         title={existingCard ? `Edit Shift Card #${existingCard.sequence}` : "New Employee Shift Card"}
-        subtitle="Record employee nozzle meter readings, cash collections, card/UPI slips, and credit sales."
+        subtitle="ERP shift document for nozzle totalizers, collections, credit and attendant reconciliation."
       />
 
       {/* Lock Alert Banner if Shift is Locked */}
@@ -796,7 +796,7 @@ export const ShiftCardWorkspace: React.FC = () => {
       )}
 
       {/* Header Parameters Panel */}
-      <div className="card" style={{ padding: '1.25rem 1.5rem', marginBottom: '1.5rem', background: 'var(--color-surface, #fff)' }}>
+      <div className="card shift-document-header" style={{ padding: '1.25rem 1.5rem', marginBottom: '1.5rem', background: 'var(--color-surface, #fff)' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', alignItems: 'end' }}>
           {/* Business Date */}
           <div>

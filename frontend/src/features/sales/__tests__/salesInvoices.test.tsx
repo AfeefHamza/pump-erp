@@ -43,7 +43,7 @@ describe('Sales milestone', () => {
   it('uses a full-page item invoice workspace with canonical items', async () => {
     renderPage(<SalesInvoiceFormPage />);
     expect(await screen.findByText('New Sales Invoice')).toBeInTheDocument();
-    fireEvent.focus(await screen.findByLabelText('Item 1'));
+    fireEvent.click(await screen.findByLabelText('Item 1'));
     expect(await screen.findByRole('option', { name: /Engine Oil/ })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: /Petrol/ })).not.toBeInTheDocument();
     expect(screen.getByText(/Fuel sales recorded at the meter/)).toBeInTheDocument();
@@ -51,7 +51,7 @@ describe('Sales milestone', () => {
 
   it('adds an existing meter Credit Slip without manual fuel entry', async () => {
     renderPage(<SalesInvoiceFormPage />);
-    fireEvent.focus(await screen.findByLabelText('Customer'));
+    fireEvent.click(await screen.findByLabelText('Customer'));
     fireEvent.click(await screen.findByRole('option', { name: /ABC Travels/ }));
     await screen.findByText('CS-001');
     fireEvent.click(screen.getByRole('button', { name: 'Add to invoice' }));

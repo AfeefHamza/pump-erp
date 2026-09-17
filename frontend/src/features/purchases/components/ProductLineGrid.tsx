@@ -23,6 +23,7 @@ export interface ProductLineGridProps {
   taxTreatments?: TaxTreatment[];
   isVoided: boolean;
   taxPriceMode?: 'exclusive' | 'inclusive';
+  discountMode?: 'line' | 'transaction';
   onUpdateLine: (index: number, field: keyof InternalLineItem, value: any) => void;
   onRemoveLine: (index: number) => void;
   onAddLine: () => void;
@@ -38,6 +39,7 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
   taxTreatments = [],
   isVoided,
   taxPriceMode = 'exclusive',
+  discountMode = 'line',
   onUpdateLine,
   onRemoveLine,
   onAddLine,
@@ -121,8 +123,14 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
         const rateInput = document.getElementById(`line-rate-${rowIndex}`);
         rateInput?.focus();
       } else if (currentField === 'rate') {
-        const discountInput = document.getElementById(`line-discount-${rowIndex}`);
-        discountInput?.focus();
+        if (discountMode === 'line') {
+          const discountInput = document.getElementById(`line-discount-${rowIndex}`);
+          discountInput?.focus();
+        } else if (isLastRow) {
+          onAddLine();
+        } else {
+          document.getElementById(`line-product-${rowIndex + 1}`)?.focus();
+        }
       } else if (currentField === 'discount') {
         if (isLastRow) {
           onAddLine();
@@ -193,7 +201,7 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
               <th style={{ width: '100px', textAlign: 'right', padding: '6px 8px' }}>
                 Rate {taxPriceMode === 'inclusive' ? '(Incl.)' : ''}
               </th>
-              <th style={{ width: '130px', padding: '6px 8px' }}>Discount</th>
+              {discountMode === 'line' && <th style={{ width: '130px', padding: '6px 8px' }}>Discount</th>}
               <th style={{ width: '130px', padding: '6px 8px' }}>Tax Treatment</th>
               <th style={{ width: '85px', textAlign: 'right', padding: '6px 8px' }}>Tax</th>
               <th style={{ width: '105px', textAlign: 'right', padding: '6px 8px' }}>Amount</th>
@@ -421,7 +429,7 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
                     </td>
 
                     {/* Discount with Explicit Method */}
-                    <td style={{ padding: '4px 6px' }}>
+                    {discountMode === 'line' && <td style={{ padding: '4px 6px' }}>
                       <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
                         <select
                           className="input"
@@ -490,7 +498,7 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
                           />
                         )}
                       </div>
-                    </td>
+                    </td>}
 
                     {/* Tax Treatment */}
                     <td style={{ padding: '4px 6px' }}>
@@ -549,7 +557,7 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
                   {isPetroleum && (
                     <tr style={{ background: '#f8fafc', borderBottom: '1px solid var(--border-color)', fontSize: '0.75rem' }}>
                       <td colSpan={2}></td>
-                      <td colSpan={10} style={{ padding: '4px 8px' }}>
+                      <td colSpan={discountMode === 'line' ? 10 : 9} style={{ padding: '4px 8px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <button
                             type="button"
@@ -595,7 +603,7 @@ export const ProductLineGrid: React.FC<ProductLineGridProps> = ({
                   {isQtyOverridden && (
                     <tr style={{ background: 'var(--color-warning-bg)', borderBottom: '1px solid var(--border-color)' }}>
                       <td colSpan={2}></td>
-                      <td colSpan={10} style={{ padding: '4px 8px' }}>
+                      <td colSpan={discountMode === 'line' ? 10 : 9} style={{ padding: '4px 8px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', color: 'var(--color-warning-text)' }}>
                           <AlertCircle size={14} style={{ flexShrink: 0 }} />
                           <span>

@@ -3195,6 +3195,10 @@ export async function fetchSuppliers(orgId: string): Promise<Supplier[]> {
   return apiRequest<Supplier[]>(`/organisations/${orgId}/suppliers/`);
 }
 
+export async function fetchSupplier(orgId: string, supplierId: string): Promise<Supplier> {
+  return apiRequest<Supplier>(`/organisations/${orgId}/suppliers/${supplierId}/`);
+}
+
 export async function createSupplier(orgId: string, data: Partial<Supplier>): Promise<Supplier> {
   return apiRequest<Supplier>(`/organisations/${orgId}/suppliers/`, {
     method: 'POST',
