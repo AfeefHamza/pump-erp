@@ -10,11 +10,13 @@ import * as api from '@/api/client';
 import { ReportsHubPage } from '../pages/ReportsHubPage';
 import { DailyBusinessSummaryPage } from '../pages/DailyBusinessSummaryPage';
 import { EmployeeAccountabilityPage } from '../pages/EmployeeAccountabilityPage';
+import { CoreRegistersPage } from '../pages/CoreRegistersPage';
 
 vi.mock('@/api/client', () => ({
   fetchDailyBusinessSummary: vi.fn(),
   fetchEmployeeAccountabilityReport: vi.fn(),
   fetchEmployees: vi.fn(),
+  fetchCoreReportPack: vi.fn(),
 }));
 
 const store = () => configureStore({
@@ -50,6 +52,14 @@ beforeEach(() => {
     employees: [{ employee_id: 'emp-1', employee_code: 'EMP-1', employee_name: 'Asha', shift_count: 1, expected_sales: '10000.00', cash: '4000.00', card: '2500.00', upi: '2000.00', fleet_card: '1500.00', digital: '6000.00', credit: '0.00', approved_increases: '0.00', approved_decreases: '0.00', accounted: '10000.00', shortage: '0.00', excess: '0.00' }],
     details: [{ settlement_id: 'settlement-1', shift_id: 'shift-1', shift_card_id: 'card-1', employee_id: 'emp-1', employee_code: 'EMP-1', employee_name: 'Asha', business_date: '2026-09-16', shift_name: 'Day Shift', expected_sales: '10000.00', cash: '4000.00', card: '2500.00', upi: '2000.00', fleet_card: '1500.00', credit: '0.00', approved_increases: '0.00', approved_decreases: '0.00', accounted: '10000.00', shortage: '0.00', excess: '0.00', result: 'balanced' }],
   });
+  vi.mocked(api.fetchCoreReportPack).mockResolvedValue({
+    filters: { from_date: '2026-09-16', to_date: '2026-09-16' },
+    basis: { sales: 'Active invoice documents.', purchases: 'Active purchase bills.', stock: 'Append-only stock ledger.', payments: 'Locked shift postings.' },
+    sales: { count: 1, truncated: false, totals: { subtotal: '1000.00', tax: '180.00', total: '1180.00', paid: '0.00', outstanding: '1180.00' }, rows: [{ invoice_id: 'invoice-1', invoice_number: 'SI-001', invoice_date: '2026-09-16', due_date: '2026-09-16', invoice_type: 'credit', customer_name: 'ABC Customer', payment_method: null, subtotal: '1000.00', tax_total: '180.00', grand_total: '1180.00', amount_paid: '0.00', outstanding: '1180.00', contains_credit_slips: true }] },
+    purchases: { count: 0, truncated: false, totals: { taxable: '0.00', tax: '0.00', total: '0.00', paid: '0.00', outstanding: '0.00' }, rows: [] },
+    stock: { count: 1, truncated: false, totals: { inward: '0.000', outward: '10.000', net: '-10.000' }, rows: [{ movement_id: 'movement-1', tank_id: 'tank-1', business_date: '2026-09-16', effective_at: '2026-09-16T12:00:00Z', tank_code: 'TK-1', product_name: 'Petrol', movement_type: 'nozzle_dispensing', movement_label: 'Nozzle Gross Dispensing', direction: 'OUT', quantity: '10.000', source_type: 'shift_card_meter', source_id: 'shift-1', reason: '' }] },
+    payments: { count: 1, truncated: false, totals: { cash: '400.00', card: '300.00', upi: '200.00', fleet_card: '100.00', credit: '0.00', digital: '600.00', total: '1000.00' }, rows: [{ posting_id: 'posting-1', shift_id: 'shift-1', business_date: '2026-09-16', shift_name: 'Day Shift', cash: '400.00', card: '300.00', upi: '200.00', fleet_card: '100.00', credit: '0.00', total: '1000.00' }] },
+  });
 });
 
 describe('Reports', () => {
@@ -79,5 +89,14 @@ describe('Reports', () => {
     ));
     expect(screen.getAllByText('₹6,000.00').length).toBeGreaterThan(0);
     expect(screen.getByText('₹2,500.00 / ₹2,000.00 / ₹1,500.00')).toBeInTheDocument();
+  });
+
+  it('shows invoice-register totals and identifies credit-slip billing', async () => {
+    render(<Provider store={store()}><MemoryRouter initialEntries={['/app/reports/core-registers?section=sales']}><CoreRegistersPage /></MemoryRouter></Provider>);
+    expect(await screen.findByText('SI-001')).toBeInTheDocument();
+    expect(screen.getByText('ABC Customer')).toBeInTheDocument();
+    expect(screen.getByText('Credit-slip billing')).toBeInTheDocument();
+    expect(screen.getAllByText('₹1,180.00').length).toBeGreaterThan(0);
+    await waitFor(() => expect(api.fetchCoreReportPack).toHaveBeenCalledWith('org-1', 'outlet-1', expect.any(Object)));
   });
 });

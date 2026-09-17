@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, ChevronRight, Users } from 'lucide-react';
+import { BarChart3, ChevronRight, CreditCard, FileText, Fuel, ShoppingBag, Truck, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/navigation/PageHeader';
 
@@ -15,6 +15,42 @@ const reports = [
     description: 'Employee-wise sales responsibility, collection methods, approved adjustments, shortages and excesses.',
     path: '/app/reports/employee-accountability',
     icon: Users,
+  },
+  {
+    title: 'Sales Invoice Register',
+    description: 'Active sales invoice documents, taxes, payments and outstanding balances.',
+    path: '/app/reports/core-registers?section=sales',
+    icon: FileText,
+  },
+  {
+    title: 'Purchase Register',
+    description: 'Recorded supplier bills with taxable value, taxes, payments and outstanding.',
+    path: '/app/reports/core-registers?section=purchases',
+    icon: ShoppingBag,
+  },
+  {
+    title: 'Fuel Stock Movement',
+    description: 'Tank-wise inward, outward and reversal movements from the append-only stock ledger.',
+    path: '/app/reports/core-registers?section=stock',
+    icon: Fuel,
+  },
+  {
+    title: 'Payment Mode Summary',
+    description: 'Cash, card, UPI, fleet card and credit from financially locked shifts.',
+    path: '/app/reports/core-registers?section=payments',
+    icon: CreditCard,
+  },
+  {
+    title: 'Customer Outstanding',
+    description: 'Customer receivables and unbilled fuel-credit balances.',
+    path: '/app/sales/customer-outstanding',
+    icon: Users,
+  },
+  {
+    title: 'Supplier Outstanding',
+    description: 'Supplier payables, overdue bills, advances and ageing.',
+    path: '/app/purchases/supplier-outstanding',
+    icon: Truck,
   },
 ];
 

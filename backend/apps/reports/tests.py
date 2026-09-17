@@ -135,3 +135,20 @@ class ReportingApiTests(ShiftCardBaseTestCase):
             f'/api/v1/organisations/{self.org.id}/outlets/{self.outlet.id}/dashboard/',
         )
         self.assertEqual(response.status_code, 403)
+
+    def test_core_registers_use_active_documents_ledgers_and_locked_shift_postings(self):
+        response = self.client.get(
+            f'/api/v1/organisations/{self.org.id}/outlets/{self.outlet.id}/reports/core-registers/',
+            {'from_date': '2026-09-01', 'to_date': '2026-09-01'},
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['sales']['count'], 0)
+        self.assertEqual(response.data['purchases']['count'], 0)
+        self.assertEqual(response.data['payments']['count'], 1)
+        self.assertEqual(response.data['payments']['totals']['cash'], '4000.00')
+        self.assertEqual(response.data['payments']['totals']['digital'], '6000.00')
+        self.assertEqual(response.data['payments']['totals']['total'], '10000.00')
+        self.assertGreater(response.data['stock']['count'], 0)
+        self.assertEqual(response.data['stock']['totals']['outward'], '100.000')
+        self.assertEqual(response.data['stock']['rows'][0]['tank_id'], str(self.tank.id))
+        self.assertIn('not additional meter-sale revenue', response.data['basis']['sales'])

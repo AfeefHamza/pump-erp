@@ -72,6 +72,7 @@ import { AccountLedgerPage } from '@/features/accounting/pages/AccountLedgerPage
 import { ReportsHubPage } from '@/features/reports/pages/ReportsHubPage';
 import { DailyBusinessSummaryPage } from '@/features/reports/pages/DailyBusinessSummaryPage';
 import { EmployeeAccountabilityPage } from '@/features/reports/pages/EmployeeAccountabilityPage';
+import { CoreRegistersPage } from '@/features/reports/pages/CoreRegistersPage';
 import { useParams, useLocation } from 'react-router-dom';
 
 const RedirectWithSearchAndHash: React.FC<{ getDest: (params: Record<string, string | undefined>) => string }> = ({ getDest }) => {
@@ -479,6 +480,10 @@ export const router = createBrowserRouter([
       {
         path: 'reports/employee-accountability',
         element: <EmployeeAccountabilityPage />,
+      },
+      {
+        path: 'reports/core-registers',
+        element: <CoreRegistersPage />,
       },
       // Redirects for Administration backward compatibility
       {
