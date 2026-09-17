@@ -3,12 +3,13 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from apps.accounting.models import ShiftAccountingPosting
 from apps.core.timezone_utils import to_outlet_business_date
 from apps.finance.selectors import digital_settlement_summary
+from apps.inventory.models import TankStockMovement
 from apps.inventory.selectors import get_tank_stock_summary
 from apps.purchases.selectors import get_supplier_outstanding_summary
 from apps.sales.selectors import customer_outstanding
@@ -163,6 +164,128 @@ def management_dashboard(organisation, outlet):
             'pending_amount': _money(digital['pending_amount']),
         },
         'alerts': alerts,
+    }
+
+
+def core_report_pack(organisation, outlet, from_date, to_date):
+    sales_qs = SalesInvoice.objects.filter(
+        organisation=organisation, outlet=outlet, status=SalesInvoice.STATUS_ACTIVE,
+        invoice_date__range=(from_date, to_date),
+    ).prefetch_related('lines').order_by('-invoice_date', '-created_at')
+    sales_totals = sales_qs.aggregate(
+        subtotal=Sum('subtotal'), tax=Sum('tax_total'), total=Sum('grand_total'),
+        paid=Sum('amount_paid'), outstanding=Sum('outstanding_amount'),
+    )
+    sales_rows = []
+    for invoice in sales_qs[:1000]:
+        contains_credit_slips = any(line.source_type == SalesInvoiceLine.SOURCE_CREDIT_SLIP for line in invoice.lines.all())
+        sales_rows.append({
+            'invoice_id': str(invoice.id), 'invoice_number': invoice.invoice_number,
+            'invoice_date': invoice.invoice_date.isoformat(), 'due_date': invoice.due_date.isoformat(),
+            'invoice_type': invoice.invoice_type, 'customer_name': invoice.customer_name_snapshot,
+            'payment_method': invoice.payment_method or None,
+            'subtotal': _money(invoice.subtotal), 'tax_total': _money(invoice.tax_total),
+            'grand_total': _money(invoice.grand_total), 'amount_paid': _money(invoice.amount_paid),
+            'outstanding': _money(invoice.outstanding_amount),
+            'contains_credit_slips': contains_credit_slips,
+        })
+
+    purchase_qs = PurchaseBill.objects.filter(
+        organisation=organisation, outlet=outlet, status=PurchaseBill.STATUS_ACTIVE,
+        invoice_date__range=(from_date, to_date),
+    ).order_by('-invoice_date', '-created_at')
+    purchase_totals = purchase_qs.aggregate(
+        taxable=Sum('taxable_value_total'), tax=Sum('tax_total'), total=Sum('grand_total'),
+        paid=Sum('amount_paid'), outstanding=Sum('outstanding_amount'),
+    )
+    purchase_rows = [{
+        'bill_id': str(bill.id), 'bill_number': bill.bill_number,
+        'supplier_invoice_number': bill.supplier_invoice_number,
+        'invoice_date': bill.invoice_date.isoformat(), 'due_date': bill.due_date.isoformat(),
+        'supplier_name': bill.supplier_name_snapshot, 'purchase_type': bill.purchase_type,
+        'taxable_value': _money(bill.taxable_value_total), 'tax_total': _money(bill.tax_total),
+        'grand_total': _money(bill.grand_total), 'amount_paid': _money(bill.amount_paid),
+        'outstanding': _money(bill.outstanding_amount),
+    } for bill in purchase_qs[:1000]]
+
+    movement_qs = TankStockMovement.objects.filter(
+        organisation=organisation, outlet=outlet, business_date__range=(from_date, to_date),
+    ).select_related('tank', 'fuel_product').order_by('-effective_at', '-created_at')
+    movement_totals = movement_qs.aggregate(
+        inward=Sum('quantity', filter=Q(direction=TankStockMovement.DIR_IN)),
+        outward=Sum('quantity', filter=Q(direction=TankStockMovement.DIR_OUT)),
+    )
+    stock_rows = [{
+        'movement_id': str(movement.id), 'tank_id': str(movement.tank_id),
+        'business_date': movement.business_date.isoformat() if movement.business_date else None,
+        'effective_at': movement.effective_at.isoformat(), 'tank_code': movement.tank.code,
+        'product_name': movement.product_name_snapshot, 'movement_type': movement.movement_type,
+        'movement_label': movement.get_movement_type_display(), 'direction': movement.direction,
+        'quantity': _quantity(movement.quantity), 'source_type': movement.source_type,
+        'source_id': str(movement.source_id), 'reason': movement.reason or '',
+    } for movement in movement_qs[:1000]]
+
+    postings = ShiftAccountingPosting.objects.filter(
+        organisation=organisation, outlet=outlet, status=ShiftAccountingPosting.STATUS_ACTIVE,
+        operational_shift__business_date__range=(from_date, to_date),
+    ).select_related('operational_shift__shift_definition').order_by(
+        '-operational_shift__business_date', '-operational_shift__shift_definition__display_order',
+    )
+    payment_totals = postings.aggregate(
+        cash=Sum('cash_amount'), card=Sum('card_amount'), upi=Sum('upi_amount'),
+        fleet_card=Sum('fleet_card_amount'), credit=Sum('credit_slip_amount'),
+    )
+    payment_rows = [{
+        'posting_id': str(posting.id), 'shift_id': str(posting.operational_shift_id),
+        'business_date': posting.operational_shift.business_date.isoformat(),
+        'shift_name': posting.operational_shift.shift_definition.name,
+        'cash': _money(posting.cash_amount), 'card': _money(posting.card_amount),
+        'upi': _money(posting.upi_amount), 'fleet_card': _money(posting.fleet_card_amount),
+        'credit': _money(posting.credit_slip_amount), 'total': _money(
+            posting.cash_amount + posting.card_amount + posting.upi_amount
+            + posting.fleet_card_amount + posting.credit_slip_amount
+        ),
+    } for posting in postings[:1000]]
+
+    return {
+        'filters': {'from_date': from_date.isoformat(), 'to_date': to_date.isoformat()},
+        'basis': {
+            'sales': 'Active sales invoice documents. Credit-slip billing is identified and is not additional meter-sale revenue.',
+            'purchases': 'Active recorded purchase bills.',
+            'stock': 'Append-only tank stock ledger movements, including reversals.',
+            'payments': 'Collection modes from active accounting postings for financially locked shifts only.',
+        },
+        'sales': {
+            'count': sales_qs.count(),
+            'totals': {key: _money(value) for key, value in sales_totals.items()},
+            'rows': sales_rows, 'truncated': sales_qs.count() > len(sales_rows),
+        },
+        'purchases': {
+            'count': purchase_qs.count(),
+            'totals': {key: _money(value) for key, value in purchase_totals.items()},
+            'rows': purchase_rows, 'truncated': purchase_qs.count() > len(purchase_rows),
+        },
+        'stock': {
+            'count': movement_qs.count(),
+            'totals': {
+                'inward': _quantity(movement_totals['inward']),
+                'outward': _quantity(movement_totals['outward']),
+                'net': _quantity((movement_totals['inward'] or ZERO) - (movement_totals['outward'] or ZERO)),
+            },
+            'rows': stock_rows, 'truncated': movement_qs.count() > len(stock_rows),
+        },
+        'payments': {
+            'count': postings.count(),
+            'totals': {
+                **{key: _money(value) for key, value in payment_totals.items()},
+                'digital': _money(
+                    (payment_totals['card'] or ZERO) + (payment_totals['upi'] or ZERO)
+                    + (payment_totals['fleet_card'] or ZERO)
+                ),
+                'total': _money(sum((value or ZERO for value in payment_totals.values()), ZERO)),
+            },
+            'rows': payment_rows, 'truncated': postings.count() > len(payment_rows),
+        },
     }
 
 

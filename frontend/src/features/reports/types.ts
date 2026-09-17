@@ -54,3 +54,45 @@ export interface EmployeeAccountabilityReport {
     shortage: string; excess: string; result: 'balanced' | 'shortage' | 'excess';
   }>;
 }
+
+export interface CoreReportPack {
+  filters: { from_date: string; to_date: string };
+  basis: { sales: string; purchases: string; stock: string; payments: string };
+  sales: {
+    count: number; truncated: boolean;
+    totals: { subtotal: string; tax: string; total: string; paid: string; outstanding: string };
+    rows: Array<{
+      invoice_id: string; invoice_number: string; invoice_date: string; due_date: string;
+      invoice_type: string; customer_name: string; payment_method: string | null;
+      subtotal: string; tax_total: string; grand_total: string; amount_paid: string;
+      outstanding: string; contains_credit_slips: boolean;
+    }>;
+  };
+  purchases: {
+    count: number; truncated: boolean;
+    totals: { taxable: string; tax: string; total: string; paid: string; outstanding: string };
+    rows: Array<{
+      bill_id: string; bill_number: string; supplier_invoice_number: string;
+      invoice_date: string; due_date: string; supplier_name: string; purchase_type: string;
+      taxable_value: string; tax_total: string; grand_total: string;
+      amount_paid: string; outstanding: string;
+    }>;
+  };
+  stock: {
+    count: number; truncated: boolean;
+    totals: { inward: string; outward: string; net: string };
+    rows: Array<{
+      movement_id: string; tank_id: string; business_date: string | null; effective_at: string;
+      tank_code: string; product_name: string; movement_type: string; movement_label: string;
+      direction: 'IN' | 'OUT'; quantity: string; source_type: string; source_id: string; reason: string;
+    }>;
+  };
+  payments: {
+    count: number; truncated: boolean;
+    totals: { cash: string; card: string; upi: string; fleet_card: string; credit: string; digital: string; total: string };
+    rows: Array<{
+      posting_id: string; shift_id: string; business_date: string; shift_name: string;
+      cash: string; card: string; upi: string; fleet_card: string; credit: string; total: string;
+    }>;
+  };
+}

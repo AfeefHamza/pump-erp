@@ -18,7 +18,7 @@ import type {
   LedgerAccountInput,
   TrialBalance,
 } from '@/features/accounting/types';
-import type { DailyBusinessSummary, EmployeeAccountabilityReport } from '@/features/reports/types';
+import type { CoreReportPack, DailyBusinessSummary, EmployeeAccountabilityReport } from '@/features/reports/types';
 import type { ManagementDashboard } from '@/features/dashboard/types';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
@@ -4124,6 +4124,17 @@ export async function unlockAccountingPeriod(orgId: string, lockId: string, reas
 
 export async function fetchManagementDashboard(orgId: string, outletId: string): Promise<ManagementDashboard> {
   return apiRequest<ManagementDashboard>(`/organisations/${orgId}/outlets/${outletId}/dashboard/`);
+}
+
+export async function fetchCoreReportPack(
+  orgId: string,
+  outletId: string,
+  params: { from_date: string; to_date: string },
+): Promise<CoreReportPack> {
+  const query = new URLSearchParams(params);
+  return apiRequest<CoreReportPack>(
+    `/organisations/${orgId}/outlets/${outletId}/reports/core-registers/?${query.toString()}`,
+  );
 }
 
 export async function fetchDailyBusinessSummary(
