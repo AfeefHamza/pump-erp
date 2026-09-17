@@ -5,10 +5,10 @@ import {
   type FuelCreditSlip,
   fetchCustomers,
   fetchCustomerCreditPosition,
+  fetchOperationalShifts,
   fetchOperationalShiftDetail,
   createShiftCreditSlip,
 } from '@/api/client';
-import { CustomerDrawer } from './CustomerDrawer';
 
 interface CreditSlipDrawerProps {
   isOpen: boolean;
@@ -16,7 +16,7 @@ interface CreditSlipDrawerProps {
   onSuccess: (slip?: FuelCreditSlip) => void;
   orgId: string;
   outletId: string;
-  shiftId: string;
+  shiftId?: string;
   preselectedEmployeeId?: string;
   preselectedNozzleId?: string;
 }
@@ -32,7 +32,9 @@ export const CreditSlipDrawer: React.FC<CreditSlipDrawerProps> = ({
   preselectedNozzleId,
 }) => {
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [shifts, setShifts] = useState<any[]>([]);
   const [shiftData, setShiftData] = useState<any | null>(null);
+  const [selectedShiftId, setSelectedShiftId] = useState(shiftId || '');
 
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [customerPosition, setCustomerPosition] = useState<any | null>(null);
@@ -47,23 +49,40 @@ export const CreditSlipDrawer: React.FC<CreditSlipDrawerProps> = ({
   const [occurredAt, setOccurredAt] = useState('');
   const [notes, setNotes] = useState('');
 
-  const [isQuickCustomerOpen, setIsQuickCustomerOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isOpen && orgId && outletId && shiftId) {
+    if (isOpen && orgId && outletId) {
       fetchCustomers(orgId, { status: 'active' })
         .then((custs) => setCustomers(custs))
         .catch((e: any) => console.error(e));
+      fetchOperationalShifts(orgId, outletId)
+        .then((response: any) => {
+          const available = response.shifts || [];
+          setShifts(available);
+          setSelectedShiftId((current) => current || shiftId || available[0]?.id || '');
+        })
+        .catch((e: any) => console.error(e));
+    }
+  }, [isOpen, orgId, outletId, shiftId]);
 
-      fetchOperationalShiftDetail(orgId, outletId, shiftId)
+  useEffect(() => {
+    if (!isOpen || !orgId) return;
+    const refreshCustomers = () => fetchCustomers(orgId, { status: 'active' }).then(setCustomers).catch(() => undefined);
+    window.addEventListener('focus', refreshCustomers);
+    return () => window.removeEventListener('focus', refreshCustomers);
+  }, [isOpen, orgId]);
+
+  useEffect(() => {
+    if (isOpen && orgId && outletId && selectedShiftId) {
+      fetchOperationalShiftDetail(orgId, outletId, selectedShiftId)
         .then((s: any) => {
           setShiftData(s);
-          if (!selectedEmployeeId && s.shift?.staff_members?.length > 0) {
+          if (s.shift?.staff_members?.length > 0) {
             const firstStaff = s.shift.staff_members[0];
             const firstEmpId = firstStaff.source_employee || firstStaff.source_employee_id || firstStaff.id;
-            if (firstEmpId) setSelectedEmployeeId(firstEmpId);
+            if (firstEmpId) setSelectedEmployeeId((current) => current || firstEmpId);
           }
           if (s.shift?.status === 'closed' && s.shift?.closed_at) {
             setOccurredAt(new Date(s.shift.closed_at).toISOString().slice(0, 16));
@@ -73,7 +92,7 @@ export const CreditSlipDrawer: React.FC<CreditSlipDrawerProps> = ({
         })
         .catch((e: any) => console.error(e));
     }
-  }, [isOpen, orgId, outletId, shiftId]);
+  }, [isOpen, orgId, outletId, selectedShiftId]);
 
   useEffect(() => {
     if (preselectedEmployeeId) setSelectedEmployeeId(preselectedEmployeeId);
@@ -120,6 +139,10 @@ export const CreditSlipDrawer: React.FC<CreditSlipDrawerProps> = ({
       setError('Please select a customer.');
       return;
     }
+    if (!selectedShiftId) {
+      setError('Please select the shift in which the fuel was dispensed.');
+      return;
+    }
     if (!selectedEmployeeId) {
       setError('Please select an attendant.');
       return;
@@ -142,7 +165,7 @@ export const CreditSlipDrawer: React.FC<CreditSlipDrawerProps> = ({
     setError(null);
 
     try {
-      const slip = await createShiftCreditSlip(orgId, outletId, shiftId, {
+      const slip = await createShiftCreditSlip(orgId, outletId, selectedShiftId, {
         customer_id: selectedCustomerId,
         employee_id: selectedEmployeeId,
         product_id: selectedMeter.product_id,
@@ -163,11 +186,6 @@ export const CreditSlipDrawer: React.FC<CreditSlipDrawerProps> = ({
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleQuickCustomerSuccess = (newCust: Customer) => {
-    setCustomers((prev) => [newCust, ...prev]);
-    setSelectedCustomerId(newCust.id);
   };
 
   return (
@@ -252,6 +270,30 @@ export const CreditSlipDrawer: React.FC<CreditSlipDrawerProps> = ({
             </div>
           )}
 
+          <div>
+            <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: 500, marginBottom: '0.35rem', color: 'var(--text-main, #0f172a)' }}>
+              Related Shift Card *
+            </label>
+            <select
+              className="input"
+              value={selectedShiftId}
+              onChange={(e) => {
+                setSelectedShiftId(e.target.value);
+                setSelectedEmployeeId('');
+                setSelectedNozzleId('');
+              }}
+              required
+            >
+              <option value="">Select the shift where fuel was dispensed…</option>
+              {shifts.map((shift) => (
+                <option key={shift.id} value={shift.id}>
+                  {shift.business_date} · {shift.shift_definition_name || shift.shift_definition?.name || 'Shift'} · {shift.status}
+                </option>
+              ))}
+            </select>
+            <small className="text-muted">The shift may be open or closed; the slip can be entered later from the office.</small>
+          </div>
+
           {/* Customer Selection */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
@@ -260,7 +302,7 @@ export const CreditSlipDrawer: React.FC<CreditSlipDrawerProps> = ({
               </label>
               <button
                 type="button"
-                onClick={() => setIsQuickCustomerOpen(true)}
+                onClick={() => window.open('/app/sales/customers/new', '_blank', 'noopener,noreferrer')}
                 style={{
                   background: 'transparent',
                   border: 'none',
@@ -273,7 +315,7 @@ export const CreditSlipDrawer: React.FC<CreditSlipDrawerProps> = ({
                   gap: '0.2rem',
                 }}
               >
-                <Plus size={13} /> Quick Add Customer
+                <Plus size={13} /> Add Customer
               </button>
             </div>
             <select
@@ -531,13 +573,6 @@ export const CreditSlipDrawer: React.FC<CreditSlipDrawerProps> = ({
         </form>
       </div>
 
-      {/* Quick Customer Drawer */}
-      <CustomerDrawer
-        isOpen={isQuickCustomerOpen}
-        onClose={() => setIsQuickCustomerOpen(false)}
-        onSuccess={handleQuickCustomerSuccess}
-        orgId={orgId}
-      />
     </div>
   );
 };

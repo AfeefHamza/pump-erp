@@ -716,15 +716,8 @@ describe('PurchaseBillWorkspace Keyboard-First ERP Workspace (Section 14 Verific
   });
 
   // Scenario 18
-  it('18. Quick supplier creation opens modal, creates supplier, preserves bill data, and selects new supplier', async () => {
-    const newSupplier = {
-      id: 'sup-new',
-      name: 'PSO Pakistan',
-      code: 'PSO',
-      phone: '03009999999',
-      balance: '0.00'
-    };
-    vi.mocked(apiClient.createSupplier).mockResolvedValue(newSupplier as any);
+  it('18. Add supplier opens the full ERP supplier master without clearing bill data', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
 
     renderWorkspace('/app/purchases/purchase-bills/new');
 
@@ -746,50 +739,23 @@ describe('PurchaseBillWorkspace Keyboard-First ERP Workspace (Section 14 Verific
 
     fireEvent.click(screen.getByText(/Add Supplier "PSO"/i));
 
-    // Quick Supplier Modal should open
-    await waitFor(() => {
-      expect(screen.getByText('Add New Supplier')).toBeInTheDocument();
-    });
-
-    // Fill code
-    const codeInput = screen.getByPlaceholderText('e.g. SHELL-PK');
-    fireEvent.change(codeInput, { target: { value: 'PSO' } });
-
-    // Click Save Supplier
-    const submitBtn = screen.getByText('Save Supplier');
-    fireEvent.click(submitBtn);
-
-    await waitFor(() => {
-      expect(apiClient.createSupplier).toHaveBeenCalledWith('org-1', expect.objectContaining({
-        name: 'PSO',
-        code: 'PSO',
-      }));
-      // Quick modal is closed
-      expect(screen.queryByText('Add New Supplier')).not.toBeInTheDocument();
-    });
-
-    // Newly created supplier is selected
-    expect(supplierInput).toHaveValue('PSO Pakistan');
+    expect(openSpy).toHaveBeenCalledWith('/app/purchases/suppliers/new', '_blank', 'noopener,noreferrer');
+    expect(screen.getByText(/Supplier Master opened in a new tab/i)).toBeInTheDocument();
 
     // Existing invoice number entered before modal is preserved
     expect(invoiceNumInput).toHaveValue('INV-PRESERVE-TEST');
+    openSpy.mockRestore();
   });
 
   // Scenario 19
-  it('19. Keyboard shortcut help modal opens with Ctrl+/ and displays configured shortcuts', async () => {
+  it('19. Keyboard shortcut help opens and displays configured shortcuts', async () => {
     renderWorkspace('/app/purchases/purchase-bills/new');
 
     await waitFor(() => {
       expect(screen.queryByText(/Loading purchase bill workspace/i)).not.toBeInTheDocument();
     });
 
-    // Dispatch Ctrl+/
-    const event = new KeyboardEvent('keydown', {
-      key: '/',
-      ctrlKey: true,
-      bubbles: true,
-    });
-    window.dispatchEvent(event);
+    fireEvent.click(screen.getByRole('button', { name: /Shortcuts \(Ctrl\+\/\)/i }));
 
     // Modal appears
     await waitFor(() => {

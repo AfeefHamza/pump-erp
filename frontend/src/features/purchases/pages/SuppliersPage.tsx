@@ -1,5 +1,6 @@
 // frontend/src/features/purchases/pages/SuppliersPage.tsx
 import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppSelector } from '@/app/store';
 import { fetchSuppliers, createSupplier, updateSupplier } from '@/api/client';
 import type { Supplier } from '@/features/purchases/types';
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react';
 
 export const SuppliersPage: React.FC = () => {
+  const navigate = useNavigate();
   const selectedOrgId = useAppSelector((state) => state.ui.selectedOrganizationId);
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -27,7 +29,7 @@ export const SuppliersPage: React.FC = () => {
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [editingSupplier] = useState<Supplier | null>(null);
   const [formData, setFormData] = useState({
     code: '',
     name: '',
@@ -78,43 +80,11 @@ export const SuppliersPage: React.FC = () => {
   }, [suppliers, search]);
 
   const openCreateModal = () => {
-    setEditingSupplier(null);
-    setFormData({
-      code: '',
-      name: '',
-      contact_person: '',
-      phone: '',
-      email: '',
-      tax_number: '',
-      gstin: '',
-      gst_registration_type: 'pending_review',
-      state: '',
-      state_code: '',
-      address: '',
-      is_active: true,
-    });
-    setFormError(null);
-    setModalOpen(true);
+    navigate('/app/purchases/suppliers/new');
   };
 
   const openEditModal = (supplier: Supplier) => {
-    setEditingSupplier(supplier);
-    setFormData({
-      code: supplier.code,
-      name: supplier.name,
-      contact_person: supplier.contact_person || '',
-      phone: supplier.phone || '',
-      email: supplier.email || '',
-      tax_number: supplier.tax_number || '',
-      gstin: supplier.gstin || '',
-      gst_registration_type: supplier.gst_registration_type || 'pending_review',
-      state: supplier.state || '',
-      state_code: supplier.state_code || '',
-      address: supplier.address || '',
-      is_active: supplier.is_active,
-    });
-    setFormError(null);
-    setModalOpen(true);
+    navigate(`/app/purchases/suppliers/${supplier.id}/edit`);
   };
 
   const handleFormSubmit = async (e: React.FormEvent) => {

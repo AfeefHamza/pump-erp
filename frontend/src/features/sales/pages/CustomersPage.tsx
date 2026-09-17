@@ -1,15 +1,13 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppSelector } from '@/app/store';
 import {
   type Customer,
   fetchCustomers,
   deactivateCustomer,
-  type OutletResponse,
 } from '@/api/client';
 import { PageHeader } from '@/components/navigation/PageHeader';
 import { usePermission } from '@/features/auth/hooks/usePermission';
-import { CustomerDrawer } from '../components/CustomerDrawer';
 import {
   Users, Plus, Search, Filter, Phone, Mail,
   Eye, Edit, UserX
@@ -18,13 +16,6 @@ import {
 export const CustomersPage: React.FC = () => {
   const navigate = useNavigate();
   const selectedOrgId = useAppSelector((state) => state.ui.selectedOrganizationId);
-  const userOrgs = useAppSelector((state) => state.auth.currentUser?.organisations);
-
-  const currentOrg = useMemo(
-    () => userOrgs?.find((o: any) => o.id === selectedOrgId),
-    [userOrgs, selectedOrgId]
-  );
-  const outlets: OutletResponse[] = currentOrg?.outlets || [];
 
   const canView = usePermission('customer.view');
   const canCreate = usePermission('customer.create');
@@ -37,9 +28,6 @@ export const CustomersPage: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
 
   const loadCustomers = useCallback(async () => {
     if (!selectedOrgId || !canView) return;
@@ -65,14 +53,12 @@ export const CustomersPage: React.FC = () => {
   }, [loadCustomers]);
 
   const handleCreateNew = () => {
-    setEditingCustomer(null);
-    setIsDrawerOpen(true);
+    navigate('/app/sales/customers/new');
   };
 
   const handleEdit = (c: Customer, e: React.MouseEvent) => {
     e.stopPropagation();
-    setEditingCustomer(c);
-    setIsDrawerOpen(true);
+    navigate(`/app/sales/customers/${c.id}/edit`);
   };
 
   const handleDeactivate = async (c: Customer, e: React.MouseEvent) => {
@@ -422,17 +408,6 @@ export const CustomersPage: React.FC = () => {
         </div>
       )}
 
-      {/* Add / Edit Drawer */}
-      {selectedOrgId && (
-        <CustomerDrawer
-          isOpen={isDrawerOpen}
-          onClose={() => setIsDrawerOpen(false)}
-          onSuccess={() => loadCustomers()}
-          customer={editingCustomer}
-          orgId={selectedOrgId}
-          outlets={outlets}
-        />
-      )}
     </div>
   );
 };

@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAppSelector } from '@/app/store';
 import {
   type Customer,
   type CustomerCreditPosition,
   type FuelCreditSlip,
-  type OutletResponse,
   fetchCustomer,
   fetchCustomerCreditPosition,
   fetchCustomerCreditSlips,
@@ -13,7 +12,6 @@ import {
   voidCreditSlip,
 } from '@/api/client';
 import { usePermission } from '@/features/auth/hooks/usePermission';
-import { CustomerDrawer } from '../components/CustomerDrawer';
 import { ArrowLeft, Edit, UserX, AlertTriangle } from 'lucide-react';
 
 export const CustomerDetailPage: React.FC = () => {
@@ -21,13 +19,6 @@ export const CustomerDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const selectedOrgId = useAppSelector((state) => state.ui.selectedOrganizationId);
   const selectedOutletId = useAppSelector((state) => state.ui.selectedOutletId);
-  const userOrgs = useAppSelector((state) => state.auth.currentUser?.organisations);
-
-  const currentOrg = useMemo(
-    () => userOrgs?.find((o: any) => o.id === selectedOrgId),
-    [userOrgs, selectedOrgId]
-  );
-  const outlets: OutletResponse[] = currentOrg?.outlets || [];
 
   const canView = usePermission('customer.view');
   const canUpdate = usePermission('customer.update');
@@ -40,7 +31,6 @@ export const CustomerDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
   const [voidingSlip, setVoidingSlip] = useState<FuelCreditSlip | null>(null);
   const [voidReason, setVoidReason] = useState('');
   const [isVoiding, setIsVoiding] = useState(false);
@@ -192,7 +182,7 @@ export const CustomerDetailPage: React.FC = () => {
           {canUpdate && (
             <button
               className="btn btn-secondary"
-              onClick={() => setIsEditDrawerOpen(true)}
+              onClick={() => navigate(`/app/sales/customers/${customer.id}/edit`)}
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 1rem' }}
             >
               <Edit size={16} />
@@ -481,18 +471,6 @@ export const CustomerDetailPage: React.FC = () => {
           </table>
         )}
       </div>
-
-      {/* Edit Customer Drawer */}
-      {selectedOrgId && (
-        <CustomerDrawer
-          isOpen={isEditDrawerOpen}
-          onClose={() => setIsEditDrawerOpen(false)}
-          onSuccess={() => loadData()}
-          customer={customer}
-          orgId={selectedOrgId}
-          outlets={outlets}
-        />
-      )}
 
       {/* Void Modal */}
       {voidingSlip && (

@@ -20,6 +20,7 @@ export const OutletsManagement: React.FC = () => {
   const location = useLocation();
   const dispatch = useAppDispatch();
   const selectedOrgId = useAppSelector((state) => state.ui.selectedOrganizationId);
+  const selectedOutletId = useAppSelector((state) => state.ui.selectedOutletId);
 
   // Lists and loading
   const [outlets, setOutlets] = useState<OutletDetail[]>([]);
@@ -456,6 +457,15 @@ export const OutletsManagement: React.FC = () => {
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                        {outlet.status === 'active' && (
+                          <button
+                            className={`btn btn-sm ${outlet.id === selectedOutletId ? 'btn-primary' : 'btn-outline'}`}
+                            onClick={() => { dispatch(setOutlet(outlet.id)); navigate('/app/dashboard'); }}
+                            title="Use this outlet"
+                          >
+                            {outlet.id === selectedOutletId ? 'Current' : 'Use Outlet'}
+                          </button>
+                        )}
                         {canUpdate && (
                           <button
                             className="btn btn-secondary btn-sm"

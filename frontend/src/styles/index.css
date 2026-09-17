@@ -14,12 +14,12 @@
   --border-color: #e2e8f0;
 
   /* Palette - Dark navy sidebar */
-  --bg-sidebar: #0b0f19;
-  --text-sidebar: #8c9ba5;
-  --text-sidebar-active: #2dd4bf;
-  --bg-sidebar-hover: rgba(255, 255, 255, 0.04);
-  --bg-sidebar-active: rgba(13, 118, 110, 0.15);
-  --border-sidebar: #121722;
+  --bg-sidebar: #0b1f2a;
+  --text-sidebar: #aec0ca;
+  --text-sidebar-active: #ffffff;
+  --bg-sidebar-hover: rgba(255, 255, 255, 0.065);
+  --bg-sidebar-active: rgba(13, 148, 136, 0.24);
+  --border-sidebar: rgba(148, 163, 184, 0.14);
 
   /* Accent Colors */
   --color-accent: #0f766e;
@@ -215,18 +215,18 @@ table tbody tr:hover, .table tbody tr:hover {
 .outlet-selector-wrapper {
   display: flex;
   align-items: center;
-  background-color: #111520;
-  border-radius: var(--radius-md);
-  padding: 8px 12px;
+  background-color: rgba(255, 255, 255, 0.045);
+  border-radius: 9px;
+  padding: 9px 11px;
   gap: var(--space-xs);
-  border: 1px solid #1a2233;
+  border: 1px solid rgba(148, 163, 184, 0.16);
   transition: all 0.2s ease;
 }
 
 .org-selector-wrapper:hover,
 .outlet-selector-wrapper:hover {
-  border-color: #243049;
-  background-color: #141a28;
+  border-color: rgba(45, 212, 191, 0.38);
+  background-color: rgba(255, 255, 255, 0.075);
 }
 
 .org-selector-icon-box,
@@ -253,6 +253,12 @@ table tbody tr:hover, .table tbody tr:hover {
   background-color: #0b0f19;
   color: #ffffff;
 }
+
+.sidebar-context-button { width: 100%; color: inherit; text-align: left; cursor: pointer; }
+.sidebar-context-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.sidebar-context-copy small { color: #78909d; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.sidebar-context-value { color: #f8fafc; font-size: 0.84rem; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-context-chevron { color: #78909d; flex-shrink: 0; }
 
 /* Sidebar Navigation */
 .sidebar-nav {
@@ -319,6 +325,7 @@ table tbody tr:hover, .table tbody tr:hover {
   background-color: var(--bg-sidebar-active);
   color: var(--text-sidebar-active);
   font-weight: 600;
+  box-shadow: inset 3px 0 0 #2dd4bf;
 }
 
 .nav-item.active .nav-item-icon {
@@ -329,6 +336,24 @@ table tbody tr:hover, .table tbody tr:hover {
   flex-shrink: 0;
   transition: color 0.2s ease;
 }
+
+.erp-master-form-page { max-width: 1320px; margin: 0 auto; padding-bottom: 5.5rem; }
+.erp-loading-state { padding: 3rem; text-align: center; color: var(--text-muted); }
+.erp-checkbox-grid { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color); display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.25rem; }
+.erp-checkbox-grid small { width: 100%; color: var(--text-muted); }
+.erp-checkbox-grid label { display: inline-flex; align-items: center; gap: 0.45rem; font-size: 0.85rem; }
+.erp-segmented-control { display: inline-flex; padding: 2px; border: 1px solid var(--border-color); border-radius: 7px; background: #f8fafc; }
+.erp-segmented-control button { border: 0; background: transparent; padding: 5px 10px; border-radius: 5px; color: var(--text-muted); cursor: pointer; font-size: 0.75rem; font-weight: 650; }
+.erp-segmented-control button.active { color: #fff; background: var(--color-accent); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.16); }
+.transaction-discount-card { display: grid; grid-template-columns: minmax(240px, 1fr) 210px 210px; align-items: end; gap: 1rem; margin-bottom: var(--space-md); padding: 1rem 1.1rem; border-left: 3px solid var(--color-accent); }
+.transaction-discount-card > div { display: flex; flex-direction: column; gap: 2px; }
+.transaction-discount-card small { color: var(--text-muted); }
+.transaction-discount-card label { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.78rem; font-weight: 650; }
+@media (max-width: 900px) { .transaction-discount-card { grid-template-columns: 1fr; } }
+.shift-card-erp-page .shift-document-header { border-top: 3px solid var(--color-accent); box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05); }
+.shift-card-erp-page .card { border-color: #dbe4ea; border-radius: 9px; }
+.shift-card-erp-page .table thead th { background: #eef3f6; color: #334155; text-transform: uppercase; letter-spacing: 0.025em; font-size: 0.7rem; }
+.shift-card-erp-page .form-control { min-height: 38px; }
 
 /* TopBar Styling */
 .topbar {

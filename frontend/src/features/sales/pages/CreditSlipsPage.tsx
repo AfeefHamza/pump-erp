@@ -38,11 +38,6 @@ export const CreditSlipsPage: React.FC = () => {
   const [voidReason, setVoidReason] = useState('');
   const [isVoiding, setIsVoiding] = useState(false);
 
-  // Active open shift ID for issuing slips
-  const activeOpenShift = useMemo(() => {
-    return shifts.find((s) => s.status === 'open');
-  }, [shifts]);
-
   const loadData = useCallback(async () => {
     if (!selectedOrgId || !selectedOutletId || !canView) return;
     setLoading(true);
@@ -121,25 +116,23 @@ export const CreditSlipsPage: React.FC = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
         <PageHeader
           title="Customer Credit Slips"
-          subtitle="Record and review fuel credit slips issued during operational shifts."
+          subtitle="Enter fuel credit slips at any time and attribute them to the recorded shift and attendant."
         />
         {canCreate && (
           <button
             className="btn btn-primary"
             onClick={() => setIsDrawerOpen(true)}
-            disabled={!activeOpenShift}
-            title={!activeOpenShift ? 'An open operational shift is required to issue credit slips' : undefined}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '0.5rem',
-              backgroundColor: activeOpenShift ? 'var(--color-accent, #0f766e)' : '#94a3b8',
+              backgroundColor: 'var(--color-accent, #0f766e)',
               color: '#fff',
               border: 'none',
               padding: '0.65rem 1.25rem',
               borderRadius: '6px',
               fontWeight: 500,
-              cursor: activeOpenShift ? 'pointer' : 'not-allowed',
+              cursor: 'pointer',
             }}
           >
             <Plus size={18} />
@@ -307,7 +300,7 @@ export const CreditSlipsPage: React.FC = () => {
           <p style={{ margin: '0 0 1.5rem', fontSize: '0.875rem', color: 'var(--text-muted, #64748b)' }}>
             No credit slips match the selected filters or none have been issued yet.
           </p>
-          {canCreate && activeOpenShift && (
+          {canCreate && (
             <button
               className="btn btn-primary"
               onClick={() => setIsDrawerOpen(true)}
@@ -433,14 +426,13 @@ export const CreditSlipsPage: React.FC = () => {
       )}
 
       {/* Add Drawer */}
-      {selectedOrgId && selectedOutletId && activeOpenShift && (
+      {selectedOrgId && selectedOutletId && (
         <CreditSlipDrawer
           isOpen={isDrawerOpen}
           onClose={() => setIsDrawerOpen(false)}
           onSuccess={() => loadData()}
           orgId={selectedOrgId}
           outletId={selectedOutletId}
-          shiftId={activeOpenShift.id}
         />
       )}
 

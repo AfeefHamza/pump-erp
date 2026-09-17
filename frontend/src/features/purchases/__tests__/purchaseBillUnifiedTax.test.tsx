@@ -310,8 +310,14 @@ describe('Unified Purchase Bills Taxation & Master Integration', () => {
     expect(screen.getByText('Tax Exclusive')).toBeInTheDocument();
     expect(screen.getByText('Tax Inclusive')).toBeInTheDocument();
 
-    // Check that bill discount selector is present
-    expect(screen.getByText('Bill Discount:')).toBeInTheDocument();
+    // Discount scope is explicit and defaults to item-level.
+    expect(screen.getByText('Discount:')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Item Level' })).toHaveClass('active');
+    expect(screen.getByText('Discount', { selector: 'th' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Transaction Level' }));
+    expect(screen.queryByText('Discount', { selector: 'th' })).not.toBeInTheDocument();
+    expect(screen.getByText('Apply one discount to the complete bill')).toBeInTheDocument();
 
     // Check that other charges section is rendered
     expect(screen.getByText(/Other Charges \(Freight, Insurance, Handling\)/i)).toBeInTheDocument();

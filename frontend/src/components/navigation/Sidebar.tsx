@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector, toggleSidebar } from '@/app/store';
 import { OrganisationSelector } from './OrganisationSelector';
@@ -52,7 +52,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
     hasDesignationView;
 
   // Manage accordion section state
-  const [expandedSection, setExpandedSection] = useState<string | null>('OPERATIONS');
+  const activeSection = navigationMenu.find((section) => section.items.some((item) => location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)))?.title;
+  const [expandedSection, setExpandedSection] = useState<string | null>(activeSection || 'OPERATIONS');
+
+  useEffect(() => {
+    if (activeSection) setExpandedSection(activeSection);
+  }, [activeSection]);
 
 
   const handleToggleSection = (sectionTitle: string) => {
