@@ -1,7 +1,9 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.finance.services import create_payment_account
@@ -105,5 +107,31 @@ class ReportingApiTests(ShiftCardBaseTestCase):
         response = self.client.get(
             f'/api/v1/organisations/{self.org.id}/outlets/{self.outlet.id}/reports/daily-business-summary/',
             {'from_date': '2026-09-01', 'to_date': '2026-09-01'},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    @patch('apps.reports.selectors.timezone.now')
+    def test_management_dashboard_separates_recorded_totals_and_operational_indicators(self, mocked_now):
+        mocked_now.return_value = timezone.make_aware(datetime(2026, 9, 1, 12, 0))
+        response = self.client.get(
+            f'/api/v1/organisations/{self.org.id}/outlets/{self.outlet.id}/dashboard/',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['business_date'], '2026-09-01')
+        self.assertEqual(response.data['recorded']['fuel_sales'], '10000.00')
+        self.assertEqual(response.data['recorded']['recorded_shift_count'], 1)
+        self.assertEqual(response.data['operations']['open_shift_count'], 0)
+        self.assertEqual(response.data['settlements']['pending_amount'], '6000.00')
+        self.assertEqual(response.data['fuel_products'][0]['quantity'], '100.000')
+        self.assertEqual(response.data['stock']['total_tanks'], 1)
+        self.assertIn('financially locked shifts only', response.data['basis'])
+
+    def test_management_dashboard_requires_dashboard_permission(self):
+        outsider = get_user_model().objects.create_user(
+            email='dashboard-outsider@example.com', password='password',
+        )
+        self.client.force_authenticate(outsider)
+        response = self.client.get(
+            f'/api/v1/organisations/{self.org.id}/outlets/{self.outlet.id}/dashboard/',
         )
         self.assertEqual(response.status_code, 403)

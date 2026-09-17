@@ -8,10 +8,16 @@ from django.utils import timezone
 
 from apps.accounting.models import ShiftAccountingPosting
 from apps.core.timezone_utils import to_outlet_business_date
+from apps.finance.selectors import digital_settlement_summary
+from apps.inventory.selectors import get_tank_stock_summary
+from apps.purchases.selectors import get_supplier_outstanding_summary
+from apps.sales.selectors import customer_outstanding
 from apps.finance.models import Expense
 from apps.purchases.models import PurchaseBill
 from apps.sales.models import SalesInvoice, SalesInvoiceLine
-from apps.shifts.models import EmployeeShiftCard, EmployeeShiftSettlement, ShiftNozzlePriceSegment
+from apps.shifts.models import (
+    EmployeeShiftCard, EmployeeShiftSettlement, OperationalShift, ShiftNozzlePriceSegment,
+)
 
 
 ZERO = Decimal('0.00')
@@ -38,6 +44,126 @@ def _quantity(value):
 
 def _sum(queryset, field):
     return queryset.aggregate(total=Sum(field))['total'] or ZERO
+
+
+def management_dashboard(organisation, outlet):
+    business_date = to_outlet_business_date(timezone.now(), outlet=outlet, organisation=organisation)
+    daily = daily_business_summary(organisation, outlet, business_date, business_date)
+    tank_summary = get_tank_stock_summary(organisation, outlet)
+    receivables = customer_outstanding(organisation, outlet)
+    payables = get_supplier_outstanding_summary(organisation, outlet)
+    digital = digital_settlement_summary(organisation, outlet)
+
+    open_shifts = OperationalShift.objects.filter(
+        organisation=organisation, outlet=outlet,
+        status=OperationalShift.STATUS_OPEN, is_locked=False,
+    ).select_related('shift_definition').order_by('business_date', 'scheduled_starts_at')
+    awaiting_recording = OperationalShift.objects.filter(
+        organisation=organisation, outlet=outlet, business_date=business_date,
+        status=OperationalShift.STATUS_CLOSED, is_locked=False,
+    ).select_related('shift_definition').order_by('scheduled_starts_at')
+
+    tank_rows = []
+    alerts = []
+    for tank in tank_summary['tanks']:
+        utilization = Decimal(tank['capacity_utilization_pct'])
+        level = 'normal'
+        if utilization <= Decimal('10.0'):
+            level = 'critical'
+        elif utilization <= Decimal('20.0'):
+            level = 'low'
+        if level != 'normal':
+            alerts.append({
+                'type': 'tank_stock', 'severity': 'danger' if level == 'critical' else 'warning',
+                'title': f"{tank['tank_code']} stock is {level}",
+                'detail': f"{tank['product_name']} book stock is {_quantity(tank['current_book_stock'])} L ({utilization}%).",
+                'path': '/app/inventory/fuel-stock',
+            })
+        if tank['has_chronology_conflict'] or tank['has_negative_balance_history']:
+            alerts.append({
+                'type': 'stock_conflict', 'severity': 'danger',
+                'title': f"{tank['tank_code']} requires stock review",
+                'detail': 'The tank projection contains a chronology or negative-balance warning.',
+                'path': '/app/inventory/fuel-stock',
+            })
+        tank_rows.append({
+            'tank_id': tank['tank_id'], 'tank_code': tank['tank_code'],
+            'tank_name': tank['tank_name'], 'product_name': tank['product_name'],
+            'capacity': _quantity(tank['capacity']),
+            'book_stock': _quantity(tank['current_book_stock']),
+            'utilization_pct': str(utilization.quantize(Decimal('0.1'))),
+            'level': level, 'status': tank['status'],
+        })
+
+    pending_digital = Decimal(digital['pending_amount'])
+    if pending_digital > ZERO:
+        alerts.append({
+            'type': 'digital_settlement', 'severity': 'warning',
+            'title': 'Digital collections are awaiting settlement',
+            'detail': f"{digital['pending_count']} collection(s) totalling {_money(pending_digital)} remain unsettled.",
+            'path': '/app/finance/settlements',
+        })
+    supplier_overdue = Decimal(payables['overdue_total'])
+    if supplier_overdue > ZERO:
+        alerts.append({
+            'type': 'supplier_overdue', 'severity': 'warning',
+            'title': 'Supplier bills are overdue',
+            'detail': f"Overdue supplier balance is {_money(supplier_overdue)}.",
+            'path': '/app/purchases/supplier-outstanding',
+        })
+    shortage = Decimal(daily['summary']['shortage'])
+    if shortage > ZERO:
+        alerts.append({
+            'type': 'shift_shortage', 'severity': 'danger',
+            'title': 'Recorded shift shortage requires attention',
+            'detail': f"Today’s recorded shortage is {_money(shortage)}.",
+            'path': '/app/reports/employee-accountability',
+        })
+    if awaiting_recording.exists():
+        alerts.append({
+            'type': 'shift_recording', 'severity': 'warning',
+            'title': 'Closed shifts are awaiting financial recording',
+            'detail': f"{awaiting_recording.count()} shift(s) are closed but not financially locked.",
+            'path': '/app/operations/shift-cards',
+        })
+
+    return {
+        'business_date': business_date.isoformat(),
+        'outlet': {'id': str(outlet.id), 'code': outlet.code, 'name': outlet.name},
+        'basis': 'Recorded totals include financially locked shifts only. Open and pending shifts are shown separately.',
+        'recorded': daily['summary'],
+        'fuel_products': daily['fuel_products'],
+        'operations': {
+            'recorded_shift_count': daily['summary']['recorded_shift_count'],
+            'open_shift_count': open_shifts.count(),
+            'awaiting_recording_count': awaiting_recording.count(),
+            'open_shifts': [{
+                'shift_id': str(shift.id), 'business_date': shift.business_date.isoformat(),
+                'shift_name': shift.shift_definition.name,
+                'is_stale': shift.business_date < business_date,
+            } for shift in open_shifts[:10]],
+        },
+        'stock': {
+            'total_tanks': tank_summary['metrics']['total_tanks'],
+            'total_book_stock': _quantity(tank_summary['metrics']['total_book_stock']),
+            'low_stock_count': sum(1 for tank in tank_rows if tank['level'] != 'normal'),
+            'conflict_count': tank_summary['metrics']['conflict_alert_count'],
+            'tanks': tank_rows,
+        },
+        'receivables': {
+            'customer_outstanding': _money(receivables['total_outstanding']),
+            'unbilled_credit': _money(receivables['total_unbilled_credit']),
+        },
+        'payables': {
+            'supplier_outstanding': _money(payables['total_outstanding']),
+            'supplier_overdue': _money(payables['overdue_total']),
+        },
+        'settlements': {
+            'pending_count': digital['pending_count'],
+            'pending_amount': _money(digital['pending_amount']),
+        },
+        'alerts': alerts,
+    }
 
 
 def daily_business_summary(organisation, outlet, from_date, to_date):

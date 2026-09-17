@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from apps.organizations.models import Organisation, Outlet
 from apps.organizations.permissions import require_permission
 
-from .selectors import daily_business_summary, employee_accountability, report_date_range
+from .selectors import daily_business_summary, employee_accountability, management_dashboard, report_date_range
 
 
 def _context(org_id, outlet_id):
@@ -47,6 +47,15 @@ class DailyBusinessSummaryView(APIView):
             return Response(daily_business_summary(organisation, outlet, from_date, to_date))
         except DjangoValidationError as error:
             return _validation_response(error)
+
+
+class ManagementDashboardView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id):
+        organisation, outlet = _context(org_id, outlet_id)
+        require_permission(request.user, organisation, 'dashboard.view', outlet=outlet)
+        return Response(management_dashboard(organisation, outlet))
 
 
 class EmployeeAccountabilityView(APIView):
