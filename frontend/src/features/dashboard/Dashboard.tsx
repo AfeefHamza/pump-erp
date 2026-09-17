@@ -1,307 +1,126 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PageHeader } from '@/components/navigation/PageHeader';
-import { StatCard } from '@/components/data-display/StatCard';
-import { checkHealth } from '@/api/client';
-import { DataTable, type ColumnDef } from '@/components/data-display/DataTable';
-import { StatusBadge, type StatusType } from '@/components/data-display/StatusBadge';
-import { 
-  Fuel, 
-  Coins, 
-  FileSpreadsheet, 
-  Clock, 
-  Activity, 
-  Play,
-  Gauge,
-  Droplet,
-  FileText,
-  TrendingDown,
-  Truck,
-  ClipboardCheck
+import {
+  AlertTriangle, ArrowRight, BarChart3, Clock, Coins, CreditCard, Droplet,
+  Fuel, Gauge, RefreshCw, ReceiptText, TrendingDown, Truck, Users, WalletCards,
 } from 'lucide-react';
+import { fetchManagementDashboard } from '@/api/client';
+import { useAppSelector } from '@/app/store';
+import { PageHeader } from '@/components/navigation/PageHeader';
+import { usePermission } from '@/features/auth/hooks/usePermission';
+import type { ManagementDashboard } from './types';
 
-interface Transaction {
-  id: number;
-  ref: string;
-  type: string;
-  outlet: string;
-  amount: number;
-  status: StatusType;
-  statusLabel: string;
-  dateTime: string;
-}
-
-interface Tank {
-  id: number;
-  name: string;
-  fuelType: string;
-  currentVolume: number;
-  capacity: number;
-  status: 'success' | 'warning' | 'danger';
-}
+const money = (value: string) => new Intl.NumberFormat('en-IN', {
+  style: 'currency', currency: 'INR', maximumFractionDigits: 0,
+}).format(Number(value || 0));
+const quantity = (value: string) => `${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 })} L`;
+const displayDate = (value: string) => new Intl.DateTimeFormat('en-IN', {
+  day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC',
+}).format(new Date(`${value}T00:00:00Z`));
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  // Backend connection status state
-  const [dbStatus, setDbStatus] = React.useState<'db-connected' | 'api-only' | 'unavailable' | 'loading'>('loading');
+  const orgId = useAppSelector((state) => state.ui.selectedOrganizationId);
+  const outletId = useAppSelector((state) => state.ui.selectedOutletId);
+  const canView = usePermission('dashboard.view');
+  const [data, setData] = useState<ManagementDashboard | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  React.useEffect(() => {
-    let active = true;
-
-    const fetchStatus = async () => {
-      try {
-        const data = await checkHealth();
-        if (!active) return;
-        if (data.database === 'connected') {
-          setDbStatus('db-connected');
-        } else {
-          setDbStatus('api-only');
-        }
-      } catch {
-        if (!active) return;
-        setDbStatus('unavailable');
-      }
-    };
-
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 10000); // Check status every 10 seconds
-
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, []);
-
-  const statusConfig = {
-    loading: { label: 'Checking status...', color: '#94a3b8', bg: 'var(--bg-card)', dot: '#94a3b8' },
-    'db-connected': { label: 'Database connected', color: 'var(--color-success-text)', bg: 'var(--color-success-bg)', dot: '#10b981' },
-    'api-only': { label: 'API connected', color: 'var(--color-warning-text)', bg: 'var(--color-warning-bg)', dot: '#f59e0b' },
-    unavailable: { label: 'Service unavailable', color: 'var(--color-danger-text)', bg: 'var(--color-danger-bg)', dot: '#ef4444' },
-  }[dbStatus];
-
-  // Format to Indian Currency
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0,
-    }).format(val);
-  };
-
-  const tanks: Tank[] = [
-    { id: 1, name: 'MS Tank 1 (Petrol)', fuelType: 'Unleaded 95', currentVolume: 15200, capacity: 20000, status: 'success' },
-    { id: 2, name: 'MS Tank 2 (Petrol)', fuelType: 'Unleaded 95', currentVolume: 8400, capacity: 20000, status: 'warning' },
-    { id: 3, name: 'HSD Tank 1 (Diesel)', fuelType: 'High Speed Diesel', currentVolume: 18900, capacity: 25000, status: 'success' },
-    { id: 4, name: 'HSD Tank 2 (Diesel)', fuelType: 'High Speed Diesel', currentVolume: 2500, capacity: 25000, status: 'danger' },
-    { id: 5, name: 'Speed Tank 1 (Premium)', fuelType: 'Speed Petrol', currentVolume: 4800, capacity: 10000, status: 'success' },
-  ];
-
-  const formatVolume = (val: number) => {
-    return new Intl.NumberFormat('en-IN').format(val) + ' L';
-  };
-
-  const columns: ColumnDef<Transaction>[] = [
-    { key: 'ref', header: 'Reference' },
-    { key: 'type', header: 'Type' },
-    { key: 'outlet', header: 'Outlet' },
-    { 
-      key: 'amount', 
-      header: 'Amount', 
-      align: 'right',
-      render: (row) => <strong>{formatCurrency(row.amount)}</strong> 
-    },
-    { 
-      key: 'status', 
-      header: 'Status',
-      render: (row) => <StatusBadge label={row.statusLabel} status={row.status} /> 
-    },
-    { key: 'dateTime', header: 'Date/Time' },
-  ];
-
-  const transactions: Transaction[] = [
-    { id: 1, ref: 'CS-20260820-01', type: 'Credit Slip', outlet: 'Central Outlet', amount: 15450, status: 'success', statusLabel: 'Approved', dateTime: '20-08-2026 02:15 PM' },
-    { id: 2, ref: 'EXP-20260820-03', type: 'Expense Voucher', outlet: 'Highway Outlet', amount: 2500, status: 'pending', statusLabel: 'Pending Approval', dateTime: '20-08-2026 01:30 PM' },
-    { id: 3, ref: 'TR-20260820-02', type: 'Tanker Receipt', outlet: 'Central Outlet', amount: 280000, status: 'success', statusLabel: 'Completed', dateTime: '20-08-2026 11:45 AM' },
-    { id: 4, ref: 'CS-20260820-02', type: 'Cash Sale', outlet: 'Highway Outlet', amount: 48900, status: 'success', statusLabel: 'Completed', dateTime: '20-08-2026 10:15 AM' },
-    { id: 5, ref: 'SET-20260820-01', type: 'Settlement Check', outlet: 'Central Outlet', amount: 12000, status: 'warning', statusLabel: 'Disputed', dateTime: '20-08-2026 09:00 AM' },
-  ];
-
-  const handleActionClick = (actionName: string) => {
-    if (actionName === 'Record Expense') {
-      navigate('/app/finance/expenses/new');
-      return;
+  const load = useCallback(async () => {
+    if (!orgId || !outletId || !canView) return;
+    setLoading(true);
+    try {
+      setData(await fetchManagementDashboard(orgId, outletId));
+      setError(null);
+    } catch (err: any) {
+      setError(err?.message || 'Could not load the management dashboard.');
+    } finally {
+      setLoading(false);
     }
-    alert(`"${actionName}" is a demonstration placeholder. ERP workflows will be implemented in a future phase.`);
-  };
+  }, [orgId, outletId, canView]);
 
-  return (
-    <div>
-      <PageHeader 
-        title="Dashboard" 
-        subtitle="Fuel station daily operations overview"
-        actions={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-            <div 
-              className="dev-status-indicator" 
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '4px 10px',
-                borderRadius: '50px',
-                backgroundColor: statusConfig.bg,
-                color: statusConfig.color,
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                border: '1px solid currentColor',
-                opacity: 0.9,
-              }}
-            >
-              <span style={{ fontSize: '0.7rem', opacity: 0.8 }}>Dev Status:</span>
-              <span 
-                style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  backgroundColor: statusConfig.dot,
-                  display: 'inline-block'
-                }} 
-              />
-              <span>{statusConfig.label}</span>
-            </div>
-            <span className="demo-data-label">Demonstration Mode</span>
-          </div>
-        }
-      />
+  useEffect(() => { load(); }, [load]);
 
-      {/* Quick Actions Grid */}
-      <div style={{ marginBottom: 'var(--space-lg)' }}>
-        <h3 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 'var(--space-md)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Quick Actions
-        </h3>
-        <div className="quick-actions-grid">
-          <button className="quick-action-button" onClick={() => handleActionClick('Open Shift')}>
-            <Play className="quick-action-icon" size={20} />
-            <span>Open Shift</span>
-          </button>
-          <button className="quick-action-button" onClick={() => handleActionClick('Add Meter Reading')}>
-            <Gauge className="quick-action-icon" size={20} />
-            <span>Meter Reading</span>
-          </button>
-          <button className="quick-action-button" onClick={() => handleActionClick('Record Dip')}>
-            <Droplet className="quick-action-icon" size={20} />
-            <span>Record Dip</span>
-          </button>
-          <button className="quick-action-button" onClick={() => handleActionClick('Create Credit Slip')}>
-            <FileText className="quick-action-icon" size={20} />
-            <span>Credit Slip</span>
-          </button>
-          <button className="quick-action-button" onClick={() => handleActionClick('Record Expense')}>
-            <TrendingDown className="quick-action-icon" size={20} />
-            <span>Record Expense</span>
-          </button>
-          <button className="quick-action-button" onClick={() => handleActionClick('Receive Tanker')}>
-            <Truck className="quick-action-icon" size={20} />
-            <span>Receive Tanker</span>
-          </button>
-        </div>
-      </div>
+  if (!orgId || !outletId) {
+    return <div className="card" style={{ margin: 24, padding: 32 }}>Select an organisation and outlet to view the dashboard.</div>;
+  }
+  if (!canView) {
+    return <div className="card" style={{ margin: 24, padding: 32 }}>You do not have permission to view the management dashboard.</div>;
+  }
 
-      {/* Summary Cards */}
-      <div className="stats-grid">
-        <StatCard 
-          title="Today's Fuel Sales" 
-          value={formatCurrency(425850)} 
-          icon={Fuel} 
-          trend={{ value: '4.2%', isPositive: true }}
-          description="from yesterday"
-        />
-        <StatCard 
-          title="Cash Collected" 
-          value={formatCurrency(210300)} 
-          icon={Coins} 
-          trend={{ value: '2.1%', isPositive: true }}
-          description="net receipts"
-        />
-        <StatCard 
-          title="Credit Sales" 
-          value={formatCurrency(195550)} 
-          icon={FileSpreadsheet} 
-          trend={{ value: '8.5%', isPositive: true }}
-          description="account customers"
-        />
-        <StatCard 
-          title="Pending Settlements" 
-          value={formatCurrency(45200)} 
-          icon={ClipboardCheck} 
-          trend={{ value: '1.2%', isPositive: false }}
-          description="due cards/wallets"
-        />
-        <StatCard 
-          title="Stock Variance" 
-          value="-12.5 L" 
-          icon={Activity} 
-          trend={{ value: '0.05%', isPositive: false }}
-          description="allowable range"
-        />
-        <StatCard 
-          title="Open Shifts" 
-          value="2 / 2 Outlets" 
-          icon={Clock} 
-          description="currently active"
-        />
-      </div>
+  const metrics = data ? [
+    { label: 'Recorded Sales', value: money(data.recorded.sales_total), detail: `${data.recorded.recorded_shift_count} financially locked shift(s)`, icon: Fuel, path: '/app/reports/daily-business-summary' },
+    { label: 'Cash Collected', value: money(data.recorded.cash_collections), detail: 'Recorded shift cash', icon: Coins, path: '/app/reports/daily-business-summary' },
+    { label: 'Digital Collected', value: money(data.recorded.digital_collections), detail: 'Card, UPI and fleet card', icon: CreditCard, path: '/app/reports/daily-business-summary' },
+    { label: 'Pending Settlement', value: money(data.settlements.pending_amount), detail: `${data.settlements.pending_count} unsettled collection(s)`, icon: WalletCards, path: '/app/finance/settlements' },
+    { label: 'Customer Outstanding', value: money(data.receivables.customer_outstanding), detail: `${money(data.receivables.unbilled_credit)} unbilled fuel credit`, icon: Users, path: '/app/sales/customer-outstanding' },
+    { label: 'Supplier Outstanding', value: money(data.payables.supplier_outstanding), detail: `${money(data.payables.supplier_overdue)} overdue`, icon: Truck, path: '/app/purchases/supplier-outstanding' },
+    { label: 'Fuel Book Stock', value: quantity(data.stock.total_book_stock), detail: `${data.stock.total_tanks} active tank(s)`, icon: Droplet, path: '/app/inventory/fuel-stock' },
+    { label: 'Shortage / Excess', value: `${money(data.recorded.shortage)} / ${money(data.recorded.excess)}`, detail: 'Recorded employee settlements', icon: AlertTriangle, path: '/app/reports/employee-accountability' },
+  ] : [];
 
-      {/* Dashboard Grid */}
-      <div className="dashboard-grid">
-        <div className="dashboard-card">
-          <div className="dashboard-card-header">
-            <h4 className="dashboard-card-title">Recent Transactions <span className="demo-data-label">Demo Data</span></h4>
-            <span className="dashboard-card-header-actions" onClick={() => alert('View All Transactions is a placeholder')}>View all</span>
-          </div>
-          <DataTable columns={columns} data={transactions} />
-        </div>
+  const quickActions = [
+    { label: 'Shift Cards', icon: Clock, path: '/app/operations/shift-cards' },
+    { label: 'Record Dip', icon: Gauge, path: '/app/operations/dip-readings' },
+    { label: 'Credit Slip', icon: ReceiptText, path: '/app/sales/credit-slips' },
+    { label: 'Record Expense', icon: TrendingDown, path: '/app/finance/expenses/new' },
+    { label: 'Receive Tanker', icon: Truck, path: '/app/purchases/tanker-receipts/new' },
+    { label: 'View Reports', icon: BarChart3, path: '/app/reports' },
+  ];
 
-        <div className="dashboard-card">
-          <div className="dashboard-card-header">
-            <h4 className="dashboard-card-title">Fuel Tanks Status <span className="demo-data-label">Demo Data</span></h4>
-          </div>
-          <div className="tanks-list" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-            {tanks.map((tank) => {
-              const percentage = Math.round((tank.currentVolume / tank.capacity) * 100);
-              let progressColor = 'var(--color-accent)'; // success (teal)
-              if (tank.status === 'warning') progressColor = '#f59e0b'; // warning (amber)
-              if (tank.status === 'danger') progressColor = '#ef4444'; // danger (red)
+  return <div style={{ maxWidth: 1600, margin: '0 auto', padding: '1.5rem' }}>
+    <PageHeader
+      title="Management Dashboard"
+      subtitle={data ? `${data.outlet.name} · Business date ${displayDate(data.business_date)}` : 'Live outlet overview'}
+      actions={<button type="button" className="btn btn-secondary" onClick={load} disabled={loading}><RefreshCw size={16}/>{loading ? 'Refreshing…' : 'Refresh'}</button>}
+    />
+    {error && <div className="alert alert-danger" style={{ marginBottom: 16 }}>{error}</div>}
+    {data && <div className="alert alert-secondary" style={{ marginBottom: 16 }}>{data.basis}</div>}
 
-              return (
-                <div key={tank.id} className="tank-status-item" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <div className="tank-info" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span className="tank-name" style={{ fontWeight: 600, color: 'var(--text-main)' }}>{tank.name}</span>
-                      <span className="tank-fuel" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{tank.fuelType}</span>
-                    </div>
-                    <span className="tank-capacity" style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                      {formatVolume(tank.currentVolume)} / {formatVolume(tank.capacity)} ({percentage}%)
-                    </span>
-                  </div>
-                  <div className="tank-progress-bar-container" style={{ width: '100%', height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
-                    <div 
-                      className="tank-progress-bar" 
-                      style={{ 
-                        width: `${percentage}%`, 
-                        height: '100%', 
-                        backgroundColor: progressColor, 
-                        borderRadius: '4px',
-                        transition: 'width 0.3s ease'
-                      }} 
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
+    <div className="quick-actions-grid" style={{ marginBottom: 20 }}>
+      {quickActions.map(({ label, icon: Icon, path }) => <button key={label} type="button" className="quick-action-button" onClick={() => navigate(path)}><Icon className="quick-action-icon" size={20}/><span>{label}</span></button>)}
     </div>
-  );
+
+    {!data && loading ? <div className="card" style={{ padding: 36, textAlign: 'center' }}>Loading dashboard…</div> : data && <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 14, marginBottom: 20 }}>
+        {metrics.map(({ label, value, detail, icon: Icon, path }) => <button key={label} type="button" className="card" onClick={() => navigate(path)} style={{ padding: 18, textAlign: 'left', cursor: 'pointer', background: '#fff', border: '1px solid var(--border-color)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}><span className="text-muted">{label}</span><Icon size={19} color="#2563eb"/></div>
+          <strong style={{ display: 'block', fontSize: 22, margin: '9px 0 5px' }}>{value}</strong>
+          <span className="text-muted" style={{ fontSize: 12 }}>{detail}</span>
+        </button>)}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(360px,1fr))', gap: 18, marginBottom: 18 }}>
+        <section className="card" style={{ overflowX: 'auto' }}>
+          <div className="dashboard-card-header"><h3 className="dashboard-card-title">Fuel sales by product</h3><button className="btn btn-link" onClick={() => navigate('/app/reports/daily-business-summary')}>Full report <ArrowRight size={15}/></button></div>
+          <table className="data-table"><thead><tr><th>Product</th><th style={{ textAlign: 'right' }}>Quantity</th><th style={{ textAlign: 'right' }}>Recorded Sales</th></tr></thead><tbody>
+            {!data.fuel_products.length ? <tr><td colSpan={3} style={{ textAlign: 'center', padding: 28 }}>No financially locked fuel sales for this business date.</td></tr> : data.fuel_products.map((row) => <tr key={row.product_id}><td><strong>{row.product_name}</strong><div className="text-muted">{row.product_code}</div></td><td style={{ textAlign: 'right' }}>{Number(row.quantity).toLocaleString('en-IN', { minimumFractionDigits: 3 })} {row.unit}</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{money(row.amount)}</td></tr>)}
+          </tbody></table>
+        </section>
+
+        <section className="card" style={{ padding: 18 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}><strong>Shift status</strong><button className="btn btn-link" onClick={() => navigate('/app/operations/shift-cards')}>Open Shift Cards</button></div>
+          {[['Recorded', data.operations.recorded_shift_count, '#16a34a'], ['Open', data.operations.open_shift_count, '#2563eb'], ['Awaiting recording', data.operations.awaiting_recording_count, '#d97706']].map(([label, value, color]) => <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 0', borderBottom: '1px solid var(--border-color)' }}><span>{label}</span><strong style={{ color: String(color) }}>{value}</strong></div>)}
+          {!!data.operations.open_shifts.length && <div style={{ marginTop: 14 }}>{data.operations.open_shifts.map((shift) => <button key={shift.shift_id} type="button" onClick={() => navigate(`/app/operations/shift-cards/parent/${shift.shift_id}`)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', padding: '9px 0', border: 0, background: 'transparent', cursor: 'pointer', textAlign: 'left' }}><span>{shift.shift_name}<span className="text-muted"> · {shift.business_date}</span></span>{shift.is_stale && <span className="status-badge danger">Stale</span>}</button>)}</div>}
+        </section>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(360px,1fr))', gap: 18 }}>
+        <section className="card" style={{ padding: 18 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}><strong>Tank stock</strong><button className="btn btn-link" onClick={() => navigate('/app/inventory/fuel-stock')}>Fuel Stock <ArrowRight size={15}/></button></div>
+          {!data.stock.tanks.length ? <div className="text-muted" style={{ padding: 20, textAlign: 'center' }}>No active tanks configured.</div> : <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>{data.stock.tanks.map((tank) => {
+            const pct = Math.max(0, Math.min(100, Number(tank.utilization_pct)));
+            const color = tank.level === 'critical' ? '#dc2626' : tank.level === 'low' ? '#d97706' : '#0f766e';
+            return <div key={tank.tank_id}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}><span><strong>{tank.tank_code}</strong> · {tank.product_name}<div className="text-muted">{tank.tank_name}</div></span><span style={{ textAlign: 'right' }}><strong>{quantity(tank.book_stock)}</strong><div className="text-muted">of {quantity(tank.capacity)} · {pct.toFixed(1)}%</div></span></div><div style={{ height: 8, background: '#e2e8f0', borderRadius: 5, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: color }}/></div></div>;
+          })}</div>}
+        </section>
+
+        <section className="card" style={{ padding: 18 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}><strong>Attention required</strong><span className="status-badge warning">{data.alerts.length}</span></div>
+          {!data.alerts.length ? <div style={{ padding: 24, textAlign: 'center', color: '#15803d' }}>No operational alerts.</div> : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{data.alerts.map((alert, index) => <button key={`${alert.type}-${index}`} type="button" onClick={() => navigate(alert.path)} style={{ padding: 12, borderRadius: 8, border: `1px solid ${alert.severity === 'danger' ? '#fecaca' : '#fde68a'}`, background: alert.severity === 'danger' ? '#fef2f2' : '#fffbeb', textAlign: 'left', cursor: 'pointer' }}><strong style={{ display: 'block', color: alert.severity === 'danger' ? '#b91c1c' : '#92400e' }}>{alert.title}</strong><span style={{ fontSize: 12, lineHeight: 1.5 }}>{alert.detail}</span></button>)}</div>}
+        </section>
+      </div>
+    </>}
+  </div>;
 };

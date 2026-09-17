@@ -1,9 +1,14 @@
 from django.urls import path
 
-from .views import DailyBusinessSummaryView, EmployeeAccountabilityView
+from .views import DailyBusinessSummaryView, EmployeeAccountabilityView, ManagementDashboardView
 
 
 urlpatterns = [
+    path(
+        '<uuid:org_id>/outlets/<uuid:outlet_id>/dashboard/',
+        ManagementDashboardView.as_view(),
+        name='management_dashboard',
+    ),
     path(
         '<uuid:org_id>/outlets/<uuid:outlet_id>/reports/daily-business-summary/',
         DailyBusinessSummaryView.as_view(),
