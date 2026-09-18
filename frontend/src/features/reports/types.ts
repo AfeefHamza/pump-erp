@@ -96,3 +96,44 @@ export interface CoreReportPack {
     }>;
   };
 }
+
+export interface OperationalReportPack {
+  filters: { from_date: string; to_date: string };
+  basis: string;
+  shifts: ReportSection<{
+    card_id: string; shift_id: string; business_date: string; shift_name: string;
+    employee_name: string; employee_code: string; mpd_slip_number: string; is_locked: boolean;
+    expected_sales: string; accounted: string; difference: string; result: string;
+  }>;
+  meters: ReportSection<{
+    meter_id: string; shift_id: string; card_id: string; business_date: string; shift_name: string;
+    employee_name: string; nozzle_code: string; tank_code: string; product_name: string;
+    opening: string; closing: string; testing: string; sale_quantity: string;
+    sale_amount: string; continuity_status: string;
+  }>;
+  dips: ReportSection<{
+    dip_id: string; shift_id: string; business_date: string; shift_name: string; tank_code: string;
+    product_name: string; observation_type: string; raw_value: string; raw_unit: string;
+    quantity: string; density: string | null; conversion_method: string;
+  }>;
+  receipts: ReportSection<{
+    receipt_id: string; receipt_number: string; business_date: string; supplier_name: string;
+    invoice_number: string; vehicle_registration: string; status: string; products: string;
+    invoice_quantity: string; accepted_quantity: string; value: string;
+  }>;
+  credit_slips: ReportSection<{
+    slip_id: string; shift_id: string; business_date: string; shift_name: string; slip_number: string;
+    customer_name: string; employee_name: string; product_name: string; vehicle_number: string;
+    quantity: string; unit_price: string; amount: string;
+  }> & { total: string };
+  expenses: ReportSection<{
+    expense_id: string; expense_number: string; expense_date: string; category: string;
+    payment_account: string; payee: string; reference_number: string; amount: string;
+  }> & { total: string };
+}
+
+interface ReportSection<Row> {
+  count: number;
+  rows: Row[];
+  truncated: boolean;
+}

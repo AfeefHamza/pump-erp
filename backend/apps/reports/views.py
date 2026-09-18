@@ -9,7 +9,10 @@ from rest_framework.views import APIView
 from apps.organizations.models import Organisation, Outlet
 from apps.organizations.permissions import require_permission
 
-from .selectors import core_report_pack, daily_business_summary, employee_accountability, management_dashboard, report_date_range
+from .selectors import (
+    core_report_pack, daily_business_summary, employee_accountability,
+    management_dashboard, operational_report_pack, report_date_range,
+)
 
 
 def _context(org_id, outlet_id):
@@ -58,6 +61,19 @@ class CoreReportPackView(APIView):
         try:
             from_date, to_date = _dates(request, organisation, outlet)
             return Response(core_report_pack(organisation, outlet, from_date, to_date))
+        except DjangoValidationError as error:
+            return _validation_response(error)
+
+
+class OperationalReportPackView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, org_id, outlet_id):
+        organisation, outlet = _context(org_id, outlet_id)
+        require_permission(request.user, organisation, 'report.view', outlet=outlet)
+        try:
+            from_date, to_date = _dates(request, organisation, outlet)
+            return Response(operational_report_pack(organisation, outlet, from_date, to_date))
         except DjangoValidationError as error:
             return _validation_response(error)
 

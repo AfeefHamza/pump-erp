@@ -152,3 +152,18 @@ class ReportingApiTests(ShiftCardBaseTestCase):
         self.assertEqual(response.data['stock']['totals']['outward'], '100.000')
         self.assertEqual(response.data['stock']['rows'][0]['tank_id'], str(self.tank.id))
         self.assertIn('not additional meter-sale revenue', response.data['basis']['sales'])
+
+    def test_operational_registers_expose_shift_card_and_meter_drilldowns(self):
+        response = self.client.get(
+            f'/api/v1/organisations/{self.org.id}/outlets/{self.outlet.id}/reports/operational-registers/',
+            {'from_date': '2026-09-01', 'to_date': '2026-09-01'},
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['shifts']['count'], 1)
+        self.assertEqual(response.data['shifts']['rows'][0]['card_id'], str(self.card.id))
+        self.assertEqual(response.data['shifts']['rows'][0]['expected_sales'], '10000.00')
+        self.assertEqual(response.data['meters']['count'], 1)
+        self.assertEqual(response.data['meters']['rows'][0]['sale_quantity'], '100.000')
+        self.assertEqual(response.data['meters']['rows'][0]['sale_amount'], '10000.00')
+        self.assertEqual(response.data['credit_slips']['total'], '0.00')
+        self.assertEqual(response.data['expenses']['total'], '0.00')

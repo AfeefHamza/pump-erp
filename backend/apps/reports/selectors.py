@@ -14,10 +14,11 @@ from apps.inventory.selectors import get_tank_stock_summary
 from apps.purchases.selectors import get_supplier_outstanding_summary
 from apps.sales.selectors import customer_outstanding
 from apps.finance.models import Expense
-from apps.purchases.models import PurchaseBill
+from apps.purchases.models import PurchaseBill, TankerReceipt
 from apps.sales.models import SalesInvoice, SalesInvoiceLine
 from apps.shifts.models import (
-    EmployeeShiftCard, EmployeeShiftSettlement, OperationalShift, ShiftNozzlePriceSegment,
+    EmployeeShiftCard, EmployeeShiftSettlement, FuelCreditSlip, OperationalShift,
+    ShiftNozzleMeter, ShiftNozzlePriceSegment, ShiftTankDipObservation,
 )
 
 
@@ -285,6 +286,131 @@ def core_report_pack(organisation, outlet, from_date, to_date):
                 'total': _money(sum((value or ZERO for value in payment_totals.values()), ZERO)),
             },
             'rows': payment_rows, 'truncated': postings.count() > len(payment_rows),
+        },
+    }
+
+
+def operational_report_pack(organisation, outlet, from_date, to_date):
+    """Operational registers that replace overlapping legacy pump reports.
+
+    These registers intentionally expose recorded source documents rather than
+    recalculating financial truth. Each row carries an ID for UI drill-down.
+    """
+    cards = EmployeeShiftCard.objects.filter(
+        organisation=organisation, outlet=outlet, status=EmployeeShiftCard.STATUS_ACTIVE,
+        parent_shift__business_date__range=(from_date, to_date),
+    ).select_related(
+        'parent_shift__shift_definition', 'employee', 'settlement',
+    ).order_by('-parent_shift__business_date', 'parent_shift__shift_definition__display_order', 'sequence')
+    shift_rows = []
+    for card in cards[:1000]:
+        settlement = getattr(card, 'settlement', None)
+        shift_rows.append({
+            'card_id': str(card.id), 'shift_id': str(card.parent_shift_id),
+            'business_date': card.parent_shift.business_date.isoformat(),
+            'shift_name': card.parent_shift.shift_definition.name,
+            'employee_name': card.employee.display_name, 'employee_code': card.employee.employee_code,
+            'mpd_slip_number': card.mpd_slip_number or '', 'is_locked': card.parent_shift.is_locked,
+            'expected_sales': _money(settlement.expected_sale_amount if settlement else ZERO),
+            'accounted': _money(settlement.total_accounted_amount if settlement else ZERO),
+            'difference': _money(settlement.difference_amount if settlement else ZERO),
+            'result': settlement.result if settlement else 'pending',
+        })
+
+    meters = ShiftNozzleMeter.objects.filter(
+        shift__organisation=organisation, shift__outlet=outlet,
+        shift__business_date__range=(from_date, to_date),
+        shift_card__status=EmployeeShiftCard.STATUS_ACTIVE,
+    ).select_related(
+        'shift__shift_definition', 'shift_card__employee', 'nozzle', 'tank', 'product',
+    ).prefetch_related('price_segments').order_by('-shift__business_date', 'nozzle__code')
+    meter_rows = []
+    for meter in meters[:1000]:
+        sale_amount = sum((segment.sale_amount for segment in meter.price_segments.all()), ZERO)
+        meter_rows.append({
+            'meter_id': str(meter.id), 'shift_id': str(meter.shift_id),
+            'card_id': str(meter.shift_card_id), 'business_date': meter.shift.business_date.isoformat(),
+            'shift_name': meter.shift.shift_definition.name,
+            'employee_name': meter.shift_card.employee.display_name,
+            'nozzle_code': meter.nozzle.code, 'tank_code': meter.tank.code if meter.tank_id else '',
+            'product_name': meter.product.name if meter.product_id else '',
+            'opening': _quantity(meter.opening_reading), 'closing': _quantity(meter.closing_reading),
+            'testing': _quantity(meter.testing_quantity), 'sale_quantity': _quantity(meter.sale_quantity),
+            'sale_amount': _money(sale_amount), 'continuity_status': meter.continuity_status,
+        })
+
+    dips = ShiftTankDipObservation.objects.filter(
+        organisation=organisation, outlet=outlet, business_date__range=(from_date, to_date),
+    ).select_related('shift__shift_definition', 'tank', 'tank__product').order_by('-business_date', 'tank__code', 'observation_type')
+    dip_rows = [{
+        'dip_id': str(dip.id), 'shift_id': str(dip.shift_id),
+        'business_date': dip.business_date.isoformat() if dip.business_date else dip.shift.business_date.isoformat(),
+        'shift_name': dip.shift.shift_definition.name, 'tank_code': dip.tank.code,
+        'product_name': dip.tank.product.name, 'observation_type': dip.observation_type,
+        'raw_value': str(dip.raw_dip_value), 'raw_unit': dip.raw_dip_unit,
+        'quantity': _quantity(dip.converted_quantity),
+        'density': str(dip.density) if dip.density is not None else None,
+        'conversion_method': dip.conversion_method,
+    } for dip in dips[:1000]]
+
+    receipts = TankerReceipt.objects.filter(
+        organisation=organisation, outlet=outlet, business_date__range=(from_date, to_date),
+    ).exclude(status=TankerReceipt.STATUS_VOIDED).prefetch_related(
+        'product_lines__product', 'product_lines__allocations',
+    ).order_by('-business_date', '-unloading_end_time')
+    receipt_rows = []
+    for receipt in receipts[:1000]:
+        lines = list(receipt.product_lines.all())
+        receipt_rows.append({
+            'receipt_id': str(receipt.id), 'receipt_number': receipt.receipt_number,
+            'business_date': receipt.business_date.isoformat() if receipt.business_date else receipt.invoice_date.isoformat(),
+            'supplier_name': receipt.supplier_name_snapshot, 'invoice_number': receipt.invoice_number,
+            'vehicle_registration': receipt.vehicle_registration, 'status': receipt.status,
+            'products': ', '.join(line.product.name for line in lines),
+            'invoice_quantity': _quantity(sum((line.invoice_quantity for line in lines), Decimal('0'))),
+            'accepted_quantity': _quantity(sum((line.accepted_book_quantity for line in lines), Decimal('0'))),
+            'value': _money(sum((line.total_value or ZERO for line in lines), ZERO)),
+        })
+
+    slips = FuelCreditSlip.objects.filter(
+        organisation=organisation, outlet=outlet, status=FuelCreditSlip.STATUS_ACTIVE,
+        operational_shift__business_date__range=(from_date, to_date),
+    ).select_related('operational_shift__shift_definition', 'employee', 'customer', 'product').order_by('-operational_shift__business_date', '-occurred_at')
+    credit_rows = [{
+        'slip_id': str(slip.id), 'shift_id': str(slip.operational_shift_id),
+        'business_date': slip.operational_shift.business_date.isoformat(),
+        'shift_name': slip.operational_shift.shift_definition.name, 'slip_number': slip.slip_number,
+        'customer_name': slip.customer.display_name, 'employee_name': slip.employee.display_name,
+        'product_name': slip.product.name, 'vehicle_number': slip.vehicle_number or '',
+        'quantity': _quantity(slip.quantity), 'unit_price': str(slip.unit_price),
+        'amount': _money(slip.amount),
+    } for slip in slips[:1000]]
+
+    expenses = Expense.objects.filter(
+        organisation=organisation, outlet=outlet, status=Expense.STATUS_ACTIVE,
+        expense_date__range=(from_date, to_date),
+    ).select_related('category', 'payment_account').order_by('-expense_date', '-created_at')
+    expense_rows = [{
+        'expense_id': str(expense.id), 'expense_number': expense.expense_number,
+        'expense_date': expense.expense_date.isoformat(), 'category': expense.category_name_snapshot,
+        'payment_account': expense.payment_account.name, 'payee': expense.payee or '',
+        'reference_number': expense.reference_number or '', 'amount': _money(expense.amount),
+    } for expense in expenses[:1000]]
+
+    return {
+        'filters': {'from_date': from_date.isoformat(), 'to_date': to_date.isoformat()},
+        'basis': 'Recorded operational source documents; void records are excluded. Locked status is shown separately.',
+        'shifts': {'count': cards.count(), 'rows': shift_rows, 'truncated': cards.count() > len(shift_rows)},
+        'meters': {'count': meters.count(), 'rows': meter_rows, 'truncated': meters.count() > len(meter_rows)},
+        'dips': {'count': dips.count(), 'rows': dip_rows, 'truncated': dips.count() > len(dip_rows)},
+        'receipts': {'count': receipts.count(), 'rows': receipt_rows, 'truncated': receipts.count() > len(receipt_rows)},
+        'credit_slips': {
+            'count': slips.count(), 'total': _money(_sum(slips, 'amount')),
+            'rows': credit_rows, 'truncated': slips.count() > len(credit_rows),
+        },
+        'expenses': {
+            'count': expenses.count(), 'total': _money(_sum(expenses, 'amount')),
+            'rows': expense_rows, 'truncated': expenses.count() > len(expense_rows),
         },
     }
 
