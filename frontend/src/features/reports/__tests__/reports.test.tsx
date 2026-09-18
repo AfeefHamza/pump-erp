@@ -11,12 +11,14 @@ import { ReportsHubPage } from '../pages/ReportsHubPage';
 import { DailyBusinessSummaryPage } from '../pages/DailyBusinessSummaryPage';
 import { EmployeeAccountabilityPage } from '../pages/EmployeeAccountabilityPage';
 import { CoreRegistersPage } from '../pages/CoreRegistersPage';
+import { OperationalRegistersPage } from '../pages/OperationalRegistersPage';
 
 vi.mock('@/api/client', () => ({
   fetchDailyBusinessSummary: vi.fn(),
   fetchEmployeeAccountabilityReport: vi.fn(),
   fetchEmployees: vi.fn(),
   fetchCoreReportPack: vi.fn(),
+  fetchOperationalReportPack: vi.fn(),
 }));
 
 const store = () => configureStore({
@@ -60,6 +62,16 @@ beforeEach(() => {
     stock: { count: 1, truncated: false, totals: { inward: '0.000', outward: '10.000', net: '-10.000' }, rows: [{ movement_id: 'movement-1', tank_id: 'tank-1', business_date: '2026-09-16', effective_at: '2026-09-16T12:00:00Z', tank_code: 'TK-1', product_name: 'Petrol', movement_type: 'nozzle_dispensing', movement_label: 'Nozzle Gross Dispensing', direction: 'OUT', quantity: '10.000', source_type: 'shift_card_meter', source_id: 'shift-1', reason: '' }] },
     payments: { count: 1, truncated: false, totals: { cash: '400.00', card: '300.00', upi: '200.00', fleet_card: '100.00', credit: '0.00', digital: '600.00', total: '1000.00' }, rows: [{ posting_id: 'posting-1', shift_id: 'shift-1', business_date: '2026-09-16', shift_name: 'Day Shift', cash: '400.00', card: '300.00', upi: '200.00', fleet_card: '100.00', credit: '0.00', total: '1000.00' }] },
   });
+  vi.mocked(api.fetchOperationalReportPack).mockResolvedValue({
+    filters: { from_date: '2026-09-16', to_date: '2026-09-16' },
+    basis: 'Recorded operational source documents.',
+    shifts: { count: 1, truncated: false, rows: [{ card_id: 'card-1', shift_id: 'shift-1', business_date: '2026-09-16', shift_name: 'Day Shift', employee_name: 'Asha', employee_code: 'EMP-1', mpd_slip_number: 'MPD-1', is_locked: true, expected_sales: '10000.00', accounted: '10000.00', difference: '0.00', result: 'balanced' }] },
+    meters: { count: 0, truncated: false, rows: [] },
+    dips: { count: 0, truncated: false, rows: [] },
+    receipts: { count: 0, truncated: false, rows: [] },
+    credit_slips: { count: 0, total: '0.00', truncated: false, rows: [] },
+    expenses: { count: 0, total: '0.00', truncated: false, rows: [] },
+  });
 });
 
 describe('Reports', () => {
@@ -98,5 +110,13 @@ describe('Reports', () => {
     expect(screen.getByText('Credit-slip billing')).toBeInTheDocument();
     expect(screen.getAllByText('₹1,180.00').length).toBeGreaterThan(0);
     await waitFor(() => expect(api.fetchCoreReportPack).toHaveBeenCalledWith('org-1', 'outlet-1', expect.any(Object)));
+  });
+
+  it('shows the consolidated Shift Card operational register', async () => {
+    render(<Provider store={store()}><MemoryRouter initialEntries={['/app/reports/operational-registers?section=shifts']}><OperationalRegistersPage /></MemoryRouter></Provider>);
+    expect(await screen.findByText('MPD-1')).toBeInTheDocument();
+    expect(screen.getByText('Asha')).toBeInTheDocument();
+    expect(screen.getByText('Recorded')).toBeInTheDocument();
+    await waitFor(() => expect(api.fetchOperationalReportPack).toHaveBeenCalledWith('org-1', 'outlet-1', expect.any(Object)));
   });
 });

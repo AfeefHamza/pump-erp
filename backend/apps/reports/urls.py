@@ -1,6 +1,9 @@
 from django.urls import path
 
-from .views import CoreReportPackView, DailyBusinessSummaryView, EmployeeAccountabilityView, ManagementDashboardView
+from .views import (
+    CoreReportPackView, DailyBusinessSummaryView, EmployeeAccountabilityView,
+    ManagementDashboardView, OperationalReportPackView,
+)
 
 
 urlpatterns = [
@@ -18,6 +21,11 @@ urlpatterns = [
         '<uuid:org_id>/outlets/<uuid:outlet_id>/reports/core-registers/',
         CoreReportPackView.as_view(),
         name='core_report_pack',
+    ),
+    path(
+        '<uuid:org_id>/outlets/<uuid:outlet_id>/reports/operational-registers/',
+        OperationalReportPackView.as_view(),
+        name='operational_report_pack',
     ),
     path(
         '<uuid:org_id>/outlets/<uuid:outlet_id>/reports/employee-accountability/',

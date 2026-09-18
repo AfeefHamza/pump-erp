@@ -405,6 +405,10 @@ export const ShiftCardWorkspace: React.FC = () => {
     return totalAccountedAmount - totalExpectedSaleAmount;
   }, [totalAccountedAmount, totalExpectedSaleAmount]);
 
+  const remainingToAllocate = useMemo(() => {
+    return Math.max(0, totalExpectedSaleAmount - totalAccountedAmount);
+  }, [totalExpectedSaleAmount, totalAccountedAmount]);
+
   // Discrepancy Status:
   // Requirement 9: Balanced -> Green, Shortage -> Red, Excess -> Amber/Orange (NEVER GREEN!), Conflict -> Red
   const hasContinuityConflict = useMemo(() => {
@@ -433,6 +437,20 @@ export const ShiftCardWorkspace: React.FC = () => {
       ...prev,
       [value]: Math.max(0, count)
     }));
+  };
+
+  const handleQuickCollectionAmount = (
+    method: 'cards' | 'upi' | 'fleet',
+    amount: string
+  ) => {
+    const update = (rows: ShiftCardCollectionInput[]) => {
+      if (rows.length === 0) return [{ amount }];
+      return rows.map((row, index) => index === 0 ? { ...row, amount } : row);
+    };
+
+    if (method === 'cards') setCardsList(update);
+    if (method === 'upi') setUpiList(update);
+    if (method === 'fleet') setFleetList(update);
   };
 
   // Add Dynamic Rows
@@ -1062,56 +1080,93 @@ export const ShiftCardWorkspace: React.FC = () => {
               </span>
             </div>
 
-            {/* Tabs Header */}
-            <div style={{ display: 'flex', borderBottom: '2px solid #e2e8f0', gap: '0.5rem', marginBottom: '1.25rem' }}>
+            {/* Fast allocation strip. Detailed rows remain available below when references are required. */}
+            <div className="shift-collection-allocation-grid">
               <button
                 type="button"
                 onClick={() => setActiveTab('cash')}
-                className={`btn ${activeTab === 'cash' ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ borderRadius: '6px 6px 0 0', display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem' }}
+                className={`shift-collection-allocation-card ${activeTab === 'cash' ? 'is-active' : ''}`}
               >
-                <DollarSign size={16} /> Cash (₹{effectiveCashAmount.toFixed(2)})
+                <span className="shift-collection-allocation-label"><DollarSign size={17} /> Cash</span>
+                <strong>₹{effectiveCashAmount.toFixed(2)}</strong>
+                <span>Count denominations</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('cards')}
-                className={`btn ${activeTab === 'cards' ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ borderRadius: '6px 6px 0 0', display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem' }}
-              >
-                <CreditCard size={16} /> Cards (₹{totalCardsAmount.toFixed(2)})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('upi')}
-                className={`btn ${activeTab === 'upi' ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ borderRadius: '6px 6px 0 0', display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem' }}
-              >
-                <Smartphone size={16} /> UPI (₹{totalUpiAmount.toFixed(2)})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('fleet')}
-                className={`btn ${activeTab === 'fleet' ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ borderRadius: '6px 6px 0 0', display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem' }}
-              >
-                <Truck size={16} /> Fleet (₹{totalFleetAmount.toFixed(2)})
-              </button>
+              {([
+                { key: 'cards' as const, label: 'Bank / POS Card', icon: CreditCard, total: totalCardsAmount, rows: cardsList },
+                { key: 'upi' as const, label: 'UPI / Wallet', icon: Smartphone, total: totalUpiAmount, rows: upiList },
+                { key: 'fleet' as const, label: 'Fleet / Company Card', icon: Truck, total: totalFleetAmount, rows: fleetList },
+              ]).map(({ key, label, icon: Icon, total, rows }) => (
+                <div
+                  key={key}
+                  role="button"
+                  tabIndex={0}
+                  className={`shift-collection-allocation-card ${activeTab === key ? 'is-active' : ''}`}
+                  onClick={() => setActiveTab(key)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') setActiveTab(key);
+                  }}
+                >
+                  <span className="shift-collection-allocation-label"><Icon size={17} /> {label}</span>
+                  <div className="shift-collection-quick-input">
+                    <span>₹</span>
+                    <input
+                      aria-label={`${label} amount`}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={rows.length > 1 ? total.toFixed(2) : rows[0]?.amount || ''}
+                      placeholder="0.00"
+                      disabled={isShiftLocked || rows.length > 1}
+                      onClick={(event) => event.stopPropagation()}
+                      onFocus={() => setActiveTab(key)}
+                      onChange={(event) => handleQuickCollectionAmount(key, event.target.value)}
+                    />
+                  </div>
+                  <span>{rows.length > 1 ? `${rows.length} entries · edit below` : 'Enter total or add details'}</span>
+                </div>
+              ))}
               <button
                 type="button"
                 onClick={() => setActiveTab('credit')}
-                className={`btn ${activeTab === 'credit' ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ borderRadius: '6px 6px 0 0', display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem' }}
+                className={`shift-collection-allocation-card ${activeTab === 'credit' ? 'is-active' : ''}`}
               >
-                <FileText size={16} /> Credit Slips (₹{totalCreditAmount.toFixed(2)})
+                <span className="shift-collection-allocation-label"><FileText size={17} /> Credit Slips</span>
+                <strong>₹{totalCreditAmount.toFixed(2)}</strong>
+                <span>{creditSlipsList.length} slip(s) · allocate below</span>
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('expenses')}
-                className={`btn ${activeTab === 'expenses' ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ borderRadius: '6px 6px 0 0', display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem' }}
+                className={`shift-collection-allocation-card ${activeTab === 'expenses' ? 'is-active' : ''}`}
               >
-                <Receipt size={16} /> Expenses (₹{totalPendingExpenses.toFixed(2)})
+                <span className="shift-collection-allocation-label"><Receipt size={17} /> Shift Expenses</span>
+                <strong>₹{totalPendingExpenses.toFixed(2)}</strong>
+                <span>{deductionsList.length} expense(s) · allocate below</span>
               </button>
+            </div>
+            <div className="shift-allocation-balance-bar">
+              <div>
+                <span>Expected sale</span><strong>₹{totalExpectedSaleAmount.toFixed(2)}</strong>
+              </div>
+              <div>
+                <span>Allocated</span><strong>₹{totalAccountedAmount.toFixed(2)}</strong>
+              </div>
+              <div className={remainingToAllocate > 0.009 ? 'is-pending' : 'is-complete'}>
+                <span>Remaining to allocate</span><strong>₹{remainingToAllocate.toFixed(2)}</strong>
+              </div>
+              {remainingToAllocate > 0.009 && !isShiftLocked && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline"
+                  onClick={() => {
+                    setUseManualCash(true);
+                    setManualCashAmount((effectiveCashAmount + remainingToAllocate).toFixed(2));
+                    setActiveTab('cash');
+                  }}
+                >
+                  Allocate balance to Cash
+                </button>
+              )}
             </div>
 
             {/* Tab 1: Cash Counter & Denominations */}
